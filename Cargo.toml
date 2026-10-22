@@ -18,6 +18,12 @@ minisign-verify = "0.3"
 ring = { version = "0.17", default-features = false }
 # Outbound HTTPS: rustls + ring + bundled Mozilla root certificates, no gzip.
 ureq = { version = "3.5", default-features = false, features = ["rustls"] }
+# Direct use only for error classification and certificate checks; already
+# in the tree through ureq (same version, ring provider, no aws-lc).
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
+# Configuration files (parsing only, no TOML writer).
+serde = { version = "1", features = ["derive"] }
+toml = { version = "1", default-features = false, features = ["std", "serde", "parse"] }
 
 [lints.rust]
 unsafe_code = "forbid"

@@ -483,7 +483,7 @@ fn rollback(exe: &Path) -> Result<Outcome, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
+    use crate::testutil::TestDir;
 
     const TEST_PUB: &str = include_str!("../testdata/update/test.pub");
     const SUMS: &[u8] = include_bytes!("../testdata/update/SHA256SUMS");
@@ -494,32 +494,6 @@ mod tests {
 
     fn verify(signature_file: &[u8]) -> Result<Version, Error> {
         verify_signature(SUMS, signature_file, &test_keys())
-    }
-
-    /// A fresh directory below the system temp dir, removed at the end.
-    struct TestDir(PathBuf);
-
-    impl TestDir {
-        fn new(name: &str) -> Self {
-            let dir =
-                std::env::temp_dir().join(format!("kinomi-test-{name}-{}", std::process::id()));
-            let _ = fs::remove_dir_all(&dir);
-            fs::create_dir_all(&dir).unwrap();
-            TestDir(dir)
-        }
-
-        fn script(&self, name: &str, body: &str) -> PathBuf {
-            let path = self.0.join(name);
-            fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-            path
-        }
-    }
-
-    impl Drop for TestDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
     }
 
     #[test]
@@ -638,7 +612,7 @@ mod tests {
         assert!(test_run(&failing, TEST_RUN_TIMEOUT).is_err());
         let hanging = dir.script("hanging", "sleep 5");
         assert!(test_run(&hanging, Duration::from_millis(200)).is_err());
-        assert!(test_run(&dir.0.join("missing"), TEST_RUN_TIMEOUT).is_err());
+        assert!(test_run(&dir.path().join("missing"), TEST_RUN_TIMEOUT).is_err());
     }
 
     #[test]

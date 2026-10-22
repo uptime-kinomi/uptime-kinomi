@@ -4,7 +4,11 @@
 
 #![forbid(unsafe_code)]
 
+mod config;
+mod monitors;
 mod paths;
+#[cfg(test)]
+mod testutil;
 mod update;
 
 use std::ffi::OsString;
@@ -219,27 +223,31 @@ fn version_string() -> String {
 fn check_config(cli_dir: Option<&Path>) -> ExitCode {
     let env = |key: &str| std::env::var_os(key);
     let dir = paths::config_dir(cli_dir, &env, &|p| p.is_dir());
-    println!("config dir: {}", dir.display());
-
-    let global = dir.join("kinomi.toml");
-    if !global.is_file() {
-        eprintln!("error: {} not found", global.display());
+    let (config, problems) = config::load(&dir, &env);
+    for problem in problems.all() {
+        eprintln!("{problem}");
+    }
+    let Some(config) = config else {
+        eprintln!("configuration in {} is invalid", dir.display());
         return ExitCode::from(EXIT_CONFIG_ERROR);
+    };
+    let g = &config.global;
+    println!("config dir: {}", config.dir.display());
+    println!("data dir:   {}", g.storage.data_dir.display());
+    println!("log dir:    {}", g.storage.log_dir.display());
+    println!("output dir: {}", g.pages.output_dir.display());
+    println!("monitors:   {}", config.monitors.len());
+    for m in &config.monitors {
+        let state = if m.enabled { "" } else { " (disabled)" };
+        println!(
+            "  {:<24} {:<5} every {:>4}s  {}{state}",
+            m.id,
+            m.kind.name(),
+            m.interval.as_secs(),
+            m.check.target()
+        );
     }
-
-    // Shown so users can see where kinomi would write without root.
-    for (name, path) in [
-        ("data dir", paths::default_data_dir(&env)),
-        ("log dir", paths::default_log_dir(&env)),
-        ("output dir", paths::default_output_dir(&env)),
-    ] {
-        match path {
-            Some(p) => println!("{name} (default): {}", p.display()),
-            None => println!("{name} (default): unknown, must be set in kinomi.toml"),
-        }
-    }
-
-    eprintln!("note: validation of file contents is not implemented yet (milestone M1)");
+    println!("configuration OK");
     ExitCode::SUCCESS
 }
 
