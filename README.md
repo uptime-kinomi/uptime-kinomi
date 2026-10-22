@@ -69,6 +69,8 @@ minimal hardware, use kinomi.
 - **Runs without root:** install, configure and run everything as your
   normal user (`~/.config`, `~/.local/state`, `systemctl --user`). System-wide
   installation with a dedicated service user is supported too.
+- **Signed self-update:** `uptime-kinomi self-update` installs the latest
+  release after checking its minisign signature and checksum.
 - **Security first:** no `unsafe` code, strict input limits, nothing fetched
   from targets is ever shown or forwarded, strict CSP, no inbound TLS (left to
   your reverse proxy), hardened systemd unit.
@@ -207,6 +209,29 @@ from `contrib/systemd/system/`. Data then goes to `/var/lib/uptime-kinomi`,
 `/var/log/uptime-kinomi` and `/run/uptime-kinomi`. See [SPEC.md](SPEC.md) §10.6.
 
 Everything is explained in [SPEC.md](SPEC.md).
+
+## Updating and verifying downloads
+
+```sh
+uptime-kinomi self-update --check     # exit code 3 if a newer release exists
+uptime-kinomi self-update             # download, verify, replace; then restart the service
+systemctl --user restart uptime-kinomi
+```
+
+`self-update` only accepts releases whose checksum file is signed with the
+project's offline [minisign](https://jedisct1.github.io/minisign/) keys
+(embedded in the binary), tests the new binary on your CPU before replacing
+anything, and keeps the previous version (`self-update --rollback`). It works
+without root as long as the binary lives in a directory you own, such as
+`~/.local/bin`.
+
+To verify a manual download:
+
+```sh
+minisign -Vm SHA256SUMS -P <public key from SPEC.md / the release notes>
+sha256sum --ignore-missing -c SHA256SUMS
+gh attestation verify uptime-kinomi-armv6 --repo uptime-kinomi/uptime-kinomi   # optional: build provenance
+```
 
 ## Running behind a reverse proxy
 

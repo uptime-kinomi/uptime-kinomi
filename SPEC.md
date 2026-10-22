@@ -550,10 +550,12 @@ uptime-kinomi check-config   [--config-dir DIR]
 uptime-kinomi rebuild-state  [--config-dir DIR]
 uptime-kinomi gen-token
 uptime-kinomi hash-password USER     # prints an htpasswd line (bcrypt)
+uptime-kinomi self-update [--check] [--release X.Y.Z [--allow-downgrade]] [--rollback]
 uptime-kinomi version
 ```
 `--config-dir` is resolved as described in §3.1.
-Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error.
+Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error,
+3 update available (`self-update --check` only).
 
 ### 10.5 Shipped files (`contrib/`)
 - `systemd/user/uptime-kinomi.service`: **user unit** for `systemctl --user`
@@ -616,6 +618,8 @@ setting `net.ipv4.ping_group_range` instead of root.
 7. Secrets via files with permission warnings; bcrypt-hashed passwords.
 8. Minimal, audited dependencies (`cargo-deny` for licenses/advisories in CI).
 9. Runs as an unprivileged user, no capabilities required (§10.6).
+10. Releases: checksums signed with offline minisign keys, verified by
+    `self-update` before anything is replaced (§12.1, §12.2).
 
 ---
 
@@ -623,7 +627,10 @@ setting `net.ipv4.ping_group_range` instead of root.
 
 Static musl binaries, built in GitHub Actions with
 [`cross`](https://github.com/cross-rs/cross), smoke-tested under QEMU, attached
-to every GitHub release with SHA-256 checksums.
+to every GitHub release together with a signed checksum file (§12.1).
+Asset names do not contain the version (`uptime-kinomi-armv6`), so
+`https://github.com/uptime-kinomi/uptime-kinomi/releases/latest/download/<asset>`
+always points to the latest release.
 
 | Asset suffix | Rust target | For |
 |---|---|---|
@@ -636,9 +643,95 @@ to every GitHub release with SHA-256 checksums.
 `.deb` packages for `armhf` (built for **ARMv6**, so they also work on
 Raspberry Pi OS on the Pi 1), `arm64` and `amd64` are a later goal.
 
-**Early technical risk:** outbound TLS (needed for HTTPS monitors and
-notifications) on ARMv6 with `rustls`. Milestone 0 is a proof of concept for
-`arm-unknown-linux-musleabihf`. Fallback: dynamic OpenSSL for that target.
+**Early technical risk:** outbound TLS (needed for HTTPS monitors,
+notifications and `self-update`) on ARMv6 with `rustls`. `self-update` (§12.2)
+is the first HTTPS client in kinomi and thereby the TLS proof of concept of
+milestone M0. Fallback: dynamic OpenSSL for that target.
+
+### 12.1 Release signing
+
+Checksums alone only protect against corrupted downloads. Whoever can replace
+a binary on the release page can also replace the checksum file. Therefore
+the checksum file is **signed with a key that is not stored on GitHub**, and
+the matching public keys are compiled into kinomi.
+
+- **Format:** [minisign](https://jedisct1.github.io/minisign/) (Ed25519,
+  compatible with OpenBSD signify). Verification in kinomi uses the small,
+  dependency-free `minisign-verify` crate.
+- **Assets of every release:**
+
+  | File | Content |
+  |---|---|
+  | `uptime-kinomi-<suffix>` | static binaries (§12, table above) |
+  | `SHA256SUMS` | `<64 hex digits>  <file name>` per binary, sorted |
+  | `SHA256SUMS.minisig` | minisign signature of `SHA256SUMS` |
+
+- **Trusted comment:** the signature's (signed) trusted comment is exactly
+  `uptime-kinomi X.Y.Z`. This binds the checksums to a version and prevents
+  rollback attacks (serving an old, validly signed release with known bugs).
+- **Keys:** two key pairs, a primary and a backup, both kept **offline** by the
+  maintainer (password-protected, backed up off-site). Both public keys are
+  embedded in the binary; a signature by either is accepted. Rotation: a
+  release signed with an old key ships new public keys.
+- **Additionally**, CI attaches GitHub
+  [artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations)
+  (Sigstore, SLSA build provenance). They prove that a binary was built by the
+  workflow from a given commit and can be checked by hand with
+  `gh attestation verify uptime-kinomi-armv6 --repo uptime-kinomi/uptime-kinomi`.
+  kinomi itself does not verify them (too heavy for a small binary).
+- **Release process:**
+  1. Pushing a tag `vX.Y.Z` triggers the release workflow: build all targets,
+     run the QEMU smoke tests, create `SHA256SUMS` and attestations, and
+     upload everything to a **draft** release (not visible as "latest").
+  2. The maintainer runs `contrib/release/sign-release.sh vX.Y.Z` on their
+     own machine. It downloads the draft assets, verifies the attestations
+     and checksums, signs `SHA256SUMS` with
+     `minisign -S -t "uptime-kinomi X.Y.Z"`, uploads `SHA256SUMS.minisig` and
+     publishes the release.
+
+  So a compromised GitHub account or CI can publish a release, but not one
+  that any installed kinomi accepts.
+- **Manual verification** (documented in the README):
+  `minisign -Vm SHA256SUMS -P <public key>` and then
+  `sha256sum --ignore-missing -c SHA256SUMS`.
+
+### 12.2 `self-update`
+
+`uptime-kinomi self-update` replaces the running binary with the latest
+signed release for the same platform. It never runs automatically; the
+administrator (or an Ansible task, or a cron job) decides when to update.
+
+1. **Preconditions:** the binary's own directory must be writable by the
+   current user (e.g. `~/.local/bin`). kinomi refuses to update binaries in
+   `/usr/bin`, `/bin` or `/usr/sbin` (those belong to a package manager) and
+   never asks for or uses root.
+2. **Fetch metadata:** download `SHA256SUMS` (max 16 KiB) and
+   `SHA256SUMS.minisig` (max 1 KiB) from
+   `releases/latest/download/` (or `releases/download/vX.Y.Z/` with
+   `--release`). HTTPS only, certificate verification always on, at most 5
+   redirects, all of them HTTPS, timeouts on every step.
+3. **Verify:** the signature must be valid for one of the embedded public
+   keys. The trusted comment must be exactly `uptime-kinomi X.Y.Z` and
+   `X.Y.Z` must be newer than the running version (an older or equal version
+   needs `--release X.Y.Z --allow-downgrade`). `SHA256SUMS` is parsed strictly
+   (§12.1 format, only known asset names).
+4. **Download** the asset for the platform the binary was compiled for (max
+   32 MiB) into a temporary file in the same directory, computing SHA-256
+   while streaming. A mismatch deletes the file and aborts.
+5. **Test run:** the new file is made executable (`0755`) and run as
+   `<new> version` with a 10 s timeout. The output must start with
+   `uptime-kinomi X.Y.Z (`. This catches binaries that cannot run on this
+   CPU (e.g. an ARMv7 build on a Pi 1).
+6. **Replace atomically:** the current binary is renamed to
+   `uptime-kinomi.old`, the new one is renamed into place. A running service
+   keeps using the old program until it is restarted.
+7. **Tell the user** to restart the service (e.g.
+   `systemctl --user restart uptime-kinomi`); kinomi does not restart services
+   itself.
+
+Options: `--check` only reports whether a newer signed release exists (exit
+code 3 if so, 0 if up to date). `--rollback` swaps `uptime-kinomi.old` back
+into place.
 
 ---
 
@@ -646,12 +739,12 @@ notifications) on ARMv6 with `rustls`. Milestone 0 is a proof of concept for
 
 | Milestone | Content |
 |---|---|
-| **M0** | Repo, CI, cross builds for all targets, TLS proof of concept on ARMv6 (QEMU + real Pi 1) |
+| **M0** | Repo, CI, cross builds for all targets with QEMU smoke tests, release workflow with signed checksums (§12.1), `self-update` (§12.2) as TLS proof of concept on ARMv6 (QEMU + real Pi 1), logo |
 | **M1** | Config loading + `check-config`, scheduler/queue, `http` and `tcp` monitors, check log |
 | **M2** | State files, replay, page rendering (public/private), built-in server, Basic Auth |
 | **M3** | `push` and `dns` monitors, notifiers (webhook, ntfy, gotify, telegram) |
 | **M4** | Incidents, maintenance, badges, Atom feed, status.json, `/metrics`, contrib files |
-| **v1.0** | Hardening, fuzzing, documentation, logo, first release |
+| **v1.0** | Hardening, fuzzing, documentation, first stable release |
 | later | `ping`, `smtp` notifier, `.deb` packages, uptime-kuma config importer |
 
 ---

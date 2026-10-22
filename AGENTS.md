@@ -34,7 +34,7 @@ disagree, the spec wins until it is explicitly changed in the same PR.
 
 ```
 src/
-├── main.rs                CLI dispatch (run, check-config, rebuild-state, gen-token, hash-password, version)
+├── main.rs                CLI dispatch (run, check-config, rebuild-state, gen-token, hash-password, self-update, version)
 ├── config/                loading + validation of all TOML files
 │   ├── mod.rs
 │   ├── paths.rs           config-dir resolution, XDG/systemd default directories
@@ -69,7 +69,8 @@ src/
 │   ├── mod.rs             accept loop, limits, routing
 │   ├── auth.rs            htpasswd (bcrypt) + verification cache
 │   └── push.rs            push endpoint
-└── clock.rs               monotonic scheduling, wall-clock jump detection
+├── clock.rs               monotonic scheduling, wall-clock jump detection
+└── update.rs              self-update: signed checksums, download, test run, atomic replace
 assets/kinomi.css          default style sheet (embedded with include_str!)
 contrib/                   systemd unit, nginx/apache examples, ansible role, example config
 fuzz/                      cargo-fuzz targets (dns response, http response head, http request, config)
@@ -114,7 +115,8 @@ Candidate dependencies (to be confirmed in M0):
 | `jiff` | time zones from the system tz database |
 | `bcrypt` | htpasswd verification |
 | `sha2`, `base64` | auth cache key, Basic Auth header |
-| `getrandom` | push tokens |
+| `getrandom` | push tokens, temporary file names |
+| `minisign-verify` | release signature check in `self-update` |
 | `signal-hook` | SIGTERM/SIGINT for clean shutdown |
 
 Not allowed: async runtimes (`tokio`, `async-std`), template engines, web
