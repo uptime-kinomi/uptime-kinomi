@@ -69,12 +69,16 @@ jobs:
           for t in $tests; do
             ${{ matrix.qemu }} -cpu ${{ matrix.cpu }} "$t"
           done
-      - name: Check ELF architecture (ARMv6)
-        if: matrix.suffix == 'armv6'
-        run: |
-          readelf -A target/${{ matrix.target }}/release/uptime-kinomi | tee attributes.txt
-          grep -q 'Tag_CPU_arch: v6' attributes.txt
-      - name: Smoke test
+      # Informational: ring contains optional ARMv7/NEON assembly that is
+      # only used after runtime CPU detection, so the binary is tagged v7.
+      # The real check is running tests and a TLS handshake on the emulated
+      # oldest CPU (tests above, smoke test below).
+      - name: Show ELF attributes
+        if: matrix.qemu == 'qemu-arm'
+        run: readelf -A target/${{ matrix.target }}/release/uptime-kinomi
+      - name: Smoke test (including a TLS handshake with github.com)
+        env:
+          KINOMI_SMOKE_NETWORK: "1"
         run: |
           bin=target/${{ matrix.target }}/release/uptime-kinomi
           if [ -n "${{ matrix.qemu }}" ]; then

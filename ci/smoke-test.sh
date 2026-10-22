@@ -1,7 +1,7 @@
 #!/bin/sh
 # Smoke test for a release binary, optionally run through an emulator.
 #
-# Usage: ci/smoke-test.sh BINARY [EMULATOR ARGS...]
+# Usage: [KINOMI_SMOKE_NETWORK=1] ci/smoke-test.sh BINARY [EMULATOR ARGS...]
 # Example: ci/smoke-test.sh target/arm-unknown-linux-musleabihf/release/uptime-kinomi qemu-arm -cpu arm1176
 
 set -eu
@@ -51,5 +51,21 @@ touch "$config_dir/kinomi.toml"
 expect_exit 0 "$@" "$bin" check-config --config-dir "$config_dir"
 expect_exit 2 "$@" "$bin" no-such-command
 expect_exit 0 "$@" "$bin" --help
+
+# 4. Real TLS handshake with github.com (only with KINOMI_SMOKE_NETWORK=1).
+#    Under QEMU this runs ring/rustls on the emulated CPU, e.g. a Pi 1.
+if [ "${KINOMI_SMOKE_NETWORK:-0}" = 1 ]; then
+    set +e
+    output=$("$@" "$bin" self-update --check 2>&1)
+    status=$?
+    set -e
+    echo "self-update --check: exit $status: $output"
+    case "$status" in
+        0 | 3) ;;
+        1) echo "$output" | grep -q "no published release found" ||
+            fail "self-update --check failed" ;;
+        *) fail "self-update --check crashed (exit $status)" ;;
+    esac
+fi
 
 echo "smoke test passed"
