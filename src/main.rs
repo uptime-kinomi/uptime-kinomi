@@ -4,9 +4,11 @@
 
 #![forbid(unsafe_code)]
 
+mod clock;
 mod config;
 mod monitors;
 mod paths;
+mod storage;
 #[cfg(test)]
 mod testutil;
 mod update;
