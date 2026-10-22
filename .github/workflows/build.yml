@@ -22,12 +22,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # cpu: the oldest CPU we promise to support for this binary
-          - { target: arm-unknown-linux-musleabihf, suffix: armv6, qemu: qemu-arm, cpu: arm1176 }
-          - { target: armv7-unknown-linux-musleabihf, suffix: armv7, qemu: qemu-arm, cpu: cortex-a7 }
-          - { target: aarch64-unknown-linux-musl, suffix: aarch64, qemu: qemu-aarch64, cpu: cortex-a53 }
-          - { target: x86_64-unknown-linux-musl, suffix: x86_64, qemu: "", cpu: "" }
-          - { target: riscv64gc-unknown-linux-musl, suffix: riscv64, qemu: qemu-riscv64, cpu: rv64 }
+          # cpu: the oldest CPU we promise to support for this binary.
+          # cflags: for C code in dependencies (ring). The cross gcc for
+          # arm-unknown-linux-musleabihf defaults to ARMv7, which would crash
+          # a Raspberry Pi 1.
+          - { target: arm-unknown-linux-musleabihf, suffix: armv6, qemu: qemu-arm, cpu: arm1176, cflags: "-march=armv6 -mfpu=vfp -mfloat-abi=hard" }
+          - { target: armv7-unknown-linux-musleabihf, suffix: armv7, qemu: qemu-arm, cpu: cortex-a7, cflags: "" }
+          - { target: aarch64-unknown-linux-musl, suffix: aarch64, qemu: qemu-aarch64, cpu: cortex-a53, cflags: "" }
+          - { target: x86_64-unknown-linux-musl, suffix: x86_64, qemu: "", cpu: "", cflags: "" }
+          - { target: riscv64gc-unknown-linux-musl, suffix: riscv64, qemu: qemu-riscv64, cpu: rv64, cflags: "" }
+    env:
+      TARGET_CFLAGS: ${{ matrix.cflags }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,10 +55,20 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-user
       - name: Build
         run: cross build --locked --release --target ${{ matrix.target }}
+      # The test binary is run with the runner's QEMU and an explicit CPU,
+      # so instructions newer than that CPU fail the tests.
       - name: Test (under QEMU for foreign targets)
-        env:
-          QEMU_CPU: ${{ matrix.cpu }}
-        run: cross test --locked --target ${{ matrix.target }}
+        run: |
+          if [ -z "${{ matrix.qemu }}" ]; then
+            cross test --locked --target ${{ matrix.target }}
+            exit 0
+          fi
+          cross test --locked --target ${{ matrix.target }} --no-run
+          tests=$(find target/${{ matrix.target }}/debug/deps -maxdepth 1 -type f -executable -name 'uptime_kinomi-*')
+          [ -n "$tests" ] || { echo "::error::no test binary found"; exit 1; }
+          for t in $tests; do
+            ${{ matrix.qemu }} -cpu ${{ matrix.cpu }} "$t"
+          done
       - name: Check ELF architecture (ARMv6)
         if: matrix.suffix == 'armv6'
         run: |

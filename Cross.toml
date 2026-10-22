@@ -1,6 +1,6 @@
 # Configuration for https://github.com/cross-rs/cross
 
 [build.env]
-# Lets CI choose the emulated CPU for `cross test`, e.g. QEMU_CPU=arm1176
-# for the Raspberry Pi 1, so instructions newer than ARMv6 are caught.
-passthrough = ["QEMU_CPU"]
+# Lets CI pass C compiler flags for dependencies with C code (ring), e.g.
+# -march=armv6 for the Raspberry Pi 1 build.
+passthrough = ["TARGET_CFLAGS"]
