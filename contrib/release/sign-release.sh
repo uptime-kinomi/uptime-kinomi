@@ -6,6 +6,7 @@
 # Needs:    sh, curl, minisign, sha256sum or shasum, and a checkout of this
 #           repository (for keys/).
 # Optional: gh            - also verifies the build provenance attestations
+#                           (if it has 'gh attestation' and is logged in)
 #           GITHUB_TOKEN  - fine-grained token for this repository with
 #                           "Contents: read and write"; used to upload the
 #                           signature and publish. Without it, the script
@@ -74,7 +75,8 @@ expected=$(printf '%s\n' $assets | LC_ALL=C sort | tr '\n' ' ')
 grep -Evq '^[0-9a-f]{64}  uptime-kinomi-[a-z0-9_]+$' SHA256SUMS && die "SHA256SUMS is malformed"
 sha256_check SHA256SUMS
 
-if command -v gh >/dev/null; then
+if command -v gh >/dev/null && gh attestation verify --help >/dev/null 2>&1 &&
+    gh auth status >/dev/null 2>&1; then
     echo "==> Verifying build provenance (built by release.yml from $tag on a GitHub-hosted runner)"
     for asset in $assets; do
         gh attestation verify "$asset" \
@@ -85,7 +87,7 @@ if command -v gh >/dev/null; then
         echo "$asset: OK"
     done
 else
-    echo "==> gh not installed: skipping the build provenance check"
+    echo "==> skipping the build provenance check (needs a logged-in gh with 'gh attestation')"
 fi
 
 echo
