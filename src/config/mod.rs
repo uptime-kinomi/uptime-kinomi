@@ -5,6 +5,7 @@
 
 pub mod duration;
 pub mod global;
+pub mod pages;
 pub mod secret;
 
 use std::fmt;
@@ -14,14 +15,14 @@ use std::path::{Path, PathBuf};
 use crate::monitors::{self, Monitor};
 use crate::paths;
 use global::Global;
+use pages::Page;
 
 /// Largest accepted config file (SPEC.md §3.2).
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 
 /// Directories whose contents are validated in later milestones.
-const NOT_YET_VALIDATED: [(&str, &str); 4] = [
+const NOT_YET_VALIDATED: [(&str, &str); 3] = [
     ("notifications", "M3"),
-    ("pages", "M2"),
     ("incidents", "M4"),
     ("maintenance", "M4"),
 ];
@@ -31,6 +32,7 @@ pub struct Config {
     pub dir: PathBuf,
     pub global: Global,
     pub monitors: Vec<Monitor>,
+    pub pages: Vec<Page>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -201,6 +203,30 @@ pub fn load(dir: &Path, env: paths::EnvFn) -> (Option<Config>, Problems) {
         }
     }
 
+    let mut page_list = Vec::new();
+    if global.is_some() {
+        for (id, path) in list_toml_files(&dir.join("pages"), &mut problems) {
+            match read_config_file(&path) {
+                Ok((text, _)) => {
+                    let mut p = problems.for_file(&path);
+                    if let Some(page) = pages::parse(&id, &text, &monitor_list, &mut p) {
+                        page_list.push(page);
+                    }
+                }
+                Err(e) => problems.error(&path, e),
+            }
+        }
+    }
+    if let Some(g) = &global {
+        check_pages(
+            g,
+            &page_list,
+            &global_file,
+            &dir.join("pages"),
+            &mut problems,
+        );
+    }
+
     for (sub, milestone) in NOT_YET_VALIDATED {
         let path = dir.join(sub);
         let files = list_toml_files(&path, &mut problems);
@@ -217,10 +243,50 @@ pub fn load(dir: &Path, env: paths::EnvFn) -> (Option<Config>, Problems) {
             dir: dir.to_path_buf(),
             global,
             monitors: monitor_list,
+            pages: page_list,
         }),
         _ => None,
     };
     (config, problems)
+}
+
+/// Checks across pages and the global configuration.
+fn check_pages(
+    g: &Global,
+    pages: &[Page],
+    global_file: &Path,
+    pages_dir: &Path,
+    problems: &mut Problems,
+) {
+    if pages.is_empty() && !problems.has_errors() {
+        problems.warning(
+            pages_dir,
+            "no pages configured: no status pages will be generated",
+        );
+    }
+    if let Some(default) = &g.pages.default_page {
+        if !pages.iter().any(|p| &p.id == default) {
+            problems.error(
+                global_file,
+                format!(
+                    "pages.default_page '{default}' does not exist (expected pages/{default}.toml)"
+                ),
+            );
+        }
+    }
+    let private = pages.iter().filter(|p| !p.public).count();
+    if private > 0 && g.server.enabled && g.server.htpasswd_file.is_none() {
+        problems.error(
+            global_file,
+            "private pages need server.htpasswd_file (or server.enabled = false if your proxy does the authentication)",
+        );
+    }
+    if private > 0 && g.server.enabled && !g.server.listen.ip().is_loopback() {
+        problems.warning(
+            global_file,
+            "private pages on a non-loopback address: without a TLS proxy, passwords travel unencrypted",
+        );
+    }
 }
 
 fn read_config_file(path: &Path) -> Result<(String, fs::Metadata), String> {
@@ -311,6 +377,10 @@ mod tests {
         dir.write("monitors/.hidden.toml", "garbage");
         dir.write("monitors/notes.txt", "garbage");
         dir.write("monitors/web.toml~", "garbage");
+        dir.write(
+            "pages/home.toml",
+            "config_version = 1\ntitle = \"Home\"\npublic = true\n[[groups]]\nname = \"All\"\nmonitors = [\"*\"]\n",
+        );
         let (config, problems) = load(dir.path(), &env);
         let config = config.unwrap_or_else(|| panic!("{problems:?}"));
         let ids: Vec<_> = config.monitors.iter().map(|m| m.id.as_str()).collect();
@@ -335,7 +405,7 @@ mod tests {
         assert!(all.contains("defaults.notifications"), "{all}");
         assert!(all.contains("bad.toml"), "{all}");
         assert!(all.contains("file name must match"), "{all}");
-        assert!(all.contains("not validated yet (milestone M2)"), "{all}");
+        assert!(all.contains("pages/home.toml"), "{all}");
     }
 
     #[test]

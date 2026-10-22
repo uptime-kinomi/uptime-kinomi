@@ -449,33 +449,10 @@ mod tests {
         assert_eq!(slots[0].next_due, now + Duration::from_secs(40));
     }
 
-    struct Instant200;
-
-    impl Check for Instant200 {
-        fn check(&self) -> CheckResult {
-            CheckResult::up(Duration::from_millis(1), "ok")
-        }
-
-        fn target(&self) -> String {
-            "test".into()
-        }
-    }
-
     fn monitor(id: &str, enabled: bool) -> Monitor {
-        Monitor {
-            id: id.into(),
-            kind: Kind::Tcp,
-            name: id.into(),
-            description: None,
-            interval: Duration::from_secs(10),
-            timeout: Duration::from_secs(1),
-            retries: 0,
-            notifications: vec![],
-            resend_interval: Duration::ZERO,
-            enabled,
-            tags: vec![],
-            check: Box::new(Instant200),
-        }
+        let mut m = crate::monitors::test_monitor(id);
+        m.enabled = enabled;
+        m
     }
 
     #[test]

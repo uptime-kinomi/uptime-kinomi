@@ -287,6 +287,37 @@ fn build_check(
     }
 }
 
+/// A monitor whose check always succeeds at once (for tests).
+#[cfg(test)]
+pub fn test_monitor(id: &str) -> Monitor {
+    struct AlwaysUp;
+
+    impl Check for AlwaysUp {
+        fn check(&self) -> CheckResult {
+            CheckResult::up(Duration::from_millis(1), "ok")
+        }
+
+        fn target(&self) -> String {
+            "test".into()
+        }
+    }
+
+    Monitor {
+        id: id.into(),
+        kind: Kind::Tcp,
+        name: id.into(),
+        description: None,
+        interval: Duration::from_secs(10),
+        timeout: Duration::from_secs(1),
+        retries: 0,
+        notifications: vec![],
+        resend_interval: Duration::ZERO,
+        enabled: true,
+        tags: vec![],
+        check: Box::new(AlwaysUp),
+    }
+}
+
 /// Host name (RFC 1123) or IP address literal.
 pub fn is_valid_host(host: &str) -> bool {
     host.parse::<std::net::IpAddr>().is_ok()
