@@ -71,6 +71,9 @@ pub trait Check: Send + Sync {
     fn target(&self) -> String;
 }
 
+// Parsed and validated now; used by the server, pages and notifications
+// (milestones M2 to M4).
+#[allow(dead_code)]
 pub struct Monitor {
     pub id: String,
     pub kind: Kind,

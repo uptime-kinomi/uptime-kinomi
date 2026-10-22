@@ -101,6 +101,7 @@ impl Problems {
         self.0.iter()
     }
 
+    #[cfg(test)]
     pub fn warnings(&self) -> impl Iterator<Item = &Problem> {
         self.0.iter().filter(|p| p.severity == Severity::Warning)
     }

@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `run`: the monitoring service. A dispatcher with a bounded queue and
+  worker threads; every monitor has a fixed time grid; under overload,
+  waiting checks are served round-robin and missed grid points are logged as
+  `result=SKIPPED count=N`, so all monitors are checked equally often.
+  SIGTERM/SIGINT flush the log. Waits for a plausible clock (no RTC) and
+  logs clock jumps. Warns when running as root.
+- Check log: one logfmt file per UTC day, buffered writes, retention.
+- State machine: UP, WARN, PENDING (retries), DOWN; state changes are also
+  printed to stderr (journal).
+- `check-config` validates `kinomi.toml` and `monitors/*.toml` completely
+  and lists the monitors.
+- Monitor types `http` (status codes and ranges, keyword, redirects checked
+  hop by hop, body limit, headers, basic auth, slow warning) and `tcp`
+  (connect, banner).
+
 ## [0.1.1] - 2026-10-22
 
 Second infrastructure preview, to test `self-update` from 0.1.0.

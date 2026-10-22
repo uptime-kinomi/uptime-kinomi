@@ -78,19 +78,24 @@ fuzz/                      cargo-fuzz targets (dns response, http response head,
 
 ## How to add a monitor type
 
-1. Create `src/monitors/<type>.rs` with:
-   - a config struct `<Type>Config` (`Deserialize`, `deny_unknown_fields`),
-   - `fn validate(&self) -> Result<(), ConfigError>`,
-   - an implementation of the `Monitor` trait:
+1. Create `src/monitors/<type>.rs` (see `tcp.rs` for a small example) with:
+   - a file struct `<Type>File` for the `[<type>]` table (`Deserialize`,
+     `deny_unknown_fields`),
+   - `pub fn build(file, timeout, ..., p: &mut FileProblems) -> Option<<Type>Check>`
+     that validates everything and reports problems via `p.error(...)`,
+   - an implementation of the `Check` trait:
      ```rust
-     pub trait Monitor: Send + Sync {
-         /// Perform one check. Must respect `ctx.timeout` and never block longer.
-         fn check(&self, ctx: &CheckContext) -> CheckResult;
+     pub trait Check: Send + Sync {
+         /// One check. Must return within the monitor's timeout and never panic.
+         /// `CheckResult::msg` is kinomi's own summary, never received data.
+         fn check(&self) -> CheckResult;
+         /// Target for private pages, e.g. the URL.
+         fn target(&self) -> String;
      }
      ```
-   - unit tests in the same file.
-2. Add one variant to `MonitorConfig` in `src/monitors/mod.rs`
-   (`#[serde(tag = "type")]`).
+   - unit tests in the same file, against local `TcpListener` servers.
+2. In `src/monitors/mod.rs`: add a variant to `Kind`, an `Option<<Type>File>`
+   field to `MonitorFile`, and an arm to `build_check`.
 3. Document the type in SPEC.md §4 and add an example to `contrib/examples/`.
 4. If it parses network data: add a fuzz target in `fuzz/`.
 

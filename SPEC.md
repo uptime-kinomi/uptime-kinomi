@@ -319,17 +319,21 @@ Planned later: `smtp` (email), `matrix`, `pushover`, `signal` (via signal-cli RE
 
 ## 6. Scheduler and queue
 
-- Every active monitor has a `next_due` time computed with the **monotonic
-  clock** (immune to wall-clock jumps). Start times are spread out so not all
-  monitors fire at once after startup.
+- Every active monitor has a fixed **time grid**: a start offset, then one
+  point every `interval`, on the **monotonic clock** (immune to wall-clock
+  jumps). Start offsets are spread over the first 10 s so not all monitors
+  fire at once after startup.
 - A dispatcher thread moves due checks into a bounded queue (`max_queue`).
   `workers` threads take checks from the queue. Checks use blocking I/O with
   timeouts on connect, TLS handshake, read and total duration.
-- **Overload and fairness:** if more checks are due than queue capacity, the
-  dispatcher orders the due checks by *time since last completed check* (most
-  starved first). Checks that do not fit are **skipped** and rescheduled at
-  their next interval. This spreads skips evenly over all monitors, and no
-  monitor starves. Every skip is logged (`result=SKIPPED`).
+- **Overload and fairness:** a due check that does not fit into the queue
+  waits. When room becomes free, the waiting check that was **started least
+  recently** goes first (round-robin; completion time and due time do not
+  matter, so fast or "lucky" monitors cannot win). When a check starts late,
+  every grid point it missed is **skipped** and logged once as
+  `result=SKIPPED count=N`. So under overload every monitor is checked
+  equally often, no monitor starves, and runs plus skips always add up to the
+  elapsed intervals.
 - A check that is still running when its next one is due is never started twice.
 - Push monitors do not use the queue; their deadline is evaluated by the
   dispatcher (cheap).
@@ -351,7 +355,7 @@ All timestamps stored are **UTC, RFC 3339, second precision**.
 2026-10-22T14:04:11Z monitor=blog result=FAIL latency_ms=10000 msg="timeout"
 2026-10-22T14:05:11Z monitor=blog result=DOWN latency_ms=10000 msg="timeout"
 2026-10-22T14:05:11Z event=NOTIFY monitor=blog notifier=ntfy-home kind=down ok=true
-2026-10-22T14:06:00Z monitor=nas result=SKIPPED msg="queue full"
+2026-10-22T14:06:00Z monitor=nas result=SKIPPED count=1 msg="queue full"
 2026-10-22T14:06:02Z monitor=backup-job result=UP msg="push"
 2026-10-22T14:07:00Z event=CLOCK_JUMP delta_s=-31536000
 2026-10-22T14:07:00Z event=START version=0.1.0 monitors=42

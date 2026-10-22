@@ -45,7 +45,11 @@ impl LogWriter {
     pub fn record(&mut self, time: SystemTime, fields: &[(&str, &str)]) {
         let mut line = clock::format_rfc3339(time);
         for (key, value) in fields {
-            let limit = if *key == "msg" { MAX_MSG_CHARS } else { MAX_VALUE_CHARS };
+            let limit = if *key == "msg" {
+                MAX_MSG_CHARS
+            } else {
+                MAX_VALUE_CHARS
+            };
             line.push(' ');
             line.push_str(key);
             line.push('=');
@@ -70,7 +74,10 @@ impl LogWriter {
         while let Some((day, _)) = self.buffer.first() {
             let day = day.clone();
             let count = self.buffer.iter().take_while(|(d, _)| *d == day).count();
-            let text: String = self.buffer[..count].iter().map(|(_, line)| line.as_str()).collect();
+            let text: String = self.buffer[..count]
+                .iter()
+                .map(|(_, line)| line.as_str())
+                .collect();
             let mut file = OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -92,7 +99,11 @@ impl LogWriter {
     fn delete_expired(&self, today: i64) -> io::Result<()> {
         for entry in fs::read_dir(&self.dir)?.flatten() {
             let name = entry.file_name();
-            let Some(day) = name.to_str().and_then(|n| n.strip_suffix(".log")).and_then(clock::parse_date) else {
+            let Some(day) = name
+                .to_str()
+                .and_then(|n| n.strip_suffix(".log"))
+                .and_then(clock::parse_date)
+            else {
                 continue; // not one of our files
             };
             if day < today - self.retention_days {
@@ -146,8 +157,22 @@ mod tests {
     fn line_format() {
         let dir = TestDir::new("log");
         let mut log = LogWriter::open(&dir.path().join("log"), 90).unwrap();
-        log.record(t(0), &[("monitor", "blog"), ("result", "UP"), ("latency_ms", "123"), ("msg", "HTTP 200")]);
-        log.record(t(1), &[("monitor", "x"), ("msg", "a \"quoted\" \\ value\nwith newline")]);
+        log.record(
+            t(0),
+            &[
+                ("monitor", "blog"),
+                ("result", "UP"),
+                ("latency_ms", "123"),
+                ("msg", "HTTP 200"),
+            ],
+        );
+        log.record(
+            t(1),
+            &[
+                ("monitor", "x"),
+                ("msg", "a \"quoted\" \\ value\nwith newline"),
+            ],
+        );
         log.record(t(2), &[("event", "START"), ("empty", "")]);
         log.flush(t(3)).unwrap();
         let text = fs::read_to_string(dir.path().join("log/2026-10-22.log")).unwrap();
@@ -177,18 +202,39 @@ mod tests {
         assert!(!dir.path().join("2026-10-22.log").exists());
         log.flush(t(36_001)).unwrap();
         assert_eq!(log.buffered(), 0);
-        assert!(fs::read_to_string(dir.path().join("2026-10-22.log")).unwrap().contains("event=A"));
-        assert!(fs::read_to_string(dir.path().join("2026-10-23.log")).unwrap().contains("event=B"));
+        assert!(
+            fs::read_to_string(dir.path().join("2026-10-22.log"))
+                .unwrap()
+                .contains("event=A")
+        );
+        assert!(
+            fs::read_to_string(dir.path().join("2026-10-23.log"))
+                .unwrap()
+                .contains("event=B")
+        );
         // Appends on the next flush.
         log.record(t(36_002), &[("event", "C")]);
         log.flush(t(36_003)).unwrap();
-        assert_eq!(fs::read_to_string(dir.path().join("2026-10-23.log")).unwrap().lines().count(), 2);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("2026-10-23.log"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
     }
 
     #[test]
     fn retention() {
         let dir = TestDir::new("log-retention");
-        for name in ["2026-07-01.log", "2026-07-24.log", "2026-07-25.log", "2026-10-21.log", "notes.log", "2026-01-01.txt"] {
+        for name in [
+            "2026-07-01.log",
+            "2026-07-24.log",
+            "2026-07-25.log",
+            "2026-10-21.log",
+            "notes.log",
+            "2026-01-01.txt",
+        ] {
             fs::write(dir.path().join(name), "x").unwrap();
         }
         let mut log = LogWriter::open(dir.path(), 90).unwrap();
@@ -199,7 +245,16 @@ mod tests {
             .collect();
         left.sort();
         // 2026-10-22 minus 90 days is 2026-07-24.
-        assert_eq!(left, ["2026-01-01.txt", "2026-07-24.log", "2026-07-25.log", "2026-10-21.log", "notes.log"]);
+        assert_eq!(
+            left,
+            [
+                "2026-01-01.txt",
+                "2026-07-24.log",
+                "2026-07-25.log",
+                "2026-10-21.log",
+                "notes.log"
+            ]
+        );
     }
 
     #[test]
@@ -210,7 +265,10 @@ mod tests {
         let mut log = LogWriter::open(&log_dir, 90).unwrap();
         log.record(t(0), &[("event", "A")]);
         log.flush(t(0)).unwrap();
-        assert_eq!(fs::metadata(&log_dir).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            fs::metadata(&log_dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
         let file = fs::metadata(log_dir.join("2026-10-22.log")).unwrap();
         assert_eq!(file.permissions().mode() & 0o777, 0o600);
     }

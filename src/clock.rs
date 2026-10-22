@@ -47,7 +47,9 @@ pub fn parse_date(text: &str) -> Option<i64> {
     let b = text.as_bytes();
     let digits = |r: std::ops::Range<usize>| -> Option<i64> {
         let s = text.get(r)?;
-        s.bytes().all(|c| c.is_ascii_digit()).then(|| s.parse().ok())?
+        s.bytes()
+            .all(|c| c.is_ascii_digit())
+            .then(|| s.parse().ok())?
     };
     if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
         return None;
@@ -106,7 +108,8 @@ impl JumpDetector {
     /// monotonic clock since the last call.
     pub fn check(&mut self, wall: SystemTime, mono: Instant) -> Option<i64> {
         let wall_delta = unix_seconds(wall) - unix_seconds(self.wall);
-        let mono_delta = i64::try_from(mono.duration_since(self.mono).as_secs()).unwrap_or(i64::MAX);
+        let mono_delta =
+            i64::try_from(mono.duration_since(self.mono).as_secs()).unwrap_or(i64::MAX);
         self.wall = wall;
         self.mono = mono;
         let jump = wall_delta - mono_delta;
@@ -136,8 +139,19 @@ mod tests {
             let (y, m, d) = civil_from_days(days);
             assert_eq!(parse_date(&format!("{y:04}-{m:02}-{d:02}")), Some(days));
         }
-        assert_eq!(parse_date("2026-10-22"), Some(days_since_epoch(at(1_792_678_991))));
-        for bad in ["", "2026-1-22", "2026-13-01", "2026-02-30", "2026-02-29", "20x6-01-01", "2026-01-01.log"] {
+        assert_eq!(
+            parse_date("2026-10-22"),
+            Some(days_since_epoch(at(1_792_678_991)))
+        );
+        for bad in [
+            "",
+            "2026-1-22",
+            "2026-13-01",
+            "2026-02-30",
+            "2026-02-29",
+            "20x6-01-01",
+            "2026-01-01.log",
+        ] {
             assert_eq!(parse_date(bad), None, "{bad}");
         }
         assert!(parse_date("2028-02-29").is_some());
@@ -155,14 +169,23 @@ mod tests {
         let mono = Instant::now();
         let mut detector = JumpDetector::new(at(MIN_PLAUSIBLE_UNIX), mono);
         // Normal progress.
-        assert_eq!(detector.check(at(MIN_PLAUSIBLE_UNIX + 30), mono + Duration::from_secs(30)), None);
+        assert_eq!(
+            detector.check(at(MIN_PLAUSIBLE_UNIX + 30), mono + Duration::from_secs(30)),
+            None
+        );
         // NTP sync moved the clock one day forward.
         assert_eq!(
-            detector.check(at(MIN_PLAUSIBLE_UNIX + 30 + 86400 + 10), mono + Duration::from_secs(40)),
+            detector.check(
+                at(MIN_PLAUSIBLE_UNIX + 30 + 86400 + 10),
+                mono + Duration::from_secs(40)
+            ),
             Some(86400)
         );
         // Clock set back by 5 minutes.
         let wall = MIN_PLAUSIBLE_UNIX + 30 + 86400 + 10 - 300 + 10;
-        assert_eq!(detector.check(at(wall), mono + Duration::from_secs(50)), Some(-300));
+        assert_eq!(
+            detector.check(at(wall), mono + Duration::from_secs(50)),
+            Some(-300)
+        );
     }
 }

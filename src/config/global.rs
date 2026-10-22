@@ -10,6 +10,9 @@ use super::{Problems, is_valid_id, resolve_path};
 use crate::paths;
 
 #[derive(Debug)]
+// Parsed and validated now; used by the server, pages and notifications
+// (milestones M2 to M4).
+#[allow(dead_code)]
 pub struct Global {
     pub server: Server,
     pub pages: Pages,
@@ -20,6 +23,7 @@ pub struct Global {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // used by the built-in server (M2)
 pub struct Server {
     pub enabled: bool,
     pub listen: SocketAddr,
@@ -30,6 +34,7 @@ pub struct Server {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // used by the page renderer (M2)
 pub struct Pages {
     pub output_dir: PathBuf,
     pub render_interval: Dur,
@@ -57,6 +62,7 @@ pub struct Scheduler {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // outbound heartbeat (M3)
 pub struct Heartbeat {
     pub url: String,
     pub interval: Dur,
