@@ -15,8 +15,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # cross from git: the 0.2.5 release has no riscv64gc-unknown-linux-musl image.
-  CROSS_REV: 526d03ddcd2f70e683074b3ea6f75ed300f33132
 
 jobs:
   check:
@@ -59,63 +57,5 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
 
   build:
-    name: build ${{ matrix.suffix }}
     needs: check
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # cpu: the oldest CPU we promise to support for this binary
-          - { target: arm-unknown-linux-musleabihf, suffix: armv6, qemu: qemu-arm, cpu: arm1176 }
-          - { target: armv7-unknown-linux-musleabihf, suffix: armv7, qemu: qemu-arm, cpu: cortex-a7 }
-          - { target: aarch64-unknown-linux-musl, suffix: aarch64, qemu: qemu-aarch64, cpu: cortex-a53 }
-          - { target: x86_64-unknown-linux-musl, suffix: x86_64, qemu: "", cpu: "" }
-          - { target: riscv64gc-unknown-linux-musl, suffix: riscv64, qemu: qemu-riscv64, cpu: rv64 }
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
-        with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
-      - name: Cache cross
-        id: cache-cross
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cargo/bin/cross
-          key: cross-${{ runner.os }}-${{ env.CROSS_REV }}
-      - name: Install cross
-        if: steps.cache-cross.outputs.cache-hit != 'true'
-        run: cargo install cross --locked --git https://github.com/cross-rs/cross --rev "$CROSS_REV"
-      - name: Install QEMU
-        if: matrix.qemu != ''
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-user
-      - name: Build
-        run: cross build --locked --release --target ${{ matrix.target }}
-      - name: Test (under QEMU for foreign targets)
-        env:
-          QEMU_CPU: ${{ matrix.cpu }}
-        run: cross test --locked --target ${{ matrix.target }}
-      - name: Check ELF architecture (ARMv6)
-        if: matrix.suffix == 'armv6'
-        run: |
-          readelf -A target/${{ matrix.target }}/release/uptime-kinomi | tee attributes.txt
-          grep -q 'Tag_CPU_arch: v6' attributes.txt
-      - name: Smoke test
-        run: |
-          bin=target/${{ matrix.target }}/release/uptime-kinomi
-          if [ -n "${{ matrix.qemu }}" ]; then
-            sh ci/smoke-test.sh "$bin" ${{ matrix.qemu }} -cpu ${{ matrix.cpu }}
-          else
-            sh ci/smoke-test.sh "$bin"
-          fi
-      - name: Rename binary
-        run: cp target/${{ matrix.target }}/release/uptime-kinomi uptime-kinomi-${{ matrix.suffix }}
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: uptime-kinomi-${{ matrix.suffix }}
-          path: uptime-kinomi-${{ matrix.suffix }}
-          if-no-files-found: error
-          retention-days: 14
+    uses: ./.github/workflows/build.yml

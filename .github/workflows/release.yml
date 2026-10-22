@@ -1,0 +1,71 @@
+name: Release
+
+# Pushing a tag vX.Y.Z builds and tests all binaries, creates SHA256SUMS and
+# build provenance attestations, and uploads everything to a DRAFT release.
+# The maintainer then signs SHA256SUMS offline and publishes the release with
+# contrib/release/sign-release.sh (SPEC.md §12.1).
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: tag matches Cargo.toml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compare versions
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version $version"
+            exit 1
+          fi
+
+  build:
+    needs: version
+    uses: ./.github/workflows/build.yml
+
+  draft:
+    name: draft release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the draft release
+      id-token: write # sign attestations (Sigstore)
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: uptime-kinomi-*
+          path: dist
+          merge-multiple: true
+      - name: Create SHA256SUMS
+        working-directory: dist
+        run: |
+          ls -l
+          [ "$(ls | wc -l)" -eq 5 ] || { echo "::error::expected 5 binaries"; exit 1; }
+          sha256sum uptime-kinomi-* | LC_ALL=C sort -k 2 > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/uptime-kinomi-*
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --verify-tag \
+            --title "uptime-kinomi ${TAG#v}" \
+            --generate-notes
