@@ -23,18 +23,26 @@ const STARTUP_SPREAD: Duration = Duration::from_secs(10);
 /// The dispatcher wakes at least this often.
 const MAX_SLEEP: Duration = Duration::from_secs(1);
 
+/// A longer gap between two dispatcher rounds means the whole process was
+/// not running (VM paused, system frozen), not that the queue was full.
+const PAUSE_THRESHOLD: Duration = Duration::from_secs(30);
+
 pub enum Event {
     Done {
         monitor: usize,
         result: CheckResult,
         time: SystemTime,
     },
-    /// `count` grid points passed without a check (queue full).
+    /// `count` grid points passed without a check, because the queue was
+    /// full or (`paused`) because the process was not running.
     Skipped {
         monitor: usize,
         count: u32,
+        paused: bool,
         time: SystemTime,
     },
+    /// The process did not run for `seconds` (reported once per pause).
+    Paused { seconds: u64, time: SystemTime },
 }
 
 #[derive(Debug)]
@@ -181,7 +189,6 @@ impl Scheduler {
     }
 
     /// Checks waiting for a worker (for self-monitoring).
-    #[allow(dead_code)] // shown on private pages (M2)
     pub fn queue_len(&self) -> usize {
         self.shared.lock().queue.len()
     }
@@ -189,8 +196,19 @@ impl Scheduler {
 
 fn dispatcher(shared: &Shared, events: &Sender<Event>) {
     let mut inner = shared.lock();
+    let mut last_round = Instant::now();
+    let mut paused = false;
     while !inner.shutdown {
         let now = Instant::now();
+        let gap = now.duration_since(last_round);
+        last_round = now;
+        if gap > PAUSE_THRESHOLD {
+            paused = true;
+            let _ = events.send(Event::Paused {
+                seconds: gap.as_secs(),
+                time: SystemTime::now(),
+            });
+        }
         let capacity = shared.max_queue.saturating_sub(inner.queue.len());
         let Inner { slots, tickets, .. } = &mut *inner;
         let (run, missed) = plan(slots, now, capacity, tickets);
@@ -203,8 +221,13 @@ fn dispatcher(shared: &Shared, events: &Sender<Event>) {
             let _ = events.send(Event::Skipped {
                 monitor: inner.slots[i].monitor,
                 count,
+                paused,
                 time,
             });
+        }
+        // Skips after a pause are reported once all checks have started again.
+        if paused && inner.slots.iter().all(|s| s.running || s.next_due > now) {
+            paused = false;
         }
         // Waiting slots need no timer: workers wake us when they take a check
         // from the queue.
@@ -265,7 +288,7 @@ fn worker(shared: &Shared, monitors: &[Monitor], events: &Sender<Event>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::monitors::{Check, Kind, Status};
+    use crate::monitors::Status;
     use std::sync::mpsc;
 
     fn slots(n: usize, interval: Duration, now: Instant) -> Vec<Slot> {

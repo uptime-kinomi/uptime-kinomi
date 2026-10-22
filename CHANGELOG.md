@@ -18,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   printed to stderr (journal).
 - `check-config` validates `kinomi.toml` and `monitors/*.toml` completely
   and lists the monitors.
+- Status pages: public and private pages from `pages/*.toml`, heartbeat
+  bar, uptime over 24 h and 30 d, average response time, certificate
+  expiry, overall banner, private details and self status; static HTML5 +
+  CSS without JavaScript, light and dark mode, time zone from the system
+  tz database. Written to `output_dir` only when changed.
+- Built-in HTTP server: serves the pages from memory, Basic Auth with
+  bcrypt htpasswd files (Apache/nginx compatible) and a verification cache,
+  throttling after failed logins, Host header check, strict headers (CSP,
+  nosniff, no framing), GET/HEAD only, bounded threads and request sizes.
+- State files per monitor (human-readable TOML) and log replay at startup;
+  `rebuild-state` regenerates them from the log.
+- `hash-password USER` and `gen-token`.
+- Pauses of the whole process (e.g. standby of a VM host) are logged as
+  `event=PAUSED` and their missed checks as `SKIPPED msg="paused"`.
 - Monitor types `http` (status codes and ranges, keyword, redirects checked
   hop by hop, body limit, headers, basic auth, slow warning, TLS
   certificate expiry with WARN/DOWN thresholds) and `tcp` (connect, banner).

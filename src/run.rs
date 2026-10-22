@@ -5,7 +5,7 @@ use std::fs::{self, DirBuilder};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -14,12 +14,18 @@ use crate::clock::{self, JumpDetector};
 use crate::config::Config;
 use crate::history::History;
 use crate::monitors::Monitor;
+use crate::render::{self, MonitorView, Renderer, SelfStatus, Snapshot};
 use crate::scheduler::{Event, Scheduler};
+use crate::server::{self, auth::Auth};
 use crate::state::MonitorState;
 use crate::storage::log::LogWriter;
 use crate::storage::{replay, statefile};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Pages are re-rendered at least this often even if nothing changed, so
+/// "last updated" and durations stay current.
+const RENDER_AT_LEAST_EVERY: Duration = Duration::from_secs(600);
 
 /// Everything the event loop owns.
 struct Service {
@@ -30,7 +36,7 @@ struct Service {
     data_dir: PathBuf,
 }
 
-pub fn run(config: Config) -> Result<(), String> {
+pub fn run(mut config: Config) -> Result<(), String> {
     let stop = Arc::new(AtomicBool::new(false));
     for signal in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
         signal_hook::flag::register(signal, stop.clone())
@@ -49,6 +55,16 @@ pub fn run(config: Config) -> Result<(), String> {
     let state_interval = g.storage.state_interval.0;
     let (workers, max_queue) = (g.scheduler.workers as usize, g.scheduler.max_queue as usize);
     let log_dir = g.storage.log_dir.clone();
+    let render_interval = g.pages.render_interval.0;
+    let pages = Arc::new(std::mem::take(&mut config.pages));
+    let tz = timezone(&config.global.pages.timezone);
+    let css = Renderer::css(config.global.pages.custom_css.as_deref())?;
+    let (auto_refresh_s, recent_checks) = (
+        config.global.pages.auto_refresh.0.as_secs(),
+        config.global.pages.recent_checks as usize,
+    );
+    let output_dir = config.global.pages.output_dir.clone();
+    let server_options = server_options(&config, &pages)?;
     let mut service = Service::open(config)?;
     let enabled = service
         .monitors
@@ -70,8 +86,33 @@ pub fn run(config: Config) -> Result<(), String> {
         log_dir.display()
     );
 
+    let published: render::Published = Arc::default();
+    let render_ms = Arc::new(AtomicU64::new(0));
+    let (snapshot_tx, snapshot_rx) = mpsc::channel();
+    let renderer = Renderer {
+        pages,
+        monitors: service.monitors.clone(),
+        tz,
+        auto_refresh_s,
+        recent_checks,
+        css,
+        output_dir: output_dir.clone(),
+    };
+    render::spawn(renderer, snapshot_rx, published.clone(), render_ms.clone());
+    if let Some(options) = server_options {
+        let listen = options.listen;
+        server::start(options, published)?;
+        eprintln!(
+            "serving status pages on http://{listen}/ (pages also in {})",
+            output_dir.display()
+        );
+    }
+
     let (tx, rx) = mpsc::channel();
     let scheduler = Scheduler::start(service.monitors.clone(), workers, max_queue, tx);
+    let started = clock::unix_seconds(SystemTime::now());
+    let mut next_render = Instant::now();
+    let mut last_render: Option<(Vec<MonitorView>, Instant)> = None;
     let mut jumps = JumpDetector::new(SystemTime::now(), Instant::now());
     let mut next_flush = Instant::now() + flush_interval;
     let mut next_state_save = Instant::now() + state_interval;
@@ -96,6 +137,27 @@ pub fn run(config: Config) -> Result<(), String> {
         if now >= next_state_save {
             service.save_states();
             next_state_save = now + state_interval;
+        }
+        // Render when the checks are idle, but never more than one interval late.
+        if now >= next_render
+            && (scheduler.queue_len() == 0 || now >= next_render + render_interval)
+        {
+            let mut snap = service.snapshot();
+            let unchanged = last_render.as_ref().is_some_and(|(views, at)| {
+                *views == snap.monitors && now.duration_since(*at) < RENDER_AT_LEAST_EVERY
+            });
+            if !unchanged {
+                snap.status = SelfStatus {
+                    started,
+                    queue_len: scheduler.queue_len(),
+                    workers: workers as u32,
+                    skipped_24h: snap.monitors.iter().map(|v| v.skipped_24h).sum(),
+                    last_render_ms: render_ms.load(Ordering::Relaxed),
+                };
+                last_render = Some((snap.monitors.clone(), now));
+                let _ = snapshot_tx.send(snap);
+            }
+            next_render = now + render_interval;
         }
     }
 
@@ -130,6 +192,48 @@ pub fn rebuild_state(config: &Config) -> Result<(), String> {
         g.storage.log_dir.display()
     );
     Ok(())
+}
+
+/// Options for the built-in server, or `None` if it is disabled.
+fn server_options(
+    config: &Config,
+    pages: &[crate::config::pages::Page],
+) -> Result<Option<server::Options>, String> {
+    let s = &config.global.server;
+    if !s.enabled {
+        return Ok(None);
+    }
+    let auth = s.htpasswd_file.as_deref().map(Auth::load).transpose()?;
+    let default_page = config
+        .global
+        .pages
+        .default_page
+        .as_deref()
+        .and_then(|id| pages.iter().find(|p| p.id == id))
+        .or_else(|| pages.iter().find(|p| p.public))
+        .map(|p| {
+            if p.public {
+                format!("/{}/", p.id)
+            } else {
+                format!("/private/{}/", p.id)
+            }
+        });
+    Ok(Some(server::Options {
+        listen: s.listen,
+        hostnames: s.hostnames.iter().map(|h| h.to_ascii_lowercase()).collect(),
+        default_page,
+        auth,
+    }))
+}
+
+fn timezone(name: &str) -> jiff::tz::TimeZone {
+    if name == "UTC" {
+        return jiff::tz::TimeZone::UTC;
+    }
+    jiff::tz::TimeZone::get(name).unwrap_or_else(|_| {
+        eprintln!("warning: time zone '{name}' not found; using UTC");
+        jiff::tz::TimeZone::UTC
+    })
 }
 
 fn new_histories(config: &Config) -> HashMap<String, History> {
@@ -233,21 +337,53 @@ impl Service {
             Event::Skipped {
                 monitor,
                 count,
+                paused,
                 time,
             } => {
                 let id = self.monitors[monitor].id.as_str();
                 let count_text = count.to_string();
+                let msg = if paused { "paused" } else { "queue full" };
                 let fields = [
                     ("monitor", id),
                     ("result", "SKIPPED"),
                     ("count", count_text.as_str()),
-                    ("msg", "queue full"),
+                    ("msg", msg),
                 ];
                 self.log.record(time, &fields);
                 if let Some(h) = self.histories.get_mut(id) {
                     h.record_skip(clock::unix_seconds(time), count);
                 }
             }
+            Event::Paused { seconds, time } => {
+                let duration = seconds.to_string();
+                self.log
+                    .record(time, &[("event", "PAUSED"), ("duration_s", &duration)]);
+                eprintln!(
+                    "warning: uptime-kinomi did not run for {seconds} s (system paused or frozen)"
+                );
+            }
+        }
+    }
+
+    /// Page data for the renderer (the self status is filled in by the caller).
+    fn snapshot(&self) -> Snapshot {
+        let now = clock::unix_seconds(SystemTime::now());
+        let empty = History::new(1, 1);
+        let monitors = self
+            .monitors
+            .iter()
+            .map(|m| MonitorView::new(self.histories.get(&m.id).unwrap_or(&empty), now))
+            .collect();
+        Snapshot {
+            now,
+            monitors,
+            status: SelfStatus {
+                started: now,
+                queue_len: 0,
+                workers: 0,
+                skipped_24h: 0,
+                last_render_ms: 0,
+            },
         }
     }
 

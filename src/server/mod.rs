@@ -1,0 +1,485 @@
+//! The built-in HTTP server (SPEC.md §9): serves the generated pages from
+//! memory, protects private pages with Basic Auth, and nothing else.
+//!
+//! Deliberately small: GET/HEAD only (POST only for /push/, milestone M3),
+//! request bodies are never read, one request per connection, strict limits
+//! and timeouts, fixed thread pool. TLS is the reverse proxy's job.
+
+pub mod auth;
+
+use std::io::{self, Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
+
+use crate::render::Published;
+use auth::{Auth, Verdict};
+
+const MAX_HEAD_BYTES: usize = 8 * 1024;
+const MAX_HEADERS: usize = 32;
+const READ_TIMEOUT: Duration = Duration::from_secs(5);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+const HANDLERS: usize = 4;
+/// Connections waiting for a handler; more are closed at once.
+const BACKLOG: usize = 12;
+
+const CSP: &str = "default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+pub struct Options {
+    pub listen: SocketAddr,
+    /// Allowed Host header values (lowercase); empty = any.
+    pub hostnames: Vec<String>,
+    /// URL path of the page served at "/", e.g. "/home/".
+    pub default_page: Option<String>,
+    pub auth: Option<Auth>,
+}
+
+pub struct Response {
+    pub status: u16,
+    pub headers: Vec<(&'static str, String)>,
+    pub body: Arc<Vec<u8>>,
+}
+
+impl Response {
+    fn text(status: u16, text: &str) -> Self {
+        Response {
+            status,
+            headers: vec![("Content-Type", "text/plain; charset=utf-8".into())],
+            body: Arc::new(text.as_bytes().to_vec()),
+        }
+    }
+
+    fn redirect(status: u16, location: String) -> Self {
+        let mut r = Response::text(status, "");
+        r.headers.push(("Location", location));
+        r
+    }
+}
+
+/// Bind and start serving. Errors (e.g. port in use) are returned at once.
+pub fn start(options: Options, published: Published) -> Result<(), String> {
+    let listener = TcpListener::bind(options.listen)
+        .map_err(|e| format!("cannot listen on {}: {e}", options.listen))?;
+    let options = Arc::new(options);
+    let (tx, rx): (SyncSender<TcpStream>, Receiver<TcpStream>) = mpsc::sync_channel(BACKLOG);
+    let rx = Arc::new(Mutex::new(rx));
+    for n in 0..HANDLERS {
+        let (rx, options, published) = (rx.clone(), options.clone(), published.clone());
+        thread::Builder::new()
+            .name(format!("http-{n}"))
+            .spawn(move || {
+                loop {
+                    let stream = match rx.lock().unwrap_or_else(|e| e.into_inner()).recv() {
+                        Ok(stream) => stream,
+                        Err(_) => return,
+                    };
+                    let _ = serve(stream, &options, &published);
+                }
+            })
+            .map_err(|e| format!("cannot start the server: {e}"))?;
+    }
+    thread::Builder::new()
+        .name("http-accept".into())
+        .spawn(move || {
+            for stream in listener.incoming().flatten() {
+                match tx.try_send(stream) {
+                    Ok(()) => {}
+                    // Overloaded: close the connection instead of queueing.
+                    Err(TrySendError::Full(_)) => {}
+                    Err(TrySendError::Disconnected(_)) => return,
+                }
+            }
+        })
+        .map_err(|e| format!("cannot start the server: {e}"))?;
+    Ok(())
+}
+
+fn serve(mut stream: TcpStream, options: &Options, published: &Published) -> io::Result<()> {
+    stream.set_read_timeout(Some(READ_TIMEOUT))?;
+    stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
+    let (response, head_only) = match read_head(&mut stream)? {
+        Some(head) => match parse_request(&head) {
+            Some(req) => {
+                let site = published.read().map(|s| s.clone()).unwrap_or_default();
+                let head_only = req.method == "HEAD";
+                (route(&req, options, &site), head_only)
+            }
+            None => (Response::text(400, "Bad Request\n"), false),
+        },
+        None => (
+            Response::text(431, "Request Header Fields Too Large\n"),
+            false,
+        ),
+    };
+    write_response(&mut stream, &response, head_only)
+}
+
+/// Read until the end of the request head. `None` if it is too large.
+fn read_head(stream: &mut TcpStream) -> io::Result<Option<Vec<u8>>> {
+    let mut head = Vec::with_capacity(1024);
+    let mut buf = [0u8; 1024];
+    loop {
+        let n = stream.read(&mut buf)?;
+        if n == 0 {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+        head.extend_from_slice(&buf[..n]);
+        if head.windows(4).any(|w| w == b"\r\n\r\n") {
+            return Ok(Some(head));
+        }
+        if head.len() >= MAX_HEAD_BYTES {
+            return Ok(None);
+        }
+    }
+}
+
+pub struct Request {
+    pub method: String,
+    pub path: String,
+    pub host: Option<String>,
+    pub authorization: Option<String>,
+}
+
+fn parse_request(head: &[u8]) -> Option<Request> {
+    let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
+    let mut req = httparse::Request::new(&mut headers);
+    if !matches!(req.parse(head), Ok(httparse::Status::Complete(_))) {
+        return None;
+    }
+    let header = |name: &str| {
+        req.headers
+            .iter()
+            .find(|h| h.name.eq_ignore_ascii_case(name))
+            .and_then(|h| std::str::from_utf8(h.value).ok())
+            .map(str::to_string)
+    };
+    Some(Request {
+        method: req.method?.to_string(),
+        path: req.path?.to_string(),
+        host: header("host"),
+        authorization: header("authorization"),
+    })
+}
+
+/// Decide the response. Pure function of the request and the current site.
+pub fn route(req: &Request, options: &Options, site: &crate::render::Site) -> Response {
+    let is_push = req.path.starts_with("/push/");
+    match req.method.as_str() {
+        "GET" | "HEAD" => {}
+        "POST" if is_push => {}
+        _ => {
+            let mut r = Response::text(405, "Method Not Allowed\n");
+            r.headers.push(("Allow", "GET, HEAD".into()));
+            return r;
+        }
+    }
+    if !host_allowed(req.host.as_deref(), &options.hostnames) {
+        return Response::text(421, "Misdirected Request\n");
+    }
+    let Some(path) = clean_path(&req.path) else {
+        return Response::text(400, "Bad Request\n");
+    };
+
+    if path == "/" {
+        return match &options.default_page {
+            // Relative, so it also works below a proxy prefix like /status/.
+            Some(page) => Response::redirect(302, page.trim_start_matches('/').to_string()),
+            None => Response::text(404, "Not Found\n"),
+        };
+    }
+    if path == "/healthz" {
+        return Response::text(200, "ok\n");
+    }
+    if is_push {
+        return Response::text(404, "Not Found\n"); // push monitors: milestone M3
+    }
+
+    // Everything below /private/ needs a login, even if it does not exist,
+    // so the names of private pages are not revealed.
+    let private = path == "/private" || path.starts_with("/private/");
+    if private {
+        let verdict = options
+            .auth
+            .as_ref()
+            .map_or(Verdict::Denied, |a| a.check(req.authorization.as_deref()));
+        match verdict {
+            Verdict::Allowed => {}
+            Verdict::Denied => {
+                let mut r = Response::text(401, "Unauthorized\n");
+                r.headers.push((
+                    "WWW-Authenticate",
+                    "Basic realm=\"uptime-kinomi\", charset=\"UTF-8\"".into(),
+                ));
+                return r;
+            }
+            Verdict::Throttled => {
+                let mut r = Response::text(429, "Too Many Requests\n");
+                r.headers.push(("Retry-After", "1".into()));
+                return r;
+            }
+        }
+    }
+
+    if let Some(file) = site.files.get(&path) {
+        let cache = if file.private {
+            "private, no-store"
+        } else if file.content_type.starts_with("text/css") {
+            "public, max-age=300"
+        } else {
+            "no-cache"
+        };
+        return Response {
+            status: 200,
+            headers: vec![
+                ("Content-Type", file.content_type.into()),
+                ("Cache-Control", cache.into()),
+            ],
+            body: Arc::new(file.body.clone()),
+        };
+    }
+    // "/home" → "home/" (relative to the parent).
+    if !path.ends_with('/') && site.files.contains_key(&format!("{path}/")) {
+        let last = path.rsplit('/').next().unwrap_or_default();
+        return Response::redirect(301, format!("{last}/"));
+    }
+    Response::text(404, "Not Found\n")
+}
+
+/// Compare the Host header (without port) with the allowed names.
+fn host_allowed(host: Option<&str>, allowed: &[String]) -> bool {
+    if allowed.is_empty() {
+        return true;
+    }
+    let Some(host) = host else {
+        return false;
+    };
+    let name = if let Some(v6) = host.strip_prefix('[') {
+        v6.split(']').next().unwrap_or_default()
+    } else {
+        host.rsplit_once(':').map_or(host, |(name, port)| {
+            if port.bytes().all(|b| b.is_ascii_digit()) {
+                name
+            } else {
+                host
+            }
+        })
+    };
+    allowed.iter().any(|a| a.eq_ignore_ascii_case(name))
+}
+
+/// Path without query, percent-decoded once, with no tricks allowed.
+fn clean_path(raw: &str) -> Option<String> {
+    let path = raw.split(['?', '#']).next().unwrap_or_default();
+    if !path.starts_with('/') || path.len() > 512 {
+        return None;
+    }
+    let bytes = path.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = path.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    let decoded = String::from_utf8(out).ok()?;
+    let bad = decoded.contains("..")
+        || decoded.contains("//")
+        || decoded
+            .bytes()
+            .any(|b| b == b'\\' || b == 0 || b.is_ascii_control());
+    (!bad).then_some(decoded)
+}
+
+fn reason(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        301 => "Moved Permanently",
+        302 => "Found",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        421 => "Misdirected Request",
+        429 => "Too Many Requests",
+        431 => "Request Header Fields Too Large",
+        _ => "Error",
+    }
+}
+
+fn write_response(stream: &mut TcpStream, r: &Response, head_only: bool) -> io::Result<()> {
+    let mut head = format!("HTTP/1.1 {} {}\r\n", r.status, reason(r.status));
+    let security = [
+        ("Content-Security-Policy", CSP),
+        ("X-Content-Type-Options", "nosniff"),
+        ("Referrer-Policy", "no-referrer"),
+        ("X-Frame-Options", "DENY"),
+        ("Connection", "close"),
+    ];
+    for (name, value) in security {
+        head.push_str(&format!("{name}: {value}\r\n"));
+    }
+    for (name, value) in &r.headers {
+        head.push_str(&format!("{name}: {value}\r\n"));
+    }
+    head.push_str(&format!("Content-Length: {}\r\n\r\n", r.body.len()));
+    stream.write_all(head.as_bytes())?;
+    if !head_only {
+        stream.write_all(&r.body)?;
+    }
+    stream.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::encoding::base64;
+    use crate::render::{File, Site};
+    use std::sync::RwLock;
+
+    fn site() -> Site {
+        let mut site = Site::default();
+        let file = |body: &str, private| {
+            Arc::new(File {
+                content_type: "text/html; charset=utf-8",
+                body: body.as_bytes().to_vec(),
+                private,
+            })
+        };
+        site.files
+            .insert("/home/".into(), file("public page", false));
+        site.files
+            .insert("/private/all/".into(), file("private page", true));
+        site
+    }
+
+    fn options() -> Options {
+        let line = auth::htpasswd_line("admin", b"pw", [1; 16]);
+        Options {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            hostnames: vec!["status.example.org".into()],
+            default_page: Some("/home/".into()),
+            auth: Some(Auth::parse(&line).unwrap()),
+        }
+    }
+
+    fn get(path: &str, auth: Option<&str>) -> Response {
+        let req = Request {
+            method: "GET".into(),
+            path: path.into(),
+            host: Some("status.example.org".into()),
+            authorization: auth.map(|a| format!("Basic {}", base64(a.as_bytes()))),
+        };
+        route(&req, &options(), &site())
+    }
+
+    fn header<'a>(r: &'a Response, name: &str) -> Option<&'a str> {
+        r.headers
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    #[test]
+    fn public_routes() {
+        let r = get("/home/", None);
+        assert_eq!((r.status, r.body.as_slice()), (200, &b"public page"[..]));
+        assert_eq!(header(&r, "Cache-Control"), Some("no-cache"));
+        let r = get("/", None);
+        assert_eq!((r.status, header(&r, "Location")), (302, Some("home/")));
+        let r = get("/home", None);
+        assert_eq!((r.status, header(&r, "Location")), (301, Some("home/")));
+        assert_eq!(get("/home/?x=1", None).status, 200);
+        assert_eq!(get("/nope/", None).status, 404);
+        assert_eq!(get("/healthz", None).status, 200);
+        assert_eq!(get("/push/abc", None).status, 404);
+    }
+
+    #[test]
+    fn private_routes_need_login() {
+        let r = get("/private/all/", None);
+        assert_eq!(r.status, 401);
+        assert!(header(&r, "WWW-Authenticate").is_some());
+        // Unknown private paths also ask for a login (names are not revealed).
+        assert_eq!(get("/private/secret-name/", None).status, 401);
+        let r = get("/private/all/", Some("admin:pw"));
+        assert_eq!((r.status, r.body.as_slice()), (200, &b"private page"[..]));
+        assert_eq!(header(&r, "Cache-Control"), Some("private, no-store"));
+        assert_eq!(get("/private/all/", Some("admin:wrong")).status, 401);
+        assert_eq!(get("/private/nope/", Some("admin:pw")).status, 404);
+    }
+
+    #[test]
+    fn rejected_requests() {
+        for path in [
+            "/home/../private/all/",
+            "/%2e%2e/x",
+            "/home/%00",
+            "//home/",
+            "/a\\b",
+            "home/",
+            "/%zz",
+            "/%c3",
+        ] {
+            assert_eq!(get(path, None).status, 400, "{path}");
+        }
+        let mut req = Request {
+            method: "DELETE".into(),
+            path: "/home/".into(),
+            host: Some("status.example.org".into()),
+            authorization: None,
+        };
+        assert_eq!(route(&req, &options(), &site()).status, 405);
+        req.method = "POST".into();
+        assert_eq!(route(&req, &options(), &site()).status, 405);
+        req.method = "GET".into();
+        req.host = Some("evil.example.com".into());
+        assert_eq!(route(&req, &options(), &site()).status, 421);
+        req.host = None;
+        assert_eq!(route(&req, &options(), &site()).status, 421);
+    }
+
+    #[test]
+    fn hosts() {
+        let allowed = vec!["status.example.org".to_string()];
+        assert!(host_allowed(Some("status.example.org"), &allowed));
+        assert!(host_allowed(Some("STATUS.example.org:8080"), &allowed));
+        assert!(!host_allowed(Some("status.example.org.evil.com"), &allowed));
+        assert!(host_allowed(Some("anything"), &[]));
+        assert!(host_allowed(Some("[::1]:8080"), &["::1".to_string()]));
+    }
+
+    #[test]
+    fn over_tcp() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let mut opts = options();
+        opts.listen = addr;
+        let published: Published = Arc::new(RwLock::new(Arc::new(site())));
+        start(opts, published).unwrap();
+        let request = |text: &str| -> String {
+            let mut s = TcpStream::connect(addr).unwrap();
+            s.write_all(text.as_bytes()).unwrap();
+            let mut out = String::new();
+            let _ = s.read_to_string(&mut out);
+            out
+        };
+        let ok = request("GET /home/ HTTP/1.1\r\nHost: status.example.org\r\n\r\n");
+        assert!(ok.starts_with("HTTP/1.1 200 OK\r\n"), "{ok}");
+        assert!(ok.contains("Content-Security-Policy: default-src 'none';"));
+        assert!(ok.contains("X-Content-Type-Options: nosniff\r\n"));
+        assert!(ok.contains("Connection: close\r\n"));
+        assert!(ok.ends_with("\r\n\r\npublic page"));
+        let head = request("HEAD /home/ HTTP/1.1\r\nHost: status.example.org\r\n\r\n");
+        assert!(head.contains("Content-Length: 11\r\n") && !head.contains("public page"));
+        let garbage = request("garbage\r\n\r\n");
+        assert!(garbage.starts_with("HTTP/1.1 400"), "{garbage}");
+    }
+}

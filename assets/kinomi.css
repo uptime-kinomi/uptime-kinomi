@@ -1,0 +1,107 @@
+/* uptime-kinomi default style sheet. A custom.css (pages.custom_css) is
+   appended after this file and can override anything. No external fonts or
+   resources: status pages must work offline and with a strict CSP. */
+
+:root {
+  --bg: #f7f7f8;
+  --card: #ffffff;
+  --text: #1d1d22;
+  --muted: #62626c;
+  --border: #e2e2e7;
+  --up: #1f9d55;
+  --warn: #c98a00;
+  --pending: #d97706;
+  --down: #d1263a;
+  --unknown: #9a9aa3;
+  --skipped: #d0d0d6;
+  --accent: #c51a4a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141418;
+    --card: #1e1e24;
+    --text: #ececf1;
+    --muted: #a2a2ad;
+    --border: #2f2f38;
+    --up: #34c472;
+    --warn: #e6b422;
+    --pending: #f59e0b;
+    --down: #f0475c;
+    --unknown: #6e6e78;
+    --skipped: #3a3a44;
+    --accent: #f25c84;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+
+header h1 { margin: 0; font-size: 1.6rem; }
+header p { margin: 4px 0 0; color: var(--muted); }
+
+nav { margin: 16px 0 0; display: flex; flex-wrap: wrap; gap: 8px 16px; }
+nav a { color: var(--accent); text-decoration: none; }
+nav a[aria-current="page"] { color: var(--text); font-weight: 600; }
+
+.banner {
+  margin: 20px 0;
+  padding: 14px 18px;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+.banner-up { background: var(--up); }
+.banner-partial { background: var(--pending); }
+.banner-down { background: var(--down); }
+.banner-unknown { background: var(--unknown); }
+
+section.group { margin: 24px 0; }
+section.group h2 { font-size: 1.1rem; margin: 0 0 8px; color: var(--muted); }
+
+ul.monitors { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+ul.monitors > li { padding: 12px 16px; border-top: 1px solid var(--border); }
+ul.monitors > li:first-child { border-top: 0; }
+
+.row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.name { font-weight: 600; flex: 1 1 auto; }
+.state { font-size: 0.8rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; color: #fff; }
+.state-up { background: var(--up); }
+.state-warn { background: var(--warn); }
+.state-pending { background: var(--pending); }
+.state-down { background: var(--down); }
+.state-unknown, .state-paused { background: var(--unknown); }
+.uptime { color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+
+.beats { display: flex; gap: 2px; margin: 8px 0 4px; height: 22px; }
+.beat { flex: 1 1 0; max-width: 10px; border-radius: 2px; background: var(--skipped); }
+.beat-up { background: var(--up); }
+.beat-warn { background: var(--warn); }
+.beat-fail { background: var(--pending); }
+.beat-down { background: var(--down); }
+.beat-empty { background: transparent; border: 1px dashed var(--border); }
+
+.details { color: var(--muted); font-size: 0.85rem; }
+.details span + span::before { content: " · "; }
+.private { font-size: 0.85rem; margin-top: 4px; overflow-wrap: anywhere; }
+.private code { font-size: 0.85em; }
+
+table.self { border-collapse: collapse; font-size: 0.9rem; }
+table.self th { text-align: left; padding: 2px 16px 2px 0; color: var(--muted); font-weight: normal; }
+
+footer { margin-top: 32px; color: var(--muted); font-size: 0.85rem; }
+footer a { color: inherit; }
+
+@media (max-width: 520px) {
+  .beat { max-width: none; }
+  .uptime { flex-basis: 100%; }
+}

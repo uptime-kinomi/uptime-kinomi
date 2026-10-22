@@ -281,9 +281,9 @@ pub fn parse(
             p.error(format!(
                 "pages.timezone '{timezone}' is not an IANA time zone like Europe/Berlin"
             ));
-        } else if timezone != "UTC" && !Path::new("/usr/share/zoneinfo").join(&timezone).is_file() {
+        } else if timezone != "UTC" && jiff::tz::TimeZone::get(&timezone).is_err() {
             p.warning(format!(
-                "pages.timezone '{timezone}' not found in /usr/share/zoneinfo"
+                "pages.timezone '{timezone}' not found in the system time zone database; UTC is used"
             ));
         }
         let custom_css = s.custom_css.map(|f| resolve_path(config_dir, &f));

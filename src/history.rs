@@ -152,7 +152,9 @@ impl History {
         } else {
             bucket.up = 1;
         }
-        if let Some(ms) = latency_ms {
+        // The response time of failed checks (timeouts, refused
+        // connections) says nothing about the service.
+        if let Some(ms) = latency_ms.filter(|_| matches!(result, LogResult::Up | LogResult::Warn)) {
             bucket.latency_sum_ms = u64::from(ms);
             bucket.timed = 1;
         }
@@ -276,8 +278,9 @@ mod tests {
         assert_eq!(beats, [Beat::Fail, Beat::Down, Beat::Skipped]);
 
         let day = h.last_hours(T + 180, 24);
-        assert_eq!((day.up, day.down, day.skipped, day.timed), (2, 1, 2, 2));
-        assert_eq!(day.avg_ms(), Some(2550));
+        // Only the successful check counts for the response time.
+        assert_eq!((day.up, day.down, day.skipped, day.timed), (2, 1, 2, 1));
+        assert_eq!(day.avg_ms(), Some(100));
         // PENDING counts as up.
         assert_eq!(uptime_percent(&day).map(|p| p.round()), Some(67.0));
     }

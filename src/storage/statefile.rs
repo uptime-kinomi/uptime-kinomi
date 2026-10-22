@@ -316,7 +316,7 @@ mod tests {
         assert!(text.contains("monitor = \"blog\"\n"));
         assert!(text.contains("state = \"DOWN\"\n"));
         assert!(text.contains("  \"2026-10-22T14:23:11Z DOWN -\",\n"));
-        assert!(text.contains("\"2026-10-22T13\" = { up = 1, down = 0, skipped = 0, maint = 0, avg_ms = 5000, timed = 1 }"));
+        assert!(text.contains("\"2026-10-22T13\" = { up = 1, down = 0, skipped = 0, maint = 0, avg_ms = 0, timed = 0 }"));
         assert!(text.contains("[daily]\n\"2026-10-20\" = { up = 1,"));
     }
 

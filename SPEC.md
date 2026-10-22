@@ -363,6 +363,8 @@ All timestamps stored are **UTC, RFC 3339, second precision**.
 2026-10-22T14:06:00Z monitor=nas result=SKIPPED count=1 msg="queue full"
 2026-10-22T14:06:02Z monitor=backup-job result=UP msg="push"
 2026-10-22T14:07:00Z event=CLOCK_JUMP delta_s=-31536000
+2026-10-22T18:26:13Z event=PAUSED duration_s=11756
+2026-10-22T18:26:13Z monitor=nas result=SKIPPED count=196 msg="paused"
 2026-10-22T14:07:00Z event=START version=0.1.0 monitors=42
 ```
 
@@ -426,7 +428,8 @@ tags = ["family"]             # alternatively select by tag
 # monitors = ["*"]
 ```
 
-At least one page is needed. All monitors listed must exist (`check-config`).
+All monitors listed must exist (`check-config`). Without any page,
+`check-config` warns that no status pages will be generated.
 
 ### 8.2 Content (similar to uptime-kuma)
 Per monitor:
@@ -434,7 +437,8 @@ Per monitor:
 - heartbeat bar of the last `recent_checks` checks (CSS, hover via `title`
   attribute);
 - uptime percentage over **24 h** and **30 d**;
-- average response time over 24 h (active monitors);
+- average response time over 24 h (successful checks only: the time a
+  timeout or a refused connection takes says nothing about the service);
 - certificate expiry date (HTTPS monitors with TLS checks).
 
 Per page: overall status banner ("All systems operational" / "Partial outage" /
@@ -447,14 +451,22 @@ kinomi self-status (version, uptime, queue length, skipped checks in the last
 
 ### 8.3 Generated files
 ```
-{output_dir}/
-├── assets/kinomi.css               default CSS (+ custom.css appended)
-├── public/{page}/index.html
-├── public/{page}/status.json       machine-readable status of this page
-├── public/{page}/feed.atom         incidents + state changes (Atom)
-├── public/{page}/badge/{monitor}.svg   if show_badges
-└── private/{page}/...              same structure, for public = false
+{output_dir}/                          URL path (built-in server)
+├── public/assets/kinomi.css           /assets/kinomi.css
+├── public/{page}/index.html           /{page}/
+├── public/{page}/status.json          /{page}/status.json        (M4)
+├── public/{page}/feed.atom            /{page}/feed.atom          (M4)
+├── public/{page}/badge/{monitor}.svg  /{page}/badge/{monitor}.svg (M4, if show_badges)
+├── private/assets/kinomi.css          /private/assets/kinomi.css
+└── private/{page}/...                 /private/{page}/...        (public = false)
 ```
+- The file tree mirrors the URL space, so in mode B (§9.1) a proxy serves
+  `public/` at `/` and `private/` at `/private/` with no rewriting. All links
+  are relative, so pages also work below a proxy prefix such as `/status/`.
+- Directories are created with mode `0750` and files `0640`, so a web server
+  group can read them. Page directories of removed pages are deleted at
+  startup (only directories that contain nothing but `index.html`).
+- Page IDs `assets`, `private`, `push`, `healthz` and `metrics` are reserved.
 - All files are written atomically (temp file + rename) and **only rewritten
   when their content changed**.
 - HTML: valid HTML5, `<meta http-equiv="refresh">` per `auto_refresh`, dark mode
@@ -464,7 +476,9 @@ kinomi self-status (version, uptime, queue length, skipped checks in the last
   (trusted admin input).
 
 ### 8.4 Rendering
-- A renderer thread runs every `render_interval`, only if something changed.
+- A renderer thread runs every `render_interval`, only if something changed
+  (and at least every 10 minutes, so "last updated" and durations stay
+  current). Pages are also served from memory by the built-in server.
 - It waits until the check queue is empty (at most one `render_interval`) and
   yields between pages, so rendering does not delay checks. The shipped
   systemd unit additionally sets `Nice=10`.
@@ -540,6 +554,12 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
   Scheduling uses the monotonic clock. A wall-clock jump of more than 60 s is
   logged as `event=CLOCK_JUMP`. If the system time is before the build date of
   the binary, kinomi does not write log lines and waits until the clock is plausible.
+- A pause of the whole process (standby of a VM host, frozen system: the
+  dispatcher, which wakes at least once per second, did not run for more
+  than 30 s) is logged once as `event=PAUSED duration_s=N`; the checks missed
+  meanwhile are logged as `result=SKIPPED msg="paused"` instead of
+  `"queue full"`. Where the monotonic clock stops during suspend (bare
+  metal), the wall-clock jump is logged as `event=CLOCK_JUMP` instead.
 
 ### 10.2 SD card friendliness
 - Buffered log writes (§7.1), state files every 10 min (§7.2), pages only

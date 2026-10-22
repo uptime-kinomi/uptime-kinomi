@@ -6,11 +6,14 @@
 
 mod clock;
 mod config;
+mod encoding;
 mod history;
 mod monitors;
 mod paths;
+mod render;
 mod run;
 mod scheduler;
+mod server;
 mod state;
 mod storage;
 #[cfg(test)]
@@ -92,10 +95,8 @@ fn main() -> ExitCode {
         Command::SelfUpdate(options) => self_update(&options),
         Command::Run => run(args.config_dir.as_deref()),
         Command::RebuildState => rebuild_state(args.config_dir.as_deref()),
-        Command::GenToken | Command::HashPassword(_) => {
-            eprintln!("error: this command is not implemented yet (see SPEC.md §13, roadmap)");
-            ExitCode::from(EXIT_RUNTIME_ERROR)
-        }
+        Command::GenToken => gen_token(),
+        Command::HashPassword(user) => hash_password(&user),
     }
 }
 
@@ -244,6 +245,78 @@ fn run(cli_dir: Option<&Path>) -> ExitCode {
     };
     match run::run(config) {
         Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::from(EXIT_RUNTIME_ERROR)
+        }
+    }
+}
+
+fn random_bytes<const N: usize>() -> Result<[u8; N], String> {
+    use ring::rand::SecureRandom;
+    let mut bytes = [0u8; N];
+    ring::rand::SystemRandom::new()
+        .fill(&mut bytes)
+        .map_err(|_| "no random numbers available from the operating system".to_string())?;
+    Ok(bytes)
+}
+
+/// `gen-token`: 32 random bytes as base64url (43 characters, SPEC.md §4.6).
+fn gen_token() -> ExitCode {
+    match random_bytes::<32>() {
+        Ok(bytes) => {
+            println!("{}", encoding::base64url(&bytes));
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::from(EXIT_RUNTIME_ERROR)
+        }
+    }
+}
+
+/// `hash-password USER`: print an htpasswd line (SPEC.md §9.3). The password
+/// is read from stdin if it is not a terminal; otherwise a random password is
+/// generated and shown once on stderr.
+fn hash_password(user: &str) -> ExitCode {
+    use std::io::{BufRead, IsTerminal};
+    let valid_user = !user.is_empty()
+        && user.len() <= 64
+        && !user.contains(':')
+        && !user.chars().any(char::is_control);
+    if !valid_user {
+        eprintln!("error: USER must be 1 to 64 characters without ':'");
+        return ExitCode::from(EXIT_CONFIG_ERROR);
+    }
+    let password = if std::io::stdin().is_terminal() {
+        let Ok(bytes) = random_bytes::<15>() else {
+            eprintln!("error: no random numbers available");
+            return ExitCode::from(EXIT_RUNTIME_ERROR);
+        };
+        let password = encoding::base64url(&bytes);
+        eprintln!("password for {user}: {password}");
+        password
+    } else {
+        let mut line = String::new();
+        if std::io::stdin().lock().read_line(&mut line).is_err() {
+            eprintln!("error: cannot read the password from stdin");
+            return ExitCode::from(EXIT_RUNTIME_ERROR);
+        }
+        let password = line.trim_end_matches(['\r', '\n']).to_string();
+        if password.is_empty() || password.len() > 72 {
+            eprintln!("error: the password must be 1 to 72 bytes (bcrypt limit)");
+            return ExitCode::from(EXIT_CONFIG_ERROR);
+        }
+        password
+    };
+    match random_bytes::<16>() {
+        Ok(salt) => {
+            println!(
+                "{}",
+                server::auth::htpasswd_line(user, password.as_bytes(), salt)
+            );
+            ExitCode::SUCCESS
+        }
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::from(EXIT_RUNTIME_ERROR)
