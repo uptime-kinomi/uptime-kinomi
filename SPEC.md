@@ -687,12 +687,18 @@ the matching public keys are compiled into kinomi.
 - **Release process:**
   1. Pushing a tag `vX.Y.Z` triggers the release workflow: build all targets,
      run the QEMU smoke tests, create `SHA256SUMS` and attestations, and
-     upload everything to a **draft** release (not visible as "latest").
+     upload everything to a **pre-release**. Its files are publicly
+     downloadable, but `self-update` ignores it: a pre-release is never
+     "latest", and without `SHA256SUMS.minisig` it is refused even with
+     `--release`.
   2. The maintainer runs `contrib/release/sign-release.sh vX.Y.Z` on their
-     own machine. It downloads the draft assets, verifies the attestations
-     and checksums, signs `SHA256SUMS` with
-     `minisign -S -t "uptime-kinomi X.Y.Z"`, uploads `SHA256SUMS.minisig` and
-     publishes the release.
+     own machine. It needs only `sh`, `curl` and `minisign`. It downloads the
+     assets, verifies the checksums (and the attestations if `gh` is
+     installed), signs `SHA256SUMS` with `minisign -S -t "uptime-kinomi X.Y.Z"`
+     and checks the signature against `keys/`.
+  3. The signature is uploaded and the release is marked as "latest": by the
+     script with a fine-grained `GITHUB_TOKEN` (this repository only,
+     "Contents: read and write"), or by hand in the browser.
 
   So a compromised GitHub account or CI can publish a release, but not one
   that any installed kinomi accepts.

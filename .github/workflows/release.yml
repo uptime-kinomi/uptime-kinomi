@@ -1,8 +1,10 @@
 name: Release
 
 # Pushing a tag vX.Y.Z builds and tests all binaries, creates SHA256SUMS and
-# build provenance attestations, and uploads everything to a DRAFT release.
-# The maintainer then signs SHA256SUMS offline and publishes the release with
+# build provenance attestations, and uploads everything to a PRE-RELEASE.
+# Its files are publicly downloadable, but self-update ignores it: it is not
+# "latest" and has no SHA256SUMS.minisig. The maintainer then signs
+# SHA256SUMS offline and publishes the release with
 # contrib/release/sign-release.sh (SPEC.md §12.1).
 
 on:
@@ -34,12 +36,12 @@ jobs:
     needs: version
     uses: ./.github/workflows/build.yml
 
-  draft:
-    name: draft release
+  prerelease:
+    name: unsigned pre-release
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: write # create the draft release
+      contents: write # create the pre-release
       id-token: write # sign attestations (Sigstore)
       attestations: write
     steps:
@@ -58,14 +60,14 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/uptime-kinomi-*
-      - name: Create draft release
+      - name: Create pre-release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
-            --draft \
+            --prerelease \
             --verify-tag \
             --title "uptime-kinomi ${TAG#v}" \
             --generate-notes

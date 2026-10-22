@@ -25,5 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (ureq + rustls + ring).
 - `version` now shows the exact target triple.
 - Release workflow: tag `vX.Y.Z` builds, tests and attests all binaries and
-  creates a draft release; `contrib/release/sign-release.sh` verifies, signs
-  and publishes it on the maintainer's machine.
+  creates an unsigned pre-release; `contrib/release/sign-release.sh`
+  (needs only curl and minisign) verifies, signs and publishes it on the
+  maintainer's machine.
