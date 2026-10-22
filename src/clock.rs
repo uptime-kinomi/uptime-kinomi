@@ -70,6 +70,40 @@ pub fn parse_date(text: &str) -> Option<i64> {
     (civil_from_days(days) == (y, m as u32, d as u32)).then_some(days)
 }
 
+/// Unix seconds of a strict `YYYY-MM-DDTHH:MM:SSZ` (as written by
+/// [`format_rfc3339`]).
+pub fn parse_rfc3339(text: &str) -> Option<i64> {
+    let (date, time) = text.split_once('T')?;
+    let time = time.strip_suffix('Z')?;
+    let b = time.as_bytes();
+    if b.len() != 8 || b[2] != b':' || b[5] != b':' {
+        return None;
+    }
+    let field = |r: std::ops::Range<usize>| -> Option<i64> {
+        let s = time.get(r)?;
+        s.bytes()
+            .all(|c| c.is_ascii_digit())
+            .then(|| s.parse().ok())?
+    };
+    let (h, m, s) = (field(0..2)?, field(3..5)?, field(6..8)?);
+    if h > 23 || m > 59 || s > 59 {
+        return None;
+    }
+    Some(parse_date(date)? * 86400 + h * 3600 + m * 60 + s)
+}
+
+/// `2026-10-22T13` for the hour containing `unix` (UTC).
+pub fn format_hour(unix: i64) -> String {
+    let mut text = format_rfc3339(from_unix(unix));
+    text.truncate(13);
+    text
+}
+
+/// Unix seconds of the start of an hour written by [`format_hour`].
+pub fn parse_hour(text: &str) -> Option<i64> {
+    parse_rfc3339(&format!("{text}:00:00Z")).filter(|_| text.len() == 13)
+}
+
 pub fn days_since_epoch(t: SystemTime) -> i64 {
     unix_seconds(t).div_euclid(86400)
 }
@@ -162,6 +196,27 @@ mod tests {
             assert_eq!(parse_date(bad), None, "{bad}");
         }
         assert!(parse_date("2028-02-29").is_some());
+    }
+
+    #[test]
+    fn rfc3339_round_trip() {
+        for secs in [0, 951_782_400, 1_792_678_991] {
+            assert_eq!(parse_rfc3339(&format_rfc3339(at(secs))), Some(secs as i64));
+        }
+        for bad in [
+            "",
+            "2026-10-22",
+            "2026-10-22T14:23:11",
+            "2026-10-22T24:00:00Z",
+            "2026-10-22T14:23:1Z",
+            "2026-10-22 14:23:11Z",
+            "2026-10-22T14:23:11+00:00",
+        ] {
+            assert_eq!(parse_rfc3339(bad), None, "{bad}");
+        }
+        assert_eq!(format_hour(1_792_678_991), "2026-10-22T14");
+        assert_eq!(parse_hour("2026-10-22T14"), Some(1_792_677_600));
+        assert_eq!(parse_hour("2026-10-22T14:00"), None);
     }
 
     #[test]

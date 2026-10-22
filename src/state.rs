@@ -55,10 +55,26 @@ pub struct MonitorState {
 }
 
 impl MonitorState {
+    #[cfg(test)]
     pub fn new(retries: u32) -> Self {
         MonitorState {
             state: State::Unknown,
             failures: 0,
+            retries,
+        }
+    }
+
+    /// Continue from a state restored from a state file or the log.
+    pub fn restore(retries: u32, state: State) -> Self {
+        let failures = match state {
+            // The next failure keeps it DOWN instead of starting over.
+            State::Down => retries.saturating_add(1),
+            State::Pending => 1,
+            _ => 0,
+        };
+        MonitorState {
+            state,
+            failures,
             retries,
         }
     }

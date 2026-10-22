@@ -6,6 +6,7 @@
 
 mod clock;
 mod config;
+mod history;
 mod monitors;
 mod paths;
 mod run;
@@ -90,7 +91,8 @@ fn main() -> ExitCode {
         Command::CheckConfig => check_config(args.config_dir.as_deref()),
         Command::SelfUpdate(options) => self_update(&options),
         Command::Run => run(args.config_dir.as_deref()),
-        Command::RebuildState | Command::GenToken | Command::HashPassword(_) => {
+        Command::RebuildState => rebuild_state(args.config_dir.as_deref()),
+        Command::GenToken | Command::HashPassword(_) => {
             eprintln!("error: this command is not implemented yet (see SPEC.md §13, roadmap)");
             ExitCode::from(EXIT_RUNTIME_ERROR)
         }
@@ -241,6 +243,26 @@ fn run(cli_dir: Option<&Path>) -> ExitCode {
         return ExitCode::from(EXIT_CONFIG_ERROR);
     };
     match run::run(config) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::from(EXIT_RUNTIME_ERROR)
+        }
+    }
+}
+
+fn rebuild_state(cli_dir: Option<&Path>) -> ExitCode {
+    let env = |key: &str| std::env::var_os(key);
+    let dir = paths::config_dir(cli_dir, &env, &|p| p.is_dir());
+    let (config, problems) = config::load(&dir, &env);
+    for problem in problems.all() {
+        eprintln!("{problem}");
+    }
+    let Some(config) = config else {
+        return ExitCode::from(EXIT_CONFIG_ERROR);
+    };
+    eprintln!("note: stop the service first, or it will overwrite the rebuilt files");
+    match run::rebuild_state(&config) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");

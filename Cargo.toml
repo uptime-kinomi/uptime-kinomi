@@ -25,6 +25,12 @@ rustls = { version = "0.23", default-features = false, features = ["std", "ring"
 signal-hook = { version = "0.4", default-features = false }
 # Mozilla CA roots for the certificate expiry check (already used by ureq).
 webpki-roots = "1"
+# Time zones for status pages, from the system tz database only.
+jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
+# bcrypt core for htpasswd (format handling is ours: no alloc, no 2nd getrandom).
+bcrypt = { version = "0.19", default-features = false }
+# Inbound HTTP request parsing for the built-in server.
+httparse = { version = "1", default-features = false, features = ["std"] }
 # Configuration files (parsing only, no TOML writer).
 serde = { version = "1", features = ["derive"] }
 toml = { version = "1", default-features = false, features = ["std", "serde", "parse"] }

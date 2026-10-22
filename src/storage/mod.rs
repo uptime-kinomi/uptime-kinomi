@@ -1,3 +1,5 @@
-//! Persistent data: the check log (SPEC.md §7). State files follow in M2.
+//! Persistent data (SPEC.md §7): the check log, state files, log replay.
 
 pub mod log;
+pub mod replay;
+pub mod statefile;

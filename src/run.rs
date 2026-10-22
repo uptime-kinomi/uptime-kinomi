@@ -1,6 +1,9 @@
-//! `uptime-kinomi run`: the long-running service.
+//! `uptime-kinomi run`: the long-running service, and `rebuild-state`.
 
-use std::fs;
+use std::collections::HashMap;
+use std::fs::{self, DirBuilder};
+use std::os::unix::fs::DirBuilderExt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -9,12 +12,23 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::clock::{self, JumpDetector};
 use crate::config::Config;
+use crate::history::History;
 use crate::monitors::Monitor;
 use crate::scheduler::{Event, Scheduler};
 use crate::state::MonitorState;
 use crate::storage::log::LogWriter;
+use crate::storage::{replay, statefile};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Everything the event loop owns.
+struct Service {
+    monitors: Arc<Vec<Monitor>>,
+    states: Vec<MonitorState>,
+    histories: HashMap<String, History>,
+    log: LogWriter,
+    data_dir: PathBuf,
+}
 
 pub fn run(config: Config) -> Result<(), String> {
     let stop = Arc::new(AtomicBool::new(false));
@@ -31,24 +45,18 @@ pub fn run(config: Config) -> Result<(), String> {
     }
 
     let g = &config.global;
-    let retention_days =
-        i64::try_from(g.storage.log_retention.0.as_secs() / 86400).unwrap_or(i64::MAX);
-    let mut log = LogWriter::open(&g.storage.log_dir, retention_days).map_err(|e| {
-        format!(
-            "cannot open log directory {}: {e}",
-            g.storage.log_dir.display()
-        )
-    })?;
     let flush_interval = g.storage.flush_interval.0;
+    let state_interval = g.storage.state_interval.0;
     let (workers, max_queue) = (g.scheduler.workers as usize, g.scheduler.max_queue as usize);
-
-    let monitors: Arc<Vec<Monitor>> = Arc::new(config.monitors);
-    let mut states: Vec<MonitorState> = monitors
+    let log_dir = g.storage.log_dir.clone();
+    let mut service = Service::open(config)?;
+    let enabled = service
+        .monitors
         .iter()
-        .map(|m| MonitorState::new(m.retries))
-        .collect();
-    let enabled = monitors.iter().filter(|m| m.enabled).count().to_string();
-    log.record(
+        .filter(|m| m.enabled)
+        .count()
+        .to_string();
+    service.log.record(
         SystemTime::now(),
         &[
             ("event", "START"),
@@ -56,100 +64,208 @@ pub fn run(config: Config) -> Result<(), String> {
             ("monitors", &enabled),
         ],
     );
-    flush(&mut log);
+    service.flush();
     eprintln!(
         "uptime-kinomi {VERSION}: {enabled} monitors, log in {}",
-        g.storage.log_dir.display()
+        log_dir.display()
     );
 
     let (tx, rx) = mpsc::channel();
-    let scheduler = Scheduler::start(monitors.clone(), workers, max_queue, tx);
+    let scheduler = Scheduler::start(service.monitors.clone(), workers, max_queue, tx);
     let mut jumps = JumpDetector::new(SystemTime::now(), Instant::now());
     let mut next_flush = Instant::now() + flush_interval;
+    let mut next_state_save = Instant::now() + state_interval;
 
     while !stop.load(Ordering::Relaxed) {
         match rx.recv_timeout(Duration::from_millis(500)) {
-            Ok(event) => handle(event, &monitors, &mut states, &mut log),
+            Ok(event) => service.handle(event),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
         }
-        if Instant::now() >= next_flush {
-            if let Some(jump) = jumps.check(SystemTime::now(), Instant::now()) {
-                log.record(
+        let now = Instant::now();
+        if now >= next_flush {
+            if let Some(jump) = jumps.check(SystemTime::now(), now) {
+                service.log.record(
                     SystemTime::now(),
                     &[("event", "CLOCK_JUMP"), ("delta_s", &jump.to_string())],
                 );
             }
-            flush(&mut log);
-            next_flush = Instant::now() + flush_interval;
+            service.flush();
+            next_flush = now + flush_interval;
+        }
+        if now >= next_state_save {
+            service.save_states();
+            next_state_save = now + state_interval;
         }
     }
 
     scheduler.stop();
     while let Ok(event) = rx.try_recv() {
-        handle(event, &monitors, &mut states, &mut log);
+        service.handle(event);
     }
-    log.record(SystemTime::now(), &[("event", "STOP")]);
-    flush(&mut log);
+    service.log.record(SystemTime::now(), &[("event", "STOP")]);
+    service.save_states();
     eprintln!("uptime-kinomi stopped");
     Ok(())
 }
 
-fn handle(event: Event, monitors: &[Monitor], states: &mut [MonitorState], log: &mut LogWriter) {
-    match event {
-        Event::Done {
-            monitor,
-            result,
-            time,
-        } => {
-            let m = &monitors[monitor];
-            let (logged, previous) = states[monitor].apply(result.status);
-            let latency = result.latency.map(|l| l.as_millis().to_string());
-            let mut fields = vec![("monitor", m.id.as_str()), ("result", logged.name())];
-            if let Some(latency) = &latency {
-                fields.push(("latency_ms", latency));
-            }
-            let cert_expires = result
-                .cert_expires
-                .map(|t| clock::format_date(clock::from_unix(t)));
-            if let Some(date) = &cert_expires {
-                fields.push(("cert_expires", date));
-            }
-            fields.push(("msg", &result.msg));
-            log.record(time, &fields);
-            if let Some(previous) = previous {
-                // Also visible in the journal.
-                eprintln!(
-                    "{} ({}): {} -> {} ({})",
-                    m.name,
-                    m.id,
-                    previous.name(),
-                    states[monitor].state.name(),
-                    result.msg
-                );
-            }
-        }
-        Event::Skipped {
-            monitor,
-            count,
-            time,
-        } => {
-            let id = monitors[monitor].id.as_str();
-            let count = count.to_string();
-            let fields = [
-                ("monitor", id),
-                ("result", "SKIPPED"),
-                ("count", count.as_str()),
-                ("msg", "queue full"),
-            ];
-            log.record(time, &fields);
-        }
+/// `uptime-kinomi rebuild-state`: regenerate all state files from the log.
+pub fn rebuild_state(config: &Config) -> Result<(), String> {
+    let g = &config.global;
+    let mut histories = new_histories(config);
+    let lines = replay::replay(&g.storage.log_dir, &mut histories).map_err(|e| {
+        format!(
+            "cannot read the log in {}: {e}",
+            g.storage.log_dir.display()
+        )
+    })?;
+    create_private_dir(&g.storage.data_dir)?;
+    for (id, history) in &histories {
+        statefile::save(&g.storage.data_dir, id, history)
+            .map_err(|e| format!("cannot write the state of {id}: {e}"))?;
     }
+    println!(
+        "rebuilt {} state files from {lines} log lines in {}",
+        histories.len(),
+        g.storage.log_dir.display()
+    );
+    Ok(())
 }
 
-fn flush(log: &mut LogWriter) {
-    if let Err(e) = log.flush(SystemTime::now()) {
-        eprintln!("error: cannot write the check log: {e}");
+fn new_histories(config: &Config) -> HashMap<String, History> {
+    let recent = config.global.pages.recent_checks as usize;
+    let days = i64::try_from(config.global.storage.history_retention.0.as_secs() / 86400)
+        .unwrap_or(i64::MAX);
+    config
+        .monitors
+        .iter()
+        .map(|m| (m.id.clone(), History::new(recent, days)))
+        .collect()
+}
+
+fn create_private_dir(dir: &Path) -> Result<(), String> {
+    DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .map_err(|e| format!("cannot create {}: {e}", dir.display()))
+}
+
+impl Service {
+    /// Open the log, load state files and replay what they do not cover.
+    fn open(config: Config) -> Result<Self, String> {
+        let storage = &config.global.storage;
+        let retention_days =
+            i64::try_from(storage.log_retention.0.as_secs() / 86400).unwrap_or(i64::MAX);
+        let log = LogWriter::open(&storage.log_dir, retention_days).map_err(|e| {
+            format!(
+                "cannot open log directory {}: {e}",
+                storage.log_dir.display()
+            )
+        })?;
+        create_private_dir(&storage.data_dir)?;
+
+        let mut histories = new_histories(&config);
+        for (id, history) in histories.iter_mut() {
+            if let Some(warning) = statefile::load(&storage.data_dir, id, history) {
+                eprintln!("warning: {warning}");
+            }
+        }
+        if let Err(e) = replay::replay(&storage.log_dir, &mut histories) {
+            eprintln!("warning: cannot replay the log: {e}");
+        }
+        let data_dir = storage.data_dir.clone();
+        let monitors = Arc::new(config.monitors);
+        let states = monitors
+            .iter()
+            .map(|m| MonitorState::restore(m.retries, histories[&m.id].state))
+            .collect();
+        Ok(Service {
+            monitors,
+            states,
+            histories,
+            log,
+            data_dir,
+        })
+    }
+
+    fn handle(&mut self, event: Event) {
+        match event {
+            Event::Done {
+                monitor,
+                result,
+                time,
+            } => {
+                let m = &self.monitors[monitor];
+                let (logged, previous) = self.states[monitor].apply(result.status);
+                let latency = result
+                    .latency
+                    .map(|l| u32::try_from(l.as_millis()).unwrap_or(u32::MAX));
+                let latency_text = latency.map(|l| l.to_string());
+                let mut fields = vec![("monitor", m.id.as_str()), ("result", logged.name())];
+                if let Some(latency) = &latency_text {
+                    fields.push(("latency_ms", latency));
+                }
+                let cert_expires = result
+                    .cert_expires
+                    .map(|t| clock::format_date(clock::from_unix(t)));
+                if let Some(date) = &cert_expires {
+                    fields.push(("cert_expires", date));
+                }
+                fields.push(("msg", &result.msg));
+                self.log.record(time, &fields);
+                if let Some(h) = self.histories.get_mut(&m.id) {
+                    let t = clock::unix_seconds(time);
+                    h.record_check(t, logged, latency, &result.msg, result.cert_expires);
+                }
+                if let Some(previous) = previous {
+                    // Also visible in the journal.
+                    eprintln!(
+                        "{} ({}): {} -> {} ({})",
+                        m.name,
+                        m.id,
+                        previous.name(),
+                        self.states[monitor].state.name(),
+                        result.msg
+                    );
+                }
+            }
+            Event::Skipped {
+                monitor,
+                count,
+                time,
+            } => {
+                let id = self.monitors[monitor].id.as_str();
+                let count_text = count.to_string();
+                let fields = [
+                    ("monitor", id),
+                    ("result", "SKIPPED"),
+                    ("count", count_text.as_str()),
+                    ("msg", "queue full"),
+                ];
+                self.log.record(time, &fields);
+                if let Some(h) = self.histories.get_mut(id) {
+                    h.record_skip(clock::unix_seconds(time), count);
+                }
+            }
+        }
+    }
+
+    fn flush(&mut self) {
+        if let Err(e) = self.log.flush(SystemTime::now()) {
+            eprintln!("error: cannot write the check log: {e}");
+        }
+    }
+
+    /// Flush the log first: a state file must never cover events the log
+    /// does not have.
+    fn save_states(&mut self) {
+        self.flush();
+        for (id, history) in &self.histories {
+            if let Err(e) = statefile::save(&self.data_dir, id, history) {
+                eprintln!("error: cannot write the state of {id}: {e}");
+            }
+        }
     }
 }
 
