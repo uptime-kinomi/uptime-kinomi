@@ -25,14 +25,19 @@ disagree, the spec wins until it is explicitly changed in the same PR.
    escaping helper. Never build HTML by concatenating unescaped strings.
 8. **Storage is human-readable.** Logs are logfmt with a UTC timestamp first.
    State files are TOML and can always be rebuilt from logs.
+9. **No root required.** kinomi must install, configure and run as an ordinary
+   user (SPEC.md §10.6). No hard-coded absolute paths: use the config-dir
+   resolution (§3.1) and default directories (§10.6). Every example, test and
+   doc must work without `sudo`. A feature that needs privileges must be optional.
 
 ## Planned source layout
 
 ```
 src/
-├── main.rs                CLI dispatch (run, check-config, rebuild-state, gen-token, version)
+├── main.rs                CLI dispatch (run, check-config, rebuild-state, gen-token, hash-password, version)
 ├── config/                loading + validation of all TOML files
 │   ├── mod.rs
+│   ├── paths.rs           config-dir resolution, XDG/systemd default directories
 │   ├── global.rs          kinomi.toml
 │   ├── duration.rs        "30s" / "5m" parsing
 │   └── secret.rs          inline vs *_file secrets, permission checks

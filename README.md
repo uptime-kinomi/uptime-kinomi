@@ -66,6 +66,9 @@ minimal hardware, use kinomi.
 - **Built for weak hardware:** one binary, thread-based check queue with fair
   skipping under overload, low-priority background page rendering, buffered
   log writes, works without a real-time clock.
+- **Runs without root:** install, configure and run everything as your
+  normal user (`~/.config`, `~/.local/state`, `systemctl --user`). System-wide
+  installation with a dedicated service user is supported too.
 - **Security first:** no `unsafe` code, strict input limits, nothing fetched
   from targets is ever shown or forwarded, strict CSP, no inbound TLS (left to
   your reverse proxy), hardened systemd unit.
@@ -88,17 +91,21 @@ Run `uname -m` if unsure.
 Rule of thumb: when in doubt on 32-bit ARM, take `armv6`. It runs everywhere,
 just a bit slower.
 
-## Quick start (planned)
+## Quick start (planned), no root needed
+
+kinomi runs as your normal user. Everything below works without `sudo`.
 
 ```sh
-# 1. install the binary
-sudo install -m 755 uptime-kinomi-armv6 /usr/local/bin/uptime-kinomi
+# 1. install the binary into your home directory
+mkdir -p ~/.local/bin
+install -m 755 uptime-kinomi-armv6 ~/.local/bin/uptime-kinomi
 
 # 2. create a configuration
-sudo mkdir -p /etc/uptime-kinomi/{monitors,notifications,pages}
+mkdir -p ~/.config/uptime-kinomi/{monitors,notifications,pages,secrets}
+cd ~/.config/uptime-kinomi
 ```
 
-`/etc/uptime-kinomi/kinomi.toml`:
+`~/.config/uptime-kinomi/kinomi.toml`:
 ```toml
 config_version = 1
 
@@ -106,14 +113,14 @@ config_version = 1
 listen = "127.0.0.1:8080"
 hostnames = ["status.example.org"]
 base_url = "https://status.example.org"
-htpasswd_file = "/etc/uptime-kinomi/htpasswd"
+htpasswd_file = "htpasswd"          # relative paths are relative to this directory
 
 [pages]
 timezone = "Europe/Berlin"
 default_page = "home"
 ```
 
-`/etc/uptime-kinomi/monitors/blog.toml`:
+`monitors/blog.toml`:
 ```toml
 config_version = 1
 type = "http"
@@ -127,7 +134,7 @@ keyword = "Welcome"
 tls_expiry_warn = "14d"
 ```
 
-`/etc/uptime-kinomi/monitors/backup.toml` (your backup script runs
+`monitors/backup.toml` (your backup script runs
 `curl -fsS https://status.example.org/push/<token>` at the end):
 ```toml
 config_version = 1
@@ -138,10 +145,10 @@ grace = "2h"
 notifications = ["phone"]
 
 [push]
-token_file = "/etc/uptime-kinomi/secrets/backup.token"   # create with: uptime-kinomi gen-token
+token_file = "secrets/backup.token"   # create with: uptime-kinomi gen-token > secrets/backup.token
 ```
 
-`/etc/uptime-kinomi/notifications/phone.toml`:
+`notifications/phone.toml`:
 ```toml
 config_version = 1
 type = "ntfy"
@@ -151,7 +158,7 @@ url = "https://ntfy.sh"
 topic = "my-secret-topic-name"
 ```
 
-`/etc/uptime-kinomi/pages/home.toml` (public) and `pages/all.toml` (private):
+`pages/home.toml` (public) and `pages/all.toml` (private):
 ```toml
 config_version = 1
 title = "Our services"
@@ -172,13 +179,32 @@ monitors = ["*"]
 ```
 
 ```sh
-# 3. password for private pages (same format as Apache/nginx)
-sudo htpasswd -B -c /etc/uptime-kinomi/htpasswd admin
+# 3. a password for private pages (prints a random password once; same file format as Apache/nginx htpasswd)
+uptime-kinomi hash-password admin >> htpasswd
+chmod 600 htpasswd secrets/*
 
-# 4. validate and start
+# 4. validate and start as a systemd user service (unit file in contrib/systemd/user/)
 uptime-kinomi check-config
-sudo systemctl enable --now uptime-kinomi    # unit file in contrib/
+mkdir -p ~/.config/systemd/user
+curl -fsSLo ~/.config/systemd/user/uptime-kinomi.service \
+  https://raw.githubusercontent.com/uptime-kinomi/uptime-kinomi/main/contrib/systemd/user/uptime-kinomi.service
+systemctl --user enable --now uptime-kinomi
 ```
+
+State, logs and pages end up in `~/.local/state/uptime-kinomi/`.
+
+To keep the service running after you log out and start it at boot, *lingering*
+must be enabled once for your user (`loginctl enable-linger`; on some systems an
+administrator has to do this). Without systemd, a crontab line does the job:
+
+```
+@reboot ~/.local/bin/uptime-kinomi run
+```
+
+**System-wide installation** works the same way, with a dedicated `kinomi`
+user (never root), config in `/etc/uptime-kinomi/` and the hardened system unit
+from `contrib/systemd/system/`. Data then goes to `/var/lib/uptime-kinomi`,
+`/var/log/uptime-kinomi` and `/run/uptime-kinomi`. See [SPEC.md](SPEC.md) §10.6.
 
 Everything is explained in [SPEC.md](SPEC.md).
 

@@ -27,6 +27,10 @@ Keywords in this document: **MUST**, **SHOULD**, **MAY** as in RFC 2119.
 - Output is **static HTML5 + CSS only. No JavaScript, ever.**
 - Runs well on one slow CPU core with little RAM and an SD card.
 - Prebuilt static binaries for all common SBC architectures (§12).
+- **Runs as an ordinary, unprivileged user.** Root is never required: not to
+  install, not to configure, not to run (§10.6). A system-wide installation
+  with a dedicated service user is supported as well, but kinomi itself never
+  needs root privileges or capabilities.
 - Security first: all untrusted input is size-limited and validated before it
   is parsed; nothing fetched from a monitored target is ever reflected into
   pages or notifications.
@@ -70,8 +74,18 @@ Keywords in this document: **MUST**, **SHOULD**, **MAY** as in RFC 2119.
 
 ### 3.1 Layout
 
+The configuration directory is found in this order (first match wins):
+
+1. `--config-dir DIR` on the command line,
+2. the environment variable `KINOMI_CONFIG_DIR`,
+3. `$XDG_CONFIG_HOME/uptime-kinomi` (usually `~/.config/uptime-kinomi`) if it exists,
+4. `/etc/uptime-kinomi`.
+
+So a normal user gets `~/.config/uptime-kinomi`, and a system-wide
+installation uses `/etc/uptime-kinomi`. The directory structure is the same:
+
 ```
-/etc/uptime-kinomi/               (path given by --config-dir, this is the default)
+~/.config/uptime-kinomi/          or /etc/uptime-kinomi/
 ├── kinomi.toml                   global configuration
 ├── htpasswd                      bcrypt htpasswd file for private pages (optional)
 ├── custom.css                    optional user style sheet
@@ -91,6 +105,9 @@ Keywords in this document: **MUST**, **SHOULD**, **MAY** as in RFC 2119.
   silently.
 - Durations are strings with a unit: `"500ms"`, `"30s"`, `"5m"`, `"2h"`, `"1d"`.
 - Config files are limited to 64 KiB each.
+- Relative paths in any config file are resolved against the configuration
+  directory, so a configuration directory can be copied between machines and
+  users unchanged.
 - Secrets (tokens, passwords) MAY be given inline or via a `*_file` key that
   points to a file whose content (trimmed) is the secret. kinomi warns at startup
   and in `check-config` if a file containing secrets is world-readable.
@@ -111,20 +128,20 @@ enabled = true                       # built-in HTTP server (§9)
 listen = "127.0.0.1:8080"            # default; behind a reverse proxy
 hostnames = ["status.example.org"]   # allowed Host headers; empty = any (warns)
 base_url = "https://status.example.org"  # absolute URLs in feeds, badges, notifications
-htpasswd_file = "/etc/uptime-kinomi/htpasswd"  # needed if any page is private
+htpasswd_file = "htpasswd"           # relative to the config dir; needed if any page is private
 
 [pages]
-output_dir = "/var/lib/uptime-kinomi/www"   # may be a tmpfs, see §10.2
+# output_dir = "..."                 # default: see §10.6; may be a tmpfs, see §10.2
 render_interval = "60s"
 timezone = "Europe/Berlin"           # IANA name; display only, storage is UTC
-custom_css = "/etc/uptime-kinomi/custom.css"   # optional, appended after default CSS
+custom_css = "custom.css"            # optional, appended after default CSS
 auto_refresh = "60s"                 # <meta http-equiv="refresh">, "0s" disables
 default_page = "home"                # page served at "/"
 recent_checks = 50                   # length of the heartbeat bar
 
 [storage]
-data_dir = "/var/lib/uptime-kinomi"  # state files
-log_dir = "/var/log/uptime-kinomi"   # daily check logs
+# data_dir = "..."                   # state files; default: see §10.6
+# log_dir = "..."                    # daily check logs; default: see §10.6
 flush_interval = "30s"               # buffered log writes
 state_interval = "10m"               # how often state files are written
 log_retention = "90d"                # log files older than this are deleted
@@ -239,7 +256,7 @@ type = "push"
 interval = "5m"            # expected push interval
 grace = "1m"               # extra time before the monitor fails
 [push]
-token_file = "/etc/uptime-kinomi/secrets/backup-job.token"   # or token = "..."
+token_file = "secrets/backup-job.token"   # relative to the config dir; or token = "..."
 ```
 
 - URL: `GET` or `POST` `{base_url}/push/{token}`. Compatible with uptime-kuma push URLs.
@@ -473,6 +490,11 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 ### 9.3 HTTP Basic Auth
 - Users and passwords live in an **htpasswd file with bcrypt hashes** (`htpasswd -B -C 10`),
   the same format Apache and nginx use. Other hash formats are rejected.
+  `uptime-kinomi hash-password USER` prints such a line. If stdin is not a
+  terminal, the password is read from stdin; otherwise a random password is
+  generated and printed once to stderr (no terminal handling needed, so no
+  extra dependency). The `htpasswd` tool (package `apache2-utils`, needs
+  root to install) is not required.
 - Successful verifications are cached in memory for 10 minutes (key: SHA-256 of
   the `Authorization` header, compared in constant time). A Pi 1 needs about
   0.5 s per bcrypt check, and the cache avoids paying that on every request.
@@ -513,7 +535,7 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 ### 10.2 SD card friendliness
 - Buffered log writes (§7.1), state files every 10 min (§7.2), pages only
   rewritten on change (§8.3).
-- `output_dir` MAY be a tmpfs (e.g. `/run/uptime-kinomi/www`); pages are
+- `output_dir` MAY be a tmpfs (e.g. `/run/uptime-kinomi/www` or `$XDG_RUNTIME_DIR`); pages are
   regenerated within one render cycle after a reboot.
 
 ### 10.3 Self-monitoring
@@ -527,18 +549,57 @@ uptime-kinomi run            [--config-dir DIR]   # default command
 uptime-kinomi check-config   [--config-dir DIR]
 uptime-kinomi rebuild-state  [--config-dir DIR]
 uptime-kinomi gen-token
+uptime-kinomi hash-password USER     # prints an htpasswd line (bcrypt)
 uptime-kinomi version
 ```
+`--config-dir` is resolved as described in §3.1.
 Exit codes: 0 ok, 1 runtime error, 2 configuration error.
 
 ### 10.5 Shipped files (`contrib/`)
-- `uptime-kinomi.service` systemd unit with hardening (`DynamicUser=yes` or
-  dedicated user, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
+- `systemd/user/uptime-kinomi.service`: **user unit** for `systemctl --user`
+  (no root needed, §10.6).
+- `systemd/system/uptime-kinomi.service`: system unit running as the dedicated
+  user `kinomi` (never root), with hardening (`User=kinomi`,
+  `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
   `NoNewPrivileges=yes`, `CapabilityBoundingSet=`, `RestrictAddressFamilies=AF_INET
-  AF_INET6 AF_UNIX`, `StateDirectory=`, `LogsDirectory=`, `Nice=10`).
+  AF_INET6 AF_UNIX`, `StateDirectory=`, `LogsDirectory=`, `RuntimeDirectory=`, `Nice=10`).
 - nginx and Apache examples for modes A and B.
-- Example Ansible role / playbook.
+- Example Ansible role / playbook (supports user and system installation).
 - Example configuration directory.
+
+### 10.6 Running without root
+kinomi is designed to run as an ordinary user. Nothing in v1 needs privileges:
+it listens on an unprivileged port (default 8080), uses no raw sockets, and
+writes only to its own directories.
+
+**Default directories** (when not set in `kinomi.toml`), first match wins:
+
+| Purpose | systemd variable (set by `StateDirectory=` etc.) | Otherwise (XDG) |
+|---|---|---|
+| `data_dir` | `$STATE_DIRECTORY` | `$XDG_STATE_HOME/uptime-kinomi` (`~/.local/state/uptime-kinomi`) |
+| `log_dir` | `$LOGS_DIRECTORY` | `$XDG_STATE_HOME/uptime-kinomi/log` |
+| `output_dir` | `$RUNTIME_DIRECTORY/www` | `$XDG_STATE_HOME/uptime-kinomi/www` |
+
+With the system unit, these become `/var/lib/uptime-kinomi`,
+`/var/log/uptime-kinomi` and `/run/uptime-kinomi/www`. With the user unit,
+systemd sets them to directories in the user's home and `$XDG_RUNTIME_DIR`
+(see `systemd.exec(5)`, "RuntimeDirectory="). kinomi creates missing directories with mode `0700`
+(`0750` for `output_dir`, so a web server group can read the pages in mode B).
+
+**Starting automatically without root:**
+- `systemctl --user enable --now uptime-kinomi`. To keep it running while
+  the user is logged out and to start it at boot, *lingering* must be enabled
+  once (`loginctl enable-linger USER`, which may require an administrator, or
+  is already enabled by the distribution).
+- Alternative without systemd or lingering: a crontab entry
+  `@reboot ~/.local/bin/uptime-kinomi run`.
+
+**Root is discouraged:** if started with UID 0 (read from `/proc/self/status`,
+no `unsafe` needed), kinomi logs a warning recommending a dedicated user.
+
+**Features that will need privileges later** (not in v1) are optional and
+documented with the least privilege needed, e.g. ICMP `ping` via the kernel
+setting `net.ipv4.ping_group_range` instead of root.
 
 ---
 
@@ -554,7 +615,7 @@ Exit codes: 0 ok, 1 runtime error, 2 configuration error.
 6. Inbound TLS by the proxy; outbound TLS verifies certificates by default.
 7. Secrets via files with permission warnings; bcrypt-hashed passwords.
 8. Minimal, audited dependencies (`cargo-deny` for licenses/advisories in CI).
-9. Runs as an unprivileged user, no capabilities required.
+9. Runs as an unprivileged user, no capabilities required (§10.6).
 
 ---
 
