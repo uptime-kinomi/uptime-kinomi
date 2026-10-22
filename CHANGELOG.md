@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-22
+
+Second infrastructure preview, to test `self-update` from 0.1.0.
+
+### Fixed
+- `contrib/release/sign-release.sh` no longer aborts when an old `gh`
+  without `gh attestation` is installed; the provenance check is skipped
+  with a message instead.
+
 ## [0.1.0] - 2026-10-22
 
 Infrastructure preview: no monitoring yet. Tests the build, release,
@@ -34,5 +43,6 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/uptime-kinomi/uptime-kinomi/releases/tag/v0.1.0
