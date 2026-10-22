@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-22
+
+Infrastructure preview: no monitoring yet. Tests the build, release,
+signing and self-update chain.
+
 ### Added
 - Specification (`SPEC.md`), README and contributor/agent guide (`AGENTS.md`).
 - Cargo project skeleton with `#![forbid(unsafe_code)]`, strict lints and
@@ -28,3 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   creates an unsigned pre-release; `contrib/release/sign-release.sh`
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
+
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/uptime-kinomi/uptime-kinomi/releases/tag/v0.1.0
