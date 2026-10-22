@@ -30,6 +30,11 @@ confidence-threshold = 0.9
 # The allow list is a policy, not a list of currently used licenses.
 unused-allowed-license = "allow"
 
+# The Mozilla CA root list is data under a permissive data license.
+[[licenses.exceptions]]
+crate = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"

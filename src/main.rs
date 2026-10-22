@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 mod paths;
+mod update;
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -13,6 +14,7 @@ use std::process::ExitCode;
 /// Exit codes (SPEC.md §10.4).
 const EXIT_RUNTIME_ERROR: u8 = 1;
 const EXIT_CONFIG_ERROR: u8 = 2;
+const EXIT_UPDATE_AVAILABLE: u8 = 3;
 
 const USAGE: &str = "\
 Usage: uptime-kinomi [COMMAND] [--config-dir DIR]
@@ -48,17 +50,9 @@ enum Command {
     RebuildState,
     GenToken,
     HashPassword(String),
-    SelfUpdate(UpdateOptions),
+    SelfUpdate(update::Options),
     Version,
     Help,
-}
-
-#[derive(Debug, Default, PartialEq)]
-struct UpdateOptions {
-    check: bool,
-    release: Option<String>,
-    allow_downgrade: bool,
-    rollback: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -85,11 +79,8 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Command::CheckConfig => check_config(args.config_dir.as_deref()),
-        Command::Run
-        | Command::RebuildState
-        | Command::GenToken
-        | Command::HashPassword(_)
-        | Command::SelfUpdate(_) => {
+        Command::SelfUpdate(options) => self_update(&options),
+        Command::Run | Command::RebuildState | Command::GenToken | Command::HashPassword(_) => {
             eprintln!("error: this command is not implemented yet (see SPEC.md §13, roadmap)");
             ExitCode::from(EXIT_RUNTIME_ERROR)
         }
@@ -100,7 +91,7 @@ fn parse_args(mut args: impl Iterator<Item = OsString>) -> Result<Args, String> 
     let mut command = None;
     let mut config_dir = None;
     let mut positional = Vec::new();
-    let mut update = UpdateOptions::default();
+    let mut update = update::Options::default();
     let mut update_option_seen = false;
 
     while let Some(arg) = args.next() {
@@ -116,11 +107,10 @@ fn parse_args(mut args: impl Iterator<Item = OsString>) -> Result<Args, String> 
             config_dir = Some(PathBuf::from(dir));
         } else if text == "--release" {
             let value = args.next().ok_or("--release needs a value")?;
-            let value = value.to_str().ok_or("--release needs a version X.Y.Z")?;
-            update.release = Some(value.to_string());
+            update.release = Some(parse_release(value.to_str().unwrap_or_default())?);
             update_option_seen = true;
         } else if let Some(value) = text.strip_prefix("--release=") {
-            update.release = Some(value.to_string());
+            update.release = Some(parse_release(value)?);
             update_option_seen = true;
         } else if text == "--check" {
             update.check = true;
@@ -176,7 +166,7 @@ fn parse_command(positional: &[String]) -> Result<Command, String> {
         ("rebuild-state", []) => Command::RebuildState,
         ("gen-token", []) => Command::GenToken,
         // Options are filled in by parse_args.
-        ("self-update", []) => Command::SelfUpdate(UpdateOptions::default()),
+        ("self-update", []) => Command::SelfUpdate(update::Options::default()),
         ("hash-password", [user]) => Command::HashPassword(user.clone()),
         ("hash-password", _) => return Err("hash-password needs exactly one USER".into()),
         ("version", []) => Command::Version,
@@ -192,36 +182,37 @@ fn parse_command(positional: &[String]) -> Result<Command, String> {
     Ok(command)
 }
 
-fn validate_update_options(update: &UpdateOptions) -> Result<(), String> {
+fn parse_release(text: &str) -> Result<update::Version, String> {
+    update::Version::parse(text).ok_or_else(|| format!("invalid release '{text}', expected X.Y.Z"))
+}
+
+fn validate_update_options(update: &update::Options) -> Result<(), String> {
     if update.rollback && (update.check || update.release.is_some() || update.allow_downgrade) {
         return Err("--rollback cannot be combined with other self-update options".into());
     }
     if update.allow_downgrade && update.release.is_none() {
         return Err("--allow-downgrade needs --release X.Y.Z".into());
     }
-    if let Some(release) = &update.release {
-        if !is_plain_version(release) {
-            return Err(format!("invalid release '{release}', expected X.Y.Z"));
-        }
-    }
     Ok(())
 }
 
-/// `X.Y.Z` with decimal numbers only, as used in release tags `vX.Y.Z`.
-fn is_plain_version(text: &str) -> bool {
-    let parts: Vec<&str> = text.split('.').collect();
-    parts.len() == 3
-        && parts
-            .iter()
-            .all(|p| !p.is_empty() && p.len() <= 9 && p.bytes().all(|b| b.is_ascii_digit()))
+fn self_update(options: &update::Options) -> ExitCode {
+    match update::run(options) {
+        Ok(update::Outcome::UpdateAvailable) => ExitCode::from(EXIT_UPDATE_AVAILABLE),
+        Ok(_) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::from(EXIT_RUNTIME_ERROR)
+        }
+    }
 }
 
 fn version_string() -> String {
+    // Format relied upon by self-update's test run: "uptime-kinomi X.Y.Z (target)".
     format!(
-        "uptime-kinomi {} ({}-{})",
+        "uptime-kinomi {} ({})",
         env!("CARGO_PKG_VERSION"),
-        std::env::consts::ARCH,
-        std::env::consts::OS
+        env!("KINOMI_TARGET")
     )
 }
 
@@ -309,26 +300,26 @@ mod tests {
     fn self_update_options() {
         assert_eq!(
             command(&["self-update"]),
-            Command::SelfUpdate(UpdateOptions::default())
+            Command::SelfUpdate(update::Options::default())
         );
         assert_eq!(
             command(&["self-update", "--check"]),
-            Command::SelfUpdate(UpdateOptions {
+            Command::SelfUpdate(update::Options {
                 check: true,
                 ..Default::default()
             })
         );
         assert_eq!(
             command(&["self-update", "--release", "1.2.3", "--allow-downgrade"]),
-            Command::SelfUpdate(UpdateOptions {
-                release: Some("1.2.3".into()),
+            Command::SelfUpdate(update::Options {
+                release: update::Version::parse("1.2.3"),
                 allow_downgrade: true,
                 ..Default::default()
             })
         );
         assert_eq!(
             command(&["self-update", "--rollback"]),
-            Command::SelfUpdate(UpdateOptions {
+            Command::SelfUpdate(update::Options {
                 rollback: true,
                 ..Default::default()
             })

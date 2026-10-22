@@ -225,10 +225,11 @@ anything, and keeps the previous version (`self-update --rollback`). It works
 without root as long as the binary lives in a directory you own, such as
 `~/.local/bin`.
 
-To verify a manual download:
+To verify a manual download (primary key `16F640342DF96A16`; the backup key
+is listed in [SPEC.md](SPEC.md) §12.1 and in [keys/](keys/)):
 
 ```sh
-minisign -Vm SHA256SUMS -P <public key from SPEC.md / the release notes>
+minisign -Vm SHA256SUMS -P RWQWavktNED2FrnDC8yLcpUPBKv4JeUoguh4zMF2wCBxwRJKVs3vRZu3
 sha256sum --ignore-missing -c SHA256SUMS
 gh attestation verify uptime-kinomi-armv6 --repo uptime-kinomi/uptime-kinomi   # optional: build provenance
 ```

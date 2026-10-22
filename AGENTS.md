@@ -103,20 +103,20 @@ needed, its size, its transitive dependencies, its `unsafe` usage, and whether
 it builds for ARMv6 musl. Prefer the standard library. Disable default
 features.
 
-Candidate dependencies (to be confirmed in M0):
+Dependencies (✅ = in use, others are candidates):
 
 | Crate | Purpose |
 |---|---|
 | `serde`, `toml` | configuration and state files |
-| `ureq` (+ `rustls`, `ring` or system OpenSSL on ARMv6 if needed) | outbound HTTP(S) |
-| `rustls-native-certs` or `webpki-roots` | CA certificates |
+| `ureq` with `rustls` (ring provider) and `webpki-roots` ✅ in use | outbound HTTPS, bundled Mozilla CA roots (independent of the OS certificate store) |
+| `ring` ✅ in use | SHA-256 (already pulled in by rustls, so no extra `sha2` crate) |
 | `x509-parser` or rustls API | certificate expiry |
 | `httparse` | inbound HTTP request parsing |
 | `jiff` | time zones from the system tz database |
 | `bcrypt` | htpasswd verification |
-| `sha2`, `base64` | auth cache key, Basic Auth header |
+| `base64` | Basic Auth header (already pulled in by ureq) |
 | `getrandom` | push tokens, temporary file names |
-| `minisign-verify` | release signature check in `self-update` |
+| `minisign-verify` ✅ in use | release signature check in `self-update` (no dependencies) |
 | `signal-hook` | SIGTERM/SIGINT for clean shutdown |
 
 Not allowed: async runtimes (`tokio`, `async-std`), template engines, web
@@ -130,6 +130,8 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 cross build --release --target arm-unknown-linux-musleabihf
+CC_x86_64_unknown_linux_musl=gcc cargo build --release --target x86_64-unknown-linux-musl   # quick local static build
+python3 testdata/update/generate.py   # regenerate self-update test vectors (TEST keys only)
 cargo deny check
 cargo +nightly fuzz run <target>     # in fuzz/
 ```

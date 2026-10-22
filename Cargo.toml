@@ -11,7 +11,13 @@ keywords = ["uptime", "monitoring", "status-page", "raspberry-pi", "sbc"]
 categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
-# Intentionally empty for now. See AGENTS.md "Dependency policy" before adding any.
+# See AGENTS.md "Dependency policy" before adding any dependency.
+# Release signature verification for self-update (no dependencies).
+minisign-verify = "0.3"
+# SHA-256 for self-update. Already in the tree through rustls, so no extra crate.
+ring = { version = "0.17", default-features = false }
+# Outbound HTTPS: rustls + ring + bundled Mozilla root certificates, no gzip.
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
 
 [lints.rust]
 unsafe_code = "forbid"

@@ -671,8 +671,13 @@ the matching public keys are compiled into kinomi.
   rollback attacks (serving an old, validly signed release with known bugs).
 - **Keys:** two key pairs, a primary and a backup, both kept **offline** by the
   maintainer (password-protected, backed up off-site). Both public keys are
-  embedded in the binary; a signature by either is accepted. Rotation: a
-  release signed with an old key ships new public keys.
+  embedded in the binary (from `keys/`); a signature by either is accepted.
+  Rotation: a release signed with an old key ships new public keys.
+
+  | Key | ID | Public key |
+  |---|---|---|
+  | primary | `16F640342DF96A16` | `RWQWavktNED2FrnDC8yLcpUPBKv4JeUoguh4zMF2wCBxwRJKVs3vRZu3` |
+  | backup | `6AD1615F6A7966B2` | `RWSyZnlqX2HRasxyKYKZQUmcQYpm5e9zHsDUFWTgvWDerhQj+DccOfUH` |
 - **Additionally**, CI attaches GitHub
   [artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations)
   (Sigstore, SLSA build provenance). They prove that a binary was built by the
@@ -692,7 +697,7 @@ the matching public keys are compiled into kinomi.
   So a compromised GitHub account or CI can publish a release, but not one
   that any installed kinomi accepts.
 - **Manual verification** (documented in the README):
-  `minisign -Vm SHA256SUMS -P <public key>` and then
+  `minisign -Vm SHA256SUMS -P <public key from the table above>` and then
   `sha256sum --ignore-missing -c SHA256SUMS`.
 
 ### 12.2 `self-update`

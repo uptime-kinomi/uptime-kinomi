@@ -17,3 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   builds for armv6, armv7, aarch64, x86_64 and riscv64 with tests and smoke
   tests under QEMU (Raspberry Pi 1 CPU for armv6). Actions are pinned to
   commit SHAs and kept current by Dependabot.
+- `self-update` (SPEC.md §12.2): installs the latest release after verifying
+  the minisign signature of `SHA256SUMS` (embedded primary and backup keys,
+  version bound to the signature), the SHA-256 of the binary, and a test run
+  on the local CPU; keeps the previous binary for `--rollback`. `--check`
+  exits with code 3 when an update is available. First HTTPS code in kinomi
+  (ureq + rustls + ring).
+- `version` now shows the exact target triple.
+- Release workflow: tag `vX.Y.Z` builds, tests and attests all binaries and
+  creates a draft release; `contrib/release/sign-release.sh` verifies, signs
+  and publishes it on the maintainer's machine.
