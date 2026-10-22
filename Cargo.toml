@@ -23,6 +23,8 @@ ureq = { version = "3.5", default-features = false, features = ["rustls"] }
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
 # SIGTERM/SIGINT: flush the log before exiting (safe API, flag only).
 signal-hook = { version = "0.4", default-features = false }
+# Mozilla CA roots for the certificate expiry check (already used by ureq).
+webpki-roots = "1"
 # Configuration files (parsing only, no TOML writer).
 serde = { version = "1", features = ["derive"] }
 toml = { version = "1", default-features = false, features = ["std", "serde", "parse"] }

@@ -109,6 +109,12 @@ fn handle(event: Event, monitors: &[Monitor], states: &mut [MonitorState], log: 
             if let Some(latency) = &latency {
                 fields.push(("latency_ms", latency));
             }
+            let cert_expires = result
+                .cert_expires
+                .map(|t| clock::format_date(clock::from_unix(t)));
+            if let Some(date) = &cert_expires {
+                fields.push(("cert_expires", date));
+            }
             fields.push(("msg", &result.msg));
             log.record(time, &fields);
             if let Some(previous) = previous {

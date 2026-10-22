@@ -19,6 +19,13 @@ pub fn unix_seconds(t: SystemTime) -> i64 {
     }
 }
 
+pub fn from_unix(secs: i64) -> SystemTime {
+    match u64::try_from(secs) {
+        Ok(s) => UNIX_EPOCH + Duration::from_secs(s),
+        Err(_) => UNIX_EPOCH - Duration::from_secs(secs.unsigned_abs()),
+    }
+}
+
 pub fn is_plausible(t: SystemTime) -> bool {
     unix_seconds(t) >= MIN_PLAUSIBLE_UNIX as i64
 }

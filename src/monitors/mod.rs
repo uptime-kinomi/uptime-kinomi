@@ -7,6 +7,7 @@
 
 pub mod http;
 pub mod tcp;
+mod tls;
 
 use std::fs::Metadata;
 use std::path::Path;
@@ -34,6 +35,8 @@ pub struct CheckResult {
     /// kinomi's own summary, e.g. "HTTP 503" or "timeout". Never content
     /// received from the target (AGENTS.md invariant 5).
     pub msg: String,
+    /// `notAfter` of the server certificate (Unix seconds), if checked.
+    pub cert_expires: Option<i64>,
 }
 
 impl CheckResult {
@@ -42,6 +45,7 @@ impl CheckResult {
             status: Status::Up,
             latency: Some(latency),
             msg: msg.into(),
+            cert_expires: None,
         }
     }
 
@@ -50,6 +54,7 @@ impl CheckResult {
             status: Status::Warn,
             latency: Some(latency),
             msg: msg.into(),
+            cert_expires: None,
         }
     }
 
@@ -58,6 +63,7 @@ impl CheckResult {
             status: Status::Fail,
             latency,
             msg: msg.into(),
+            cert_expires: None,
         }
     }
 }

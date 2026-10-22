@@ -223,6 +223,11 @@ Security requirements:
   no HTML parsing, no decompression bombs: `Accept-Encoding: identity`).
 - Only the *fact* of a keyword match is recorded, never body content.
 - Redirect targets must be `http(s)://`. A redirect from `https` to `http` fails the check.
+- The certificate expiry (`tls_expiry_warn`, `tls_expiry_down`) is read in a
+  separate TLS handshake with the URL's host, at most every 6 hours (every
+  10 minutes after a failure), so a Pi 1 does not pay for two handshakes per
+  check. Only the validity dates of the leaf certificate are read. The expiry
+  date is logged as `cert_expires=YYYY-MM-DD`.
 
 ### 4.4 `tcp` — TCP port open
 
@@ -351,7 +356,7 @@ All timestamps stored are **UTC, RFC 3339, second precision**.
 - One line per event in [logfmt](https://brandur.org/logfmt) format, timestamp first:
 
 ```
-2026-10-22T14:03:11Z monitor=blog result=UP latency_ms=123 msg="HTTP 200"
+2026-10-22T14:03:11Z monitor=blog result=UP latency_ms=123 cert_expires=2026-12-01 msg="HTTP 200"
 2026-10-22T14:04:11Z monitor=blog result=FAIL latency_ms=10000 msg="timeout"
 2026-10-22T14:05:11Z monitor=blog result=DOWN latency_ms=10000 msg="timeout"
 2026-10-22T14:05:11Z event=NOTIFY monitor=blog notifier=ntfy-home kind=down ok=true

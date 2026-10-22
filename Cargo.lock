@@ -342,6 +342,7 @@ dependencies = [
  "signal-hook",
  "toml",
  "ureq",
+ "webpki-roots",
 ]
 
 [[package]]

@@ -19,8 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `check-config` validates `kinomi.toml` and `monitors/*.toml` completely
   and lists the monitors.
 - Monitor types `http` (status codes and ranges, keyword, redirects checked
-  hop by hop, body limit, headers, basic auth, slow warning) and `tcp`
-  (connect, banner).
+  hop by hop, body limit, headers, basic auth, slow warning, TLS
+  certificate expiry with WARN/DOWN thresholds) and `tcp` (connect, banner).
+  TLS errors are reported as coarse classes (expired, unknown issuer, wrong
+  host name, ...), never with data from the server.
 
 ## [0.1.1] - 2026-10-22
 

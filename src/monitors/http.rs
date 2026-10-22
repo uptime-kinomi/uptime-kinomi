@@ -9,11 +9,13 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::Deserialize;
 
-use super::{Check, CheckResult, Context, contains_bytes};
+use super::{Check, CheckResult, Context, Status, contains_bytes, tls};
+use crate::clock;
 use crate::config::duration::Dur;
 use crate::config::secret::{self, is_world_readable};
 use crate::config::{FileProblems, resolve_path};
@@ -21,6 +23,12 @@ use crate::config::{FileProblems, resolve_path};
 const DEFAULT_MAX_BODY: u64 = 64 * 1024;
 const MAX_BODY: u64 = 1024 * 1024;
 const MAX_REDIRECTS: u32 = 10;
+
+/// A successful certificate check is reused this long (one extra TLS
+/// handshake per check would be expensive on a Pi 1).
+const CERT_CACHE: Duration = Duration::from_secs(6 * 3600);
+/// A failed certificate check is retried after this time.
+const CERT_RETRY: Duration = Duration::from_secs(600);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -73,12 +81,20 @@ pub struct HttpCheck {
     headers: Vec<(String, String)>,
     authorization: Option<String>,
     slow_warn: Option<Duration>,
-    // Used by the certificate check (SPEC.md §4.3, milestone M1 step 5).
-    #[allow(dead_code)]
-    tls_expiry_warn: Duration,
-    #[allow(dead_code)]
-    tls_expiry_down: Duration,
+    cert: Option<CertCheck>,
     agent: ureq::Agent,
+}
+
+/// Certificate expiry check of the configured https URL's host.
+struct CertCheck {
+    host: String,
+    port: u16,
+    verify: bool,
+    warn: Duration,
+    down: Duration,
+    timeout: Duration,
+    /// (checked at, notAfter or error)
+    cache: Mutex<Option<(Instant, Result<i64, &'static str>)>>,
 }
 
 pub fn build(
@@ -196,6 +212,25 @@ pub fn build(
     if !tls_verify {
         p.warning("http.tls_verify = false: certificate errors are ignored");
     }
+    let cert = if is_https && !(tls_expiry_warn.is_zero() && tls_expiry_down.is_zero()) {
+        match host_port(&file.url) {
+            Some((host, port)) => Some(CertCheck {
+                host,
+                port,
+                verify: tls_verify,
+                warn: tls_expiry_warn,
+                down: tls_expiry_down,
+                timeout,
+                cache: Mutex::new(None),
+            }),
+            None => {
+                p.error("http.url: cannot determine host and port for the certificate check");
+                None
+            }
+        }
+    } else {
+        None
+    };
     let slow_warn = file.slow_warn.filter(|d| !d.is_zero()).map(|d| d.0);
     if slow_warn.is_some_and(|s| s >= timeout) {
         p.error("http.slow_warn must be less than timeout");
@@ -227,14 +262,112 @@ pub fn build(
         headers,
         authorization,
         slow_warn,
-        tls_expiry_warn,
-        tls_expiry_down,
+        cert,
         agent,
     })
 }
 
 impl Check for HttpCheck {
     fn check(&self) -> CheckResult {
+        let result = self.http_check();
+        match &self.cert {
+            Some(cert) if result.status != Status::Fail => cert.apply(result),
+            _ => result,
+        }
+    }
+
+    fn target(&self) -> String {
+        self.url.clone()
+    }
+}
+
+impl CertCheck {
+    fn not_after(&self) -> Result<i64, &'static str> {
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((checked, result)) = *cache {
+            let max_age = if result.is_ok() {
+                CERT_CACHE
+            } else {
+                CERT_RETRY
+            };
+            if checked.elapsed() < max_age {
+                return result;
+            }
+        }
+        let result = tls::not_after(&self.host, self.port, self.verify, self.timeout);
+        *cache = Some((Instant::now(), result));
+        result
+    }
+
+    /// Turn a successful HTTP result into WARN or FAIL if the certificate
+    /// expires soon.
+    fn apply(&self, result: CheckResult) -> CheckResult {
+        let now = clock::unix_seconds(SystemTime::now());
+        rate_expiry(result, self.not_after(), now, self.warn, self.down)
+    }
+}
+
+fn rate_expiry(
+    mut result: CheckResult,
+    not_after: Result<i64, &'static str>,
+    now: i64,
+    warn: Duration,
+    down: Duration,
+) -> CheckResult {
+    let Ok(not_after) = not_after else {
+        if result.status == Status::Up {
+            result.status = Status::Warn;
+        }
+        result.msg.push_str(", certificate check failed");
+        return result;
+    };
+    result.cert_expires = Some(not_after);
+    let left = not_after - now;
+    let text = if left <= 0 {
+        "certificate expired".to_string()
+    } else {
+        format!("certificate expires in {} days", left / 86400)
+    };
+    let within = |limit: Duration| {
+        !limit.is_zero() && left <= i64::try_from(limit.as_secs()).unwrap_or(i64::MAX)
+    };
+    if within(down) {
+        result.status = Status::Fail;
+        result.msg = format!("{}, {text}", result.msg);
+    } else if within(warn) {
+        if result.status == Status::Up {
+            result.status = Status::Warn;
+        }
+        result.msg = format!("{}, {text}", result.msg);
+    }
+    result
+}
+
+/// Host and port of an `https://` URL (default port 443).
+fn host_port(url: &str) -> Option<(String, u16)> {
+    let rest = url.strip_prefix("https://")?;
+    let authority = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
+    if authority.contains('@') {
+        return None;
+    }
+    let (host, port) = if let Some(v6) = authority.strip_prefix('[') {
+        let (host, after) = v6.split_once(']')?;
+        (host, after.strip_prefix(':'))
+    } else {
+        match authority.rsplit_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        }
+    };
+    let port = match port {
+        Some(p) => p.parse().ok().filter(|&p| p != 0)?,
+        None => 443,
+    };
+    (!host.is_empty()).then(|| (host.to_string(), port))
+}
+
+impl HttpCheck {
+    fn http_check(&self) -> CheckResult {
         let start = Instant::now();
         let mut url = self.url.clone();
         let mut hops = 0;
@@ -307,12 +440,6 @@ impl Check for HttpCheck {
         }
     }
 
-    fn target(&self) -> String {
-        self.url.clone()
-    }
-}
-
-impl HttpCheck {
     fn request(&self, url: &str) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
         let mut request = match self.method {
             Method::Get => self.agent.get(url),
@@ -402,32 +529,46 @@ fn origin(url: &str) -> &str {
 /// Coarse error classes. Some error types (e.g. certificate name mismatch)
 /// carry data from the remote side, which must not be reflected.
 fn error_message(e: &ureq::Error) -> String {
-    use rustls::{CertificateError, Error as TlsError};
     match e {
         ureq::Error::Timeout(_) => "timeout".into(),
         ureq::Error::HostNotFound => "host not found".into(),
-        ureq::Error::Io(io) => super::tcp::connect_error(io).into(),
-        ureq::Error::ConnectionFailed => "connection failed".into(),
-        ureq::Error::Rustls(TlsError::InvalidCertificate(cert)) => match cert {
-            CertificateError::Expired | CertificateError::ExpiredContext { .. } => {
-                "TLS certificate expired".into()
-            }
-            CertificateError::NotValidYet | CertificateError::NotValidYetContext { .. } => {
-                "TLS certificate not yet valid".into()
-            }
-            CertificateError::UnknownIssuer => "TLS certificate from unknown issuer".into(),
-            CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. } => {
-                "TLS certificate not valid for this host name".into()
-            }
-            CertificateError::Revoked => "TLS certificate revoked".into(),
-            _ => "TLS certificate invalid".into(),
+        // TLS errors during the handshake arrive wrapped in an I/O error.
+        ureq::Error::Io(io) => match io
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<rustls::Error>())
+        {
+            Some(tls) => tls_message(tls).into(),
+            None => super::tcp::connect_error(io).into(),
         },
-        ureq::Error::Rustls(TlsError::AlertReceived(_)) => "TLS alert from server".into(),
-        ureq::Error::Rustls(_) | ureq::Error::Tls(_) => "TLS handshake failed".into(),
+        ureq::Error::ConnectionFailed => "connection failed".into(),
+        ureq::Error::Rustls(tls) => tls_message(tls).into(),
+        ureq::Error::Tls(_) => "TLS handshake failed".into(),
         ureq::Error::Protocol(_) | ureq::Error::BadUri(_) | ureq::Error::Http(_) => {
             "invalid HTTP response".into()
         }
         _ => "request failed".into(),
+    }
+}
+
+fn tls_message(e: &rustls::Error) -> &'static str {
+    use rustls::{CertificateError, Error as TlsError};
+    match e {
+        TlsError::InvalidCertificate(cert) => match cert {
+            CertificateError::Expired | CertificateError::ExpiredContext { .. } => {
+                "TLS certificate expired"
+            }
+            CertificateError::NotValidYet | CertificateError::NotValidYetContext { .. } => {
+                "TLS certificate not yet valid"
+            }
+            CertificateError::UnknownIssuer => "TLS certificate from unknown issuer",
+            CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. } => {
+                "TLS certificate not valid for this host name"
+            }
+            CertificateError::Revoked => "TLS certificate revoked",
+            _ => "TLS certificate invalid",
+        },
+        TlsError::AlertReceived(_) => "TLS alert from server",
+        _ => "TLS handshake failed",
     }
 }
 
@@ -709,6 +850,72 @@ mod tests {
                 .unwrap_or_else(|| panic!("accepted: {table}"));
             assert!(err.contains(expected), "{table}\n=> {err}");
         }
+    }
+
+    #[test]
+    fn certificate_expiry_rating() {
+        let day = 86400;
+        let now = 1_800_000_000;
+        let up = || CheckResult::up(Duration::from_millis(5), "HTTP 200");
+        let warn = Duration::from_secs(14 * day as u64);
+        let rate = |not_after, down: u64| {
+            rate_expiry(
+                up(),
+                not_after,
+                now,
+                warn,
+                Duration::from_secs(down * day as u64),
+            )
+        };
+
+        let fine = rate(Ok(now + 60 * day), 0);
+        assert_eq!((fine.status, fine.msg.as_str()), (Status::Up, "HTTP 200"));
+        assert_eq!(fine.cert_expires, Some(now + 60 * day));
+
+        let soon = rate(Ok(now + 10 * day + 5), 0);
+        assert_eq!(
+            (soon.status, soon.msg.as_str()),
+            (Status::Warn, "HTTP 200, certificate expires in 10 days")
+        );
+
+        let down = rate(Ok(now + 3 * day), 7);
+        assert_eq!(
+            (down.status, down.msg.as_str()),
+            (Status::Fail, "HTTP 200, certificate expires in 3 days")
+        );
+
+        let expired = rate(Ok(now - 1), 0);
+        assert_eq!(
+            (expired.status, expired.msg.as_str()),
+            (Status::Warn, "HTTP 200, certificate expired")
+        );
+
+        let failed = rate(Err("timeout"), 0);
+        assert_eq!(
+            (failed.status, failed.msg.as_str()),
+            (Status::Warn, "HTTP 200, certificate check failed")
+        );
+        assert_eq!(failed.cert_expires, None);
+    }
+
+    #[test]
+    fn host_and_port() {
+        let hp = |u: &str| host_port(u);
+        assert_eq!(
+            hp("https://example.org/"),
+            Some(("example.org".into(), 443))
+        );
+        assert_eq!(
+            hp("https://example.org:8443/x?y"),
+            Some(("example.org".into(), 8443))
+        );
+        assert_eq!(hp("https://example.org"), Some(("example.org".into(), 443)));
+        assert_eq!(hp("https://[::1]:8443/"), Some(("::1".into(), 8443)));
+        assert_eq!(hp("https://[::1]/"), Some(("::1".into(), 443)));
+        assert_eq!(hp("https://user@example.org/"), None);
+        assert_eq!(hp("https://example.org:0/"), None);
+        assert_eq!(hp("https://example.org:x/"), None);
+        assert_eq!(hp("http://example.org/"), None);
     }
 
     #[test]
