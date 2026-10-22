@@ -1,4 +1,4 @@
-<!-- logo: docs/logo.svg (a raspberry shaped like a banana — the "Panana Pi") -->
+<p align="center"><img src="docs/logo.svg" width="160" alt="uptime-kinomi logo: a raspberry shaped like a banana"></p>
 
 # uptime-kinomi
 
