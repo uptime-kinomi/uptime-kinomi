@@ -43,16 +43,58 @@ expect_exit() {
     [ "$actual" -eq "$expected" ] || fail "'$*' exited with $actual, expected $expected"
 }
 
-config_dir=$(mktemp -d)
-trap 'rm -rf "$config_dir"' EXIT
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+config_dir=$work/config
+mkdir -p "$config_dir/monitors"
 
-expect_exit 2 "$@" "$bin" check-config --config-dir "$config_dir"
+expect_exit 2 "$@" "$bin" check-config --config-dir "$config_dir" # no kinomi.toml
 touch "$config_dir/kinomi.toml"
+expect_exit 2 "$@" "$bin" check-config --config-dir "$config_dir" # config_version missing
+cat >"$config_dir/kinomi.toml" <<EOF
+config_version = 1
+[server]
+hostnames = ["localhost"]
+[storage]
+data_dir = "$work/data"
+log_dir = "$work/log"
+flush_interval = "1s"
+[pages]
+output_dir = "$work/www"
+EOF
+cat >"$config_dir/monitors/closed-port.toml" <<EOF
+config_version = 1
+type = "tcp"
+name = "Closed port"
+interval = "10s"
+timeout = "2s"
+retries = 0
+[tcp]
+host = "127.0.0.1"
+port = 1
+EOF
 expect_exit 0 "$@" "$bin" check-config --config-dir "$config_dir"
 expect_exit 2 "$@" "$bin" no-such-command
 expect_exit 0 "$@" "$bin" --help
 
-# 4. Real TLS handshake with github.com (only with KINOMI_SMOKE_NETWORK=1).
+# 4. run: one check, then SIGTERM must flush the log and exit cleanly.
+"$@" "$bin" run --config-dir "$config_dir" 2>"$work/stderr" &
+pid=$!
+sleep 4
+kill -TERM "$pid"
+set +e
+wait "$pid"
+status=$?
+set -e
+cat "$work/stderr"
+[ "$status" -eq 0 ] || fail "run exited with $status after SIGTERM"
+log=$(cat "$work"/log/*.log)
+echo "$log"
+echo "$log" | grep -q 'event=START' || fail "no START in the log"
+echo "$log" | grep -q 'monitor=closed-port result=DOWN' || fail "no check result in the log"
+echo "$log" | grep -q 'event=STOP' || fail "no STOP in the log"
+
+# 5. Real TLS handshake with github.com (only with KINOMI_SMOKE_NETWORK=1).
 #    Under QEMU this runs ring/rustls on the emulated CPU, e.g. a Pi 1.
 if [ "${KINOMI_SMOKE_NETWORK:-0}" = 1 ]; then
     set +e
