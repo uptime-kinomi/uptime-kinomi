@@ -1,0 +1,27 @@
+[package]
+name = "uptime-kinomi"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "SBC-friendly uptime monitor and static status pages. Runs on a Raspberry Pi 1."
+license = "MIT"
+repository = "https://github.com/uptime-kinomi/uptime-kinomi"
+readme = "README.md"
+keywords = ["uptime", "monitoring", "status-page", "raspberry-pi", "sbc"]
+categories = ["command-line-utilities", "network-programming"]
+
+[dependencies]
+# Intentionally empty for now. See AGENTS.md "Dependency policy" before adding any.
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

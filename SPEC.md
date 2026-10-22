@@ -553,7 +553,7 @@ uptime-kinomi hash-password USER     # prints an htpasswd line (bcrypt)
 uptime-kinomi version
 ```
 `--config-dir` is resolved as described in §3.1.
-Exit codes: 0 ok, 1 runtime error, 2 configuration error.
+Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error.
 
 ### 10.5 Shipped files (`contrib/`)
 - `systemd/user/uptime-kinomi.service`: **user unit** for `systemctl --user`
