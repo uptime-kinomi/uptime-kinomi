@@ -42,7 +42,7 @@ Keywords in this document: **MUST**, **SHOULD**, **MAY** as in RFC 2119.
   (nginx/Apache/Caddy, certificates e.g. via certbot / Let's Encrypt).
 - No JavaScript, no charts that require JavaScript.
 - Not a metrics/observability platform (use Prometheus for that; kinomi
-  MAY expose a minimal `/metrics`, §9.4).
+  MAY expose a minimal `/metrics`, §9.5).
 
 ### Resource targets (Raspberry Pi 1, 50 monitors, 60 s interval)
 | Metric | Target |
@@ -190,7 +190,7 @@ tags = ["web", "family"]      # optional, usable for page groups
 | `WARN` | Succeeded, but a warning condition holds (e.g. certificate expires soon, slow response) | up |
 | `PENDING` | Failed, but `retries` not yet exhausted | up |
 | `DOWN` | Failed `retries + 1` times in a row | down |
-| `MAINTENANCE` | Inside a maintenance window | excluded |
+| `MAINTENANCE` | Inside a maintenance window (§14.2) | excluded |
 | `UNKNOWN` | No data yet (after first start) | excluded |
 
 A **skipped** check (§6) is not a state. It is logged as `result=SKIPPED`,
@@ -460,6 +460,8 @@ tls_expires = "2026-12-01T00:00:00Z"
 "2026-10-21" = { up = 1440, down = 0, skipped = 0, maint = 0, avg_ms = 121 }
 ```
 
+- State files also keep the last 100 state changes (`changes`, for the
+  feed, §8.7).
 - At startup, kinomi loads state files and **replays log lines after
   `covered_until`**. This also rebuilds the recent-checks bar in memory.
 - `uptime-kinomi rebuild-state` regenerates all state files from the logs
@@ -520,9 +522,9 @@ kinomi self-status (version, uptime, queue length, skipped checks in the last
 {output_dir}/                          URL path (built-in server)
 ├── public/assets/kinomi.css           /assets/kinomi.css
 ├── public/{page}/index.html           /{page}/
-├── public/{page}/status.json          /{page}/status.json        (M4)
-├── public/{page}/feed.atom            /{page}/feed.atom          (M4)
-├── public/{page}/badge/{monitor}.svg  /{page}/badge/{monitor}.svg (M4, if show_badges)
+├── public/{page}/status.json          /{page}/status.json         (§8.6)
+├── public/{page}/feed.atom            /{page}/feed.atom           (§8.7)
+├── public/{page}/badge/{monitor}.svg  /{page}/badge/{monitor}.svg (§8.8, if show_badges)
 ├── private/assets/kinomi.css          /private/assets/kinomi.css
 └── private/{page}/...                 /private/{page}/...        (public = false)
 ```
@@ -551,6 +553,81 @@ kinomi self-status (version, uptime, queue length, skipped checks in the last
 
 ---
 
+### 8.5 Visibility of all generated files
+
+Every file of a page has the page's visibility. For a private page
+(`public = false`), its `status.json`, feed and badges live below
+`/private/{page}/` and need HTTP Basic Auth exactly like its HTML (§9.3);
+in mode B (§9.1) the proxy protects `/private/` as a whole.
+
+Public files contain **only what the public HTML page shows**: no targets
+(URLs, hosts), no last check messages, no descriptions, no self status.
+Those appear only in the private variants.
+
+### 8.6 `status.json`
+
+The machine-readable status of one page, for scripts, dashboards or another
+kinomi. UTF-8 JSON, `Content-Type: application/json`, regenerated with the
+page.
+
+```json
+{
+  "schema": 1,
+  "kinomi_version": "0.3.0",
+  "page": "home",
+  "title": "Our services",
+  "generated": "2026-10-23T08:15:00Z",
+  "overall": "partial",
+  "monitors": [
+    {
+      "id": "blog",
+      "name": "My blog",
+      "group": "Web",
+      "state": "UP",
+      "since": "2026-10-22T18:52:27Z",
+      "uptime_24h": 99.98,
+      "uptime_30d": 99.95,
+      "avg_ms_24h": 120,
+      "cert_expires": "2026-12-01",
+
+      "type": "http",
+      "target": "https://blog.example.org/",
+      "last_check": "2026-10-23T08:14:58Z",
+      "last_msg": "HTTP 200"
+    }
+  ]
+}
+```
+
+- `schema` is incremented on incompatible changes; new fields may be added
+  without incrementing it.
+- `overall`: `up` | `partial` | `down` | `maintenance` | `unknown` (the
+  banner of §8.2).
+- `state`: `UP` | `WARN` | `PENDING` | `DOWN` | `MAINTENANCE` | `UNKNOWN` |
+  `PAUSED` (disabled in the configuration).
+- Times are UTC (RFC 3339); `cert_expires` is a date. Values that are not
+  known (no data yet, no certificate check) are `null`.
+- A monitor in several groups of the page appears once per group.
+- `type`, `target`, `last_check` and `last_msg` are **only present in the
+  private variant** (§8.5).
+
+### 8.7 Atom feed `feed.atom`
+
+Per page, an [Atom](https://www.rfc-editor.org/rfc/rfc4287) feed with the
+incidents (§14) of the page and the state changes to and from `DOWN` of its
+monitors during the last 30 days, newest first, at most 50 entries. Entry
+IDs are stable `tag:` URIs (`tag:uptime-kinomi,2026:{page}/{monitor}/{unix
+time}`). Links are absolute if `server.base_url` is set, otherwise omitted.
+For this, each state file keeps the last 100 state changes (§7.2).
+
+### 8.8 Badges
+
+With `show_badges = true`, `badge/{monitor}.svg` (state, e.g. `My blog | UP`)
+and `badge/{monitor}-uptime.svg` (`uptime 30d | 99.95 %`) are generated for
+every monitor of the page, in the style of shields.io: plain SVG, no
+scripts, no external resources, text XML-escaped. For embedding in READMEs
+and wikis; badges of private pages need Basic Auth like everything else.
+
 ## 9. Built-in HTTP server
 
 ### 9.1 Purpose and deployment modes
@@ -574,7 +651,7 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 | `GET/HEAD /assets/...` | – | CSS |
 | `GET/POST /push/{token}` | token | §4.6 |
 | `GET /healthz` | – | `200 ok` if scheduler alive |
-| `GET /metrics` | Basic Auth | Prometheus text format (optional, `server.metrics = true`) |
+| `GET /metrics` | Basic Auth | Prometheus text format (optional, `server.metrics = true`, §9.5) |
 
 ### 9.3 HTTP Basic Auth
 - Users and passwords live in an **htpasswd file with bcrypt hashes** (`htpasswd -B -C 10`),
@@ -608,6 +685,30 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
   `Cache-Control` short for HTML, `X-Frame-Options: DENY`.
 - `X-Forwarded-*` headers are ignored (not needed: rate limits are per push token
   and global for auth).
+
+---
+
+### 9.5 `/metrics`
+
+With `server.metrics = true` (needs `server.htpasswd_file`), `/metrics`
+serves the [Prometheus text format](https://prometheus.io/docs/instrumenting/exposition_formats/)
+behind Basic Auth, regenerated with the pages:
+
+```
+kinomi_build_info{version="0.3.0"} 1
+kinomi_start_time_seconds 1792678991
+kinomi_queue_length 0
+kinomi_skipped_checks_24h 3
+kinomi_monitor_up{monitor="blog",type="http"} 1
+kinomi_monitor_uptime_ratio{monitor="blog",window="24h"} 0.9998
+kinomi_monitor_uptime_ratio{monitor="blog",window="30d"} 0.9995
+kinomi_monitor_response_ms_24h{monitor="blog"} 120
+kinomi_monitor_cert_expiry_timestamp_seconds{monitor="blog"} 1795996800
+```
+
+`kinomi_monitor_up` is 1 for UP and WARN, 0 for PENDING and DOWN; monitors
+without data, disabled or in maintenance are left out. Other values without
+data are left out as well.
 
 ---
 
@@ -859,28 +960,54 @@ into place.
 
 ## 14. Incidents and maintenance
 
+### 14.1 Incidents
+
+Human-written announcements, one file per incident.
+
 ```toml
 # incidents/2026-10-22-router.toml
 config_version = 1
 title = "Router firmware update"
 severity = "minor"            # info | minor | major
-start = "2026-10-22T18:00:00+02:00"
+start = "2026-10-22T18:00:00+02:00"   # RFC 3339 with offset (or Z)
 end = "2026-10-22T19:00:00+02:00"     # optional; open incidents omit it
-pages = ["home"]              # optional; default: all pages that show incidents
+pages = ["home"]              # optional; default: all pages with show_incidents
 text = """
 The router is being updated. Internet will be unavailable for a few minutes.
 """   # plain text, max 4 KiB; paragraphs separated by blank lines, no Markdown/HTML
 ```
 
+- Shown on the pages above the monitors: **ongoing** (started, not ended),
+  **scheduled** (start in the future) and **resolved** (ended within the
+  last 7 days). Older incidents stay in the feed for 30 days (§8.7).
+- Incidents are pure information: they do not change monitor states.
+
+### 14.2 Maintenance windows
+
 ```toml
 # maintenance/weekly-backup.toml
 config_version = 1
 title = "Weekly NAS backup"
-monitors = ["nas", "nextcloud"]
-schedule = "weekly"           # once | daily | weekly
-start = "2026-10-25T03:00:00"   # local time in pages.timezone for recurring windows
-duration = "2h"
+monitors = ["nas", "nextcloud"]   # monitor IDs, or ["*"]
+tags = ["backup"]                 # optional: also all monitors with these tags
+schedule = "weekly"               # once | daily | weekly
+start = "2026-10-25T03:00:00"     # local time in pages.timezone (no offset)
+duration = "2h"                   # 1m to 7d; daily at most 1d
 ```
+
+- `daily` repeats at the time of `start` every day from the date of `start`,
+  `weekly` on the weekday of `start`. Windows across midnight work.
+- During a window the affected monitors show `MAINTENANCE`:
+  - checks still run and are logged, but as `result=MAINT`, so the log shows
+    what happened;
+  - they count neither as up nor as down (`maint` in the totals, §7.2), and
+    the heartbeat bar shows them separately;
+  - no notifications are sent, and the monitor's state machine (retries,
+    DOWN) is left untouched: after the window, the next check continues
+    from the state before it;
+  - a push monitor whose push is overdue does not fail during the window.
+- Pages list the windows of their monitors that start within the next 7
+  days.
 
 ---
 
