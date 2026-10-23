@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `contrib/install.sh`: one-line installation for the current user (no
+  root): picks the binary for the CPU, verifies the release signature with
+  minisign or OpenSSL 3 and the checksum, creates a starter configuration,
+  checks an existing configuration with the new version before replacing
+  anything, and installs a systemd user service. `--listen`, `--version`,
+  `--no-service`, `--uninstall`.
+
 ## [0.3.0] - 2026-10-23
 
 All planned features: push and DNS monitors, notifications, heartbeat

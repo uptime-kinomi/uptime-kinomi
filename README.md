@@ -94,7 +94,32 @@ Run `uname -m` if unsure.
 Rule of thumb: when in doubt on 32-bit ARM, take `armv6`. It runs everywhere,
 just a bit slower.
 
-## Quick start (planned), no root needed
+## Install in one line (Raspberry Pi or any Linux), no root needed
+
+Logged in as the user who should run kinomi (e.g. `pi`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/uptime-kinomi/uptime-kinomi/main/contrib/install.sh | sh
+```
+
+[`contrib/install.sh`](contrib/install.sh) picks the binary for your CPU,
+**verifies the release signature** (with `minisign`, or OpenSSL 3 as on
+Raspberry Pi OS bookworm) and the checksum, installs to `~/.local/bin`,
+creates a starter configuration in `~/.config/uptime-kinomi` (an existing one
+is never overwritten, and is checked with the new version before anything is
+replaced), and installs and starts a systemd user service. Options:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/uptime-kinomi/uptime-kinomi/main/contrib/install.sh | sh -s -- --listen 0.0.0.0:8080
+```
+
+`--listen 0.0.0.0:8080` makes the status page reachable from your LAN
+(default: only `127.0.0.1`), `--version X.Y.Z` installs a specific release,
+`--no-service` skips systemd, `--uninstall` removes binary and service
+(configuration and data are kept). Prefer to read it first? Download it,
+read it, then run `sh install.sh`.
+
+## Manual setup, no root needed
 
 kinomi runs as your normal user. Everything below works without `sudo`.
 
