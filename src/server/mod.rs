@@ -6,6 +6,7 @@
 //! and timeouts, fixed thread pool. TLS is the reverse proxy's job.
 
 pub mod auth;
+pub mod push;
 
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -16,6 +17,7 @@ use std::time::Duration;
 
 use crate::render::Published;
 use auth::{Auth, Verdict};
+use push::PushRegistry;
 
 const MAX_HEAD_BYTES: usize = 8 * 1024;
 const MAX_HEADERS: usize = 32;
@@ -34,6 +36,7 @@ pub struct Options {
     /// URL path of the page served at "/", e.g. "/home/".
     pub default_page: Option<String>,
     pub auth: Option<Auth>,
+    pub push: Option<PushRegistry>,
 }
 
 pub struct Response {
@@ -48,6 +51,15 @@ impl Response {
             status,
             headers: vec![("Content-Type", "text/plain; charset=utf-8".into())],
             body: Arc::new(text.as_bytes().to_vec()),
+        }
+    }
+
+    /// No body and no content type (push responses).
+    fn empty(status: u16) -> Self {
+        Response {
+            status,
+            headers: Vec::new(),
+            body: Arc::new(Vec::new()),
         }
     }
 
@@ -192,8 +204,16 @@ pub fn route(req: &Request, options: &Options, site: &crate::render::Site) -> Re
     if path == "/healthz" {
         return Response::text(200, "ok\n");
     }
-    if is_push {
-        return Response::text(404, "Not Found\n"); // push monitors: milestone M3
+    if let Some(token) = path.strip_prefix("/push/") {
+        let query = req
+            .path
+            .split_once('?')
+            .map(|(_, q)| q.split('#').next().unwrap_or_default());
+        let status = match &options.push {
+            Some(registry) if !token.contains('/') => registry.accept(token, query),
+            _ => 404,
+        };
+        return Response::empty(status);
     }
 
     // Everything below /private/ needs a login, even if it does not exist,
@@ -300,6 +320,7 @@ fn clean_path(raw: &str) -> Option<String> {
 fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
+        204 => "No Content",
         301 => "Moved Permanently",
         302 => "Found",
         400 => "Bad Request",
@@ -366,6 +387,7 @@ mod tests {
             hostnames: vec!["status.example.org".into()],
             default_page: Some("/home/".into()),
             auth: Some(Auth::parse(&line).unwrap()),
+            push: None,
         }
     }
 

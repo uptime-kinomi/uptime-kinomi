@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `push` monitors: `GET`/`POST /push/<token>` (uptime-kuma compatible,
+  `?status=down` supported, everything else ignored and never stored),
+  constant-time token check, one push per second per token, empty
+  responses; DOWN after `interval + grace` without a push.
+- `dns` monitors with a built-in minimal DNS client (A, AAAA, CNAME, MX,
+  TXT, NS; CNAME chains; optional expected answer set).
+- Notifications: `webhook` (JSON, Discord, Slack/Mattermost), `ntfy`,
+  `gotify` and `telegram`, for the events down, up (with downtime), warn (at
+  most once per 24 h) and reminder (`resend_interval`); sent by a separate
+  thread with retries, every result logged as `event=NOTIFY`.
+- Outbound heartbeat (`[heartbeat]`), changes logged as `event=HEARTBEAT`.
+
 ## [0.2.0] - 2026-10-23
 
 First version that monitors: `http` and `tcp` monitors, the check log and

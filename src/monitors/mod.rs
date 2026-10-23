@@ -5,7 +5,9 @@
 //! `<type>.rs` with a `<Type>File` config struct and an implementation of
 //! [`Check`], then add it to [`Kind`], [`MonitorFile`] and [`build_check`].
 
+pub mod dns;
 pub mod http;
+pub mod push;
 pub mod tcp;
 mod tls;
 
@@ -17,6 +19,7 @@ use serde::Deserialize;
 
 use crate::config::duration::Dur;
 use crate::config::global::{Defaults, MAX_RETRIES, MIN_INTERVAL};
+use crate::config::secret::Secret;
 use crate::config::{FileProblems, is_valid_id};
 
 /// Outcome of one check.
@@ -93,6 +96,17 @@ pub struct Monitor {
     pub enabled: bool,
     pub tags: Vec<String>,
     pub check: Box<dyn Check>,
+    /// Push monitors only: the token of `/push/<token>`.
+    pub push_token: Option<Secret>,
+    /// Push monitors only: extra time after `interval` before it fails.
+    pub grace: Duration,
+}
+
+impl Monitor {
+    /// Polled by the scheduler (everything except push monitors).
+    pub fn is_polled(&self) -> bool {
+        self.enabled && self.kind != Kind::Push
+    }
 }
 
 impl std::fmt::Debug for Monitor {
@@ -143,10 +157,8 @@ struct MonitorFile {
     tags: Vec<String>,
     http: Option<http::HttpFile>,
     tcp: Option<tcp::TcpFile>,
-    // Planned types (SPEC.md §4.5, §4.6): accepted by the parser so the user
-    // gets a clear "not implemented yet" instead of "unknown field".
-    dns: Option<toml::Table>,
-    push: Option<toml::Table>,
+    dns: Option<dns::DnsFile>,
+    push: Option<push::PushFile>,
     grace: Option<Dur>,
 }
 
@@ -190,7 +202,8 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
     if interval < MIN_INTERVAL {
         p.error(format!("interval must be at least {MIN_INTERVAL}"));
     }
-    if timeout.is_zero() || timeout >= interval {
+    // Push monitors have no timeout: nothing is polled.
+    if raw.kind != Kind::Push && (timeout.is_zero() || timeout >= interval) {
         p.error(format!(
             "timeout ({timeout}) must be greater than 0 and less than interval ({interval})"
         ));
@@ -233,8 +246,22 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
     if raw.grace.is_some() && raw.kind != Kind::Push {
         p.error("grace is only valid for push monitors");
     }
+    let grace = raw.grace.unwrap_or(Dur::secs(60));
+    if grace > Dur::secs(86400) {
+        p.error("grace must be at most 1d");
+    }
 
-    let check = build_check(raw.kind, raw.http, raw.tcp, timeout, ctx, p)?;
+    let (check, push_token): (Box<dyn Check>, Option<Secret>) = match (raw.kind, raw.push) {
+        (Kind::Push, Some(file)) => (Box::new(push::PushCheck), Some(push::build(file, ctx, p)?)),
+        (Kind::Push, None) => {
+            p.error("type = \"push\" needs a [push] table");
+            return None;
+        }
+        (kind, _) => (
+            build_check(kind, raw.http, raw.tcp, raw.dns, timeout, ctx, p)?,
+            None,
+        ),
+    };
     if p.has_errors() {
         return None;
     }
@@ -251,6 +278,12 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
         enabled: raw.enabled.unwrap_or(true),
         tags: raw.tags,
         check,
+        push_token,
+        grace: if raw.kind == Kind::Push {
+            grace.0
+        } else {
+            Duration::ZERO
+        },
     })
 }
 
@@ -258,6 +291,7 @@ fn build_check(
     kind: Kind,
     http: Option<http::HttpFile>,
     tcp: Option<tcp::TcpFile>,
+    dns: Option<dns::DnsFile>,
     timeout: Dur,
     ctx: &Context,
     p: &mut FileProblems,
@@ -277,13 +311,12 @@ fn build_check(
             Some(file) => tcp::build(file, timeout.0, p).map(|c| Box::new(c) as Box<dyn Check>),
             None => missing(p),
         },
-        Kind::Dns | Kind::Push => {
-            p.error(format!(
-                "monitor type '{}' is not implemented yet (planned for milestone M3)",
-                kind.name()
-            ));
-            None
-        }
+        Kind::Dns => match dns {
+            Some(file) => dns::build(file, timeout.0, p).map(|c| Box::new(c) as Box<dyn Check>),
+            None => missing(p),
+        },
+        // Handled by the caller.
+        Kind::Push => None,
     }
 }
 
@@ -315,6 +348,8 @@ pub fn test_monitor(id: &str) -> Monitor {
         enabled: true,
         tags: vec![],
         check: Box::new(AlwaysUp),
+        push_token: None,
+        grace: Duration::ZERO,
     }
 }
 
@@ -438,14 +473,14 @@ mod tests {
                 "needs a [tcp] table",
             ),
             (
-                "config_version = 1\ntype = \"dns\"\nname = \"a\"\n[dns]\nname = \"x\"\n"
+                "config_version = 1\ntype = \"dns\"\nname = \"a\"\n[dns]\nname = \"a b\"\n"
                     .to_string(),
-                "not implemented",
+                "dns.name",
             ),
             (
                 "config_version = 1\ntype = \"push\"\nname = \"a\"\ngrace = \"1m\"\n[push]\n"
                     .to_string(),
-                "not implemented",
+                "gen-token",
             ),
             (
                 format!("config_version = 1\ntype = \"tcp\"\nname = \"a\"\ngrace = \"1m\"\n{tcp}"),

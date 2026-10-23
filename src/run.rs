@@ -6,18 +6,19 @@ use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::clock::{self, JumpDetector};
 use crate::config::Config;
 use crate::history::History;
-use crate::monitors::Monitor;
+use crate::monitors::{CheckResult, Kind, Monitor};
+use crate::notifiers::{self, Job, Message, Notifier};
 use crate::render::{self, MonitorView, Renderer, SelfStatus, Snapshot};
 use crate::scheduler::{Event, Scheduler};
-use crate::server::{self, auth::Auth};
-use crate::state::MonitorState;
+use crate::server::{self, auth::Auth, push::PushRegistry};
+use crate::state::{MonitorState, State};
 use crate::storage::log::LogWriter;
 use crate::storage::{replay, statefile};
 
@@ -27,6 +28,9 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// "last updated" and durations stay current.
 const RENDER_AT_LEAST_EVERY: Duration = Duration::from_secs(600);
 
+/// A WARN notification is sent at most this often per monitor.
+const WARN_EVERY: i64 = 86400;
+
 /// Everything the event loop owns.
 struct Service {
     monitors: Arc<Vec<Monitor>>,
@@ -34,6 +38,19 @@ struct Service {
     histories: HashMap<String, History>,
     log: LogWriter,
     data_dir: PathBuf,
+    tz: jiff::tz::TimeZone,
+    notifiers: Arc<Vec<Notifier>>,
+    notify_tx: Option<Sender<Job>>,
+    notify: Vec<NotifyState>,
+    /// Push monitors: when the monitor fails if no push arrives.
+    push_deadline: Vec<Option<Instant>>,
+}
+
+#[derive(Debug, Default)]
+struct NotifyState {
+    down_since: Option<i64>,
+    last_down_notice: Option<i64>,
+    last_warn_notice: Option<i64>,
 }
 
 pub fn run(mut config: Config) -> Result<(), String> {
@@ -64,8 +81,32 @@ pub fn run(mut config: Config) -> Result<(), String> {
         config.global.pages.recent_checks as usize,
     );
     let output_dir = config.global.pages.output_dir.clone();
-    let server_options = server_options(&config, &pages)?;
-    let mut service = Service::open(config)?;
+    let heartbeat = config
+        .global
+        .heartbeat
+        .as_ref()
+        .map(|h| (h.url.clone(), h.interval.0));
+    let notifier_list = Arc::new(std::mem::take(&mut config.notifiers));
+    let (tx, rx) = mpsc::channel();
+    let mut server_options = server_options(&config, &pages)?;
+    if let Some(options) = server_options.as_mut() {
+        if config
+            .monitors
+            .iter()
+            .any(|m| m.enabled && m.kind == Kind::Push)
+        {
+            options.push = Some(PushRegistry::new(&config.monitors, tx.clone()));
+        }
+    }
+    let mut service = Service::open(config, tz.clone(), notifier_list.clone())?;
+    if !notifier_list.is_empty() {
+        let (job_tx, job_rx) = mpsc::channel();
+        notifiers::spawn(notifier_list, job_rx, tx.clone());
+        service.notify_tx = Some(job_tx);
+    }
+    if let Some((url, interval)) = heartbeat {
+        crate::heartbeat::spawn(url, interval, tx.clone());
+    }
     let enabled = service
         .monitors
         .iter()
@@ -108,7 +149,6 @@ pub fn run(mut config: Config) -> Result<(), String> {
         );
     }
 
-    let (tx, rx) = mpsc::channel();
     let scheduler = Scheduler::start(service.monitors.clone(), workers, max_queue, tx);
     let started = clock::unix_seconds(SystemTime::now());
     let mut next_render = Instant::now();
@@ -124,6 +164,7 @@ pub fn run(mut config: Config) -> Result<(), String> {
             Err(RecvTimeoutError::Disconnected) => break,
         }
         let now = Instant::now();
+        service.check_push_deadlines(now);
         if now >= next_flush {
             if let Some(jump) = jumps.check(SystemTime::now(), now) {
                 service.log.record(
@@ -223,6 +264,7 @@ fn server_options(
         hostnames: s.hostnames.iter().map(|h| h.to_ascii_lowercase()).collect(),
         default_page,
         auth,
+        push: None,
     }))
 }
 
@@ -257,7 +299,11 @@ fn create_private_dir(dir: &Path) -> Result<(), String> {
 
 impl Service {
     /// Open the log, load state files and replay what they do not cover.
-    fn open(config: Config) -> Result<Self, String> {
+    fn open(
+        config: Config,
+        tz: jiff::tz::TimeZone,
+        notifiers: Arc<Vec<Notifier>>,
+    ) -> Result<Self, String> {
         let storage = &config.global.storage;
         let retention_days =
             i64::try_from(storage.log_retention.0.as_secs() / 86400).unwrap_or(i64::MAX);
@@ -284,12 +330,40 @@ impl Service {
             .iter()
             .map(|m| MonitorState::restore(m.retries, histories[&m.id].state))
             .collect();
+        let now = clock::unix_seconds(SystemTime::now());
+        // A monitor that was already DOWN before the restart gets no new
+        // DOWN notification, and its reminders continue from now.
+        let notify = monitors
+            .iter()
+            .map(|m| {
+                let h = &histories[&m.id];
+                if h.state == State::Down {
+                    NotifyState {
+                        down_since: h.state_since,
+                        last_down_notice: Some(now),
+                        last_warn_notice: None,
+                    }
+                } else {
+                    NotifyState::default()
+                }
+            })
+            .collect();
+        let start = Instant::now();
+        let push_deadline = monitors
+            .iter()
+            .map(|m| (m.enabled && m.kind == Kind::Push).then(|| start + m.interval + m.grace))
+            .collect();
         Ok(Service {
             monitors,
             states,
             histories,
             log,
             data_dir,
+            tz,
+            notifiers,
+            notify_tx: None,
+            notify,
+            push_deadline,
         })
     }
 
@@ -299,40 +373,57 @@ impl Service {
                 monitor,
                 result,
                 time,
+            } => self.process(monitor, &result, time),
+            Event::Push {
+                monitor,
+                down,
+                time,
             } => {
                 let m = &self.monitors[monitor];
-                let (logged, previous) = self.states[monitor].apply(result.status);
-                let latency = result
-                    .latency
-                    .map(|l| u32::try_from(l.as_millis()).unwrap_or(u32::MAX));
-                let latency_text = latency.map(|l| l.to_string());
-                let mut fields = vec![("monitor", m.id.as_str()), ("result", logged.name())];
-                if let Some(latency) = &latency_text {
-                    fields.push(("latency_ms", latency));
+                self.push_deadline[monitor] = Some(Instant::now() + m.interval + m.grace);
+                let result = if down {
+                    CheckResult::fail(None, "push: status=down")
+                } else {
+                    CheckResult {
+                        status: crate::monitors::Status::Up,
+                        latency: None,
+                        msg: "push".into(),
+                        cert_expires: None,
+                    }
+                };
+                self.process(monitor, &result, time);
+            }
+            Event::Notified {
+                monitor_id,
+                notifier,
+                kind,
+                error,
+                time,
+            } => {
+                let ok = if error.is_some() { "false" } else { "true" };
+                let mut fields = vec![
+                    ("event", "NOTIFY"),
+                    ("monitor", monitor_id.as_str()),
+                    ("notifier", notifier.as_str()),
+                    ("kind", kind.name()),
+                    ("ok", ok),
+                ];
+                if let Some(e) = &error {
+                    fields.push(("msg", e.as_str()));
+                    eprintln!("error: notification {notifier} for {monitor_id} failed: {e}");
                 }
-                let cert_expires = result
-                    .cert_expires
-                    .map(|t| clock::format_date(clock::from_unix(t)));
-                if let Some(date) = &cert_expires {
-                    fields.push(("cert_expires", date));
-                }
-                fields.push(("msg", &result.msg));
                 self.log.record(time, &fields);
-                if let Some(h) = self.histories.get_mut(&m.id) {
-                    let t = clock::unix_seconds(time);
-                    h.record_check(t, logged, latency, &result.msg, result.cert_expires);
+            }
+            Event::Heartbeat { error, time } => {
+                let mut fields = vec![
+                    ("event", "HEARTBEAT"),
+                    ("ok", if error.is_some() { "false" } else { "true" }),
+                ];
+                if let Some(e) = &error {
+                    fields.push(("msg", e.as_str()));
+                    eprintln!("warning: heartbeat failed: {e}");
                 }
-                if let Some(previous) = previous {
-                    // Also visible in the journal.
-                    eprintln!(
-                        "{} ({}): {} -> {} ({})",
-                        m.name,
-                        m.id,
-                        previous.name(),
-                        self.states[monitor].state.name(),
-                        result.msg
-                    );
-                }
+                self.log.record(time, &fields);
             }
             Event::Skipped {
                 monitor,
@@ -361,6 +452,111 @@ impl Service {
                 eprintln!(
                     "warning: uptime-kinomi did not run for {seconds} s (system paused or frozen)"
                 );
+            }
+        }
+    }
+
+    /// Apply a check (or push) result: state, log, history, notifications.
+    fn process(&mut self, monitor: usize, result: &CheckResult, time: SystemTime) {
+        let m = &self.monitors[monitor];
+        let before = self.states[monitor].state;
+        let (logged, previous) = self.states[monitor].apply(result.status);
+        let after = self.states[monitor].state;
+        let latency = result
+            .latency
+            .map(|l| u32::try_from(l.as_millis()).unwrap_or(u32::MAX));
+        let latency_text = latency.map(|l| l.to_string());
+        let mut fields = vec![("monitor", m.id.as_str()), ("result", logged.name())];
+        if let Some(latency) = &latency_text {
+            fields.push(("latency_ms", latency));
+        }
+        let cert_expires = result
+            .cert_expires
+            .map(|t| clock::format_date(clock::from_unix(t)));
+        if let Some(date) = &cert_expires {
+            fields.push(("cert_expires", date));
+        }
+        fields.push(("msg", &result.msg));
+        self.log.record(time, &fields);
+        let t = clock::unix_seconds(time);
+        if let Some(h) = self.histories.get_mut(&m.id) {
+            h.record_check(t, logged, latency, &result.msg, result.cert_expires);
+        }
+        if let Some(previous) = previous {
+            // Also visible in the journal.
+            eprintln!(
+                "{} ({}): {} -> {} ({})",
+                m.name,
+                m.id,
+                previous.name(),
+                after.name(),
+                result.msg
+            );
+        }
+        self.notify(monitor, before, after, &result.msg, t);
+    }
+
+    /// Decide whether a state change is worth a notification (SPEC.md §5.1)
+    /// and queue it for the monitor's notifiers.
+    fn notify(&mut self, monitor: usize, before: State, after: State, detail: &str, t: i64) {
+        let m = &self.monitors[monitor];
+        let ns = &mut self.notify[monitor];
+        let resend = i64::try_from(m.resend_interval.as_secs()).unwrap_or(i64::MAX);
+        let event = if after == State::Down && before != State::Down {
+            ns.down_since = Some(t);
+            ns.last_down_notice = Some(t);
+            Some((notifiers::Kind::Down, None))
+        } else if before == State::Down && after != State::Down {
+            let down_for = ns.down_since.map(|s| t - s);
+            ns.down_since = None;
+            Some((notifiers::Kind::Up, down_for))
+        } else if after == State::Down
+            && resend > 0
+            && ns.last_down_notice.is_some_and(|l| t - l >= resend)
+        {
+            ns.last_down_notice = Some(t);
+            Some((notifiers::Kind::Reminder, ns.down_since.map(|s| t - s)))
+        } else if after == State::Warn
+            && before != State::Warn
+            && ns.last_warn_notice.is_none_or(|w| t - w >= WARN_EVERY)
+        {
+            ns.last_warn_notice = Some(t);
+            Some((notifiers::Kind::Warn, None))
+        } else {
+            None
+        };
+        let (Some((kind, down_for)), Some(jobs)) = (event, &self.notify_tx) else {
+            return;
+        };
+        let message = Arc::new(Message {
+            kind,
+            monitor_id: m.id.clone(),
+            monitor_name: m.name.clone(),
+            detail: detail.to_string(),
+            time: t,
+            local_time: render::html::format_time(&self.tz, t, "%Y-%m-%d %H:%M %Z"),
+            down_for,
+        });
+        for id in &m.notifications {
+            let Some(index) = self.notifiers.iter().position(|n| &n.id == id) else {
+                continue;
+            };
+            if self.notifiers[index].events.contains(&kind) {
+                let _ = jobs.send(Job {
+                    notifier: index,
+                    message: message.clone(),
+                });
+            }
+        }
+    }
+
+    /// Fail push monitors whose push is overdue; again every interval.
+    fn check_push_deadlines(&mut self, now: Instant) {
+        for i in 0..self.monitors.len() {
+            if self.push_deadline[i].is_some_and(|d| now >= d) {
+                self.push_deadline[i] = Some(now + self.monitors[i].interval);
+                let result = CheckResult::fail(None, "no push received");
+                self.process(i, &result, SystemTime::now());
             }
         }
     }

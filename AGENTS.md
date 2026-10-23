@@ -112,17 +112,19 @@ Dependencies (✅ = in use, others are candidates):
 
 | Crate | Purpose |
 |---|---|
-| `serde`, `toml` | configuration and state files |
-| `ureq` with `rustls` (ring provider) and `webpki-roots` ✅ in use | outbound HTTPS, bundled Mozilla CA roots (independent of the OS certificate store) |
-| `ring` ✅ in use | SHA-256 (already pulled in by rustls, so no extra `sha2` crate) |
-| `x509-parser` or rustls API | certificate expiry |
-| `httparse` | inbound HTTP request parsing |
-| `jiff` | time zones from the system tz database |
-| `bcrypt` | htpasswd verification |
-| `base64` | Basic Auth header (already pulled in by ureq) |
-| `getrandom` | push tokens, temporary file names |
-| `minisign-verify` ✅ in use | release signature check in `self-update` (no dependencies) |
-| `signal-hook` | SIGTERM/SIGINT for clean shutdown |
+| `serde`, `toml` ✅ | configuration (parsing only) and state files (written by hand) |
+| `ureq` with `rustls` (ring provider) and `webpki-roots` ✅ | outbound HTTP(S): http monitor, notifications, heartbeat, self-update; bundled Mozilla CA roots |
+| `rustls` ✅ | direct use for the certificate expiry handshake and TLS error classification |
+| `ring` ✅ | SHA-256 and random numbers (already pulled in by rustls) |
+| `httparse` ✅ | inbound HTTP request parsing |
+| `jiff` ✅ | time zones from the system tz database |
+| `bcrypt` ✅ | bcrypt core for htpasswd (without `alloc`; the htpasswd format is ours) |
+| `minisign-verify` ✅ | release signature check in `self-update` (no dependencies) |
+| `signal-hook` ✅ | SIGTERM/SIGINT for clean shutdown |
+
+Done in-house instead of with a crate (small, tested, no extra
+dependencies): base64 variants, JSON writing for notifications, the DNS
+client, X.509 `notAfter` reading, UTC date conversion.
 
 Not allowed: async runtimes (`tokio`, `async-std`), template engines, web
 frameworks, logging frameworks with heavy dependency trees, anything requiring

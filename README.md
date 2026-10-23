@@ -7,12 +7,12 @@ static status page generator written in Rust, built to run on a
 **Raspberry Pi 1**, configured with plain **TOML files**, and producing
 **JavaScript-free HTML + CSS status pages**.
 
-> ⚠️ **Status: early development (v0.2).** Working today: `http` and `tcp`
-> monitors, the check log, public and private status pages, the built-in
-> server with Basic Auth, and signed `self-update`. Not yet: push and DNS
-> monitors, notifications, incidents, badges and the files in `contrib/`
-> (milestones M3 and M4 in [SPEC.md](SPEC.md)). This README describes the
-> planned v1.0.
+> ⚠️ **Status: early development.** Working today: `http`, `tcp`, `dns`
+> and `push` monitors, notifications (webhook, ntfy, Gotify, Telegram), the
+> check log, public and private status pages, the built-in server with Basic
+> Auth, the outbound heartbeat and signed `self-update`. Not yet: incidents,
+> maintenance windows, badges, feeds and the files in `contrib/` (milestone
+> M4 in [SPEC.md](SPEC.md)). This README describes the planned v1.0.
 
 ---
 

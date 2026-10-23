@@ -7,8 +7,10 @@
 mod clock;
 mod config;
 mod encoding;
+mod heartbeat;
 mod history;
 mod monitors;
+mod notifiers;
 mod paths;
 mod render;
 mod run;

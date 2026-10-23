@@ -43,6 +43,25 @@ pub enum Event {
     },
     /// The process did not run for `seconds` (reported once per pause).
     Paused { seconds: u64, time: SystemTime },
+    /// A push monitor was called (`down` for `?status=down`).
+    Push {
+        monitor: usize,
+        down: bool,
+        time: SystemTime,
+    },
+    /// The outbound heartbeat started working (`error` is `None`) or failing.
+    Heartbeat {
+        error: Option<String>,
+        time: SystemTime,
+    },
+    /// A notification was sent (`error` is `None`) or finally failed.
+    Notified {
+        monitor_id: String,
+        notifier: String,
+        kind: crate::notifiers::Kind,
+        error: Option<String>,
+        time: SystemTime,
+    },
 }
 
 #[derive(Debug)]
@@ -135,7 +154,7 @@ impl Scheduler {
     ) -> Self {
         let now = Instant::now();
         let enabled: Vec<usize> = (0..monitors.len())
-            .filter(|&i| monitors[i].enabled)
+            .filter(|&i| monitors[i].is_polled())
             .collect();
         let count = enabled.len().max(1) as u32;
         let slots = enabled

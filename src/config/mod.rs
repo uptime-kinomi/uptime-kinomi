@@ -12,7 +12,8 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::monitors::{self, Monitor};
+use crate::monitors::{self, Kind, Monitor};
+use crate::notifiers::{self, Notifier};
 use crate::paths;
 use global::Global;
 use pages::Page;
@@ -21,11 +22,7 @@ use pages::Page;
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 
 /// Directories whose contents are validated in later milestones.
-const NOT_YET_VALIDATED: [(&str, &str); 3] = [
-    ("notifications", "M3"),
-    ("incidents", "M4"),
-    ("maintenance", "M4"),
-];
+const NOT_YET_VALIDATED: [(&str, &str); 2] = [("incidents", "M4"), ("maintenance", "M4")];
 
 #[derive(Debug)]
 pub struct Config {
@@ -33,6 +30,7 @@ pub struct Config {
     pub global: Global,
     pub monitors: Vec<Monitor>,
     pub pages: Vec<Page>,
+    pub notifiers: Vec<Notifier>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -201,6 +199,24 @@ pub fn load(dir: &Path, env: paths::EnvFn) -> (Option<Config>, Problems) {
         if monitor_list.is_empty() && !problems.has_errors() {
             problems.warning(&dir.join("monitors"), "no monitors configured");
         }
+        check_push(g, &monitor_list, &dir.join("monitors"), &mut problems);
+    }
+
+    let mut notifier_list = Vec::new();
+    for (id, path) in list_toml_files(&dir.join("notifications"), &mut problems) {
+        match read_config_file(&path) {
+            Ok((text, meta)) => {
+                let ctx = notifiers::Context {
+                    config_dir: dir,
+                    file_meta: &meta,
+                };
+                let mut p = problems.for_file(&path);
+                if let Some(n) = notifiers::parse(&id, &text, &ctx, &mut p) {
+                    notifier_list.push(n);
+                }
+            }
+            Err(e) => problems.error(&path, e),
+        }
     }
 
     let mut page_list = Vec::new();
@@ -244,10 +260,35 @@ pub fn load(dir: &Path, env: paths::EnvFn) -> (Option<Config>, Problems) {
             global,
             monitors: monitor_list,
             pages: page_list,
+            notifiers: notifier_list,
         }),
         _ => None,
     };
     (config, problems)
+}
+
+/// Push tokens must be unique, and pushes need the built-in server.
+fn check_push(g: &Global, monitors: &[Monitor], monitors_dir: &Path, problems: &mut Problems) {
+    let push: Vec<&Monitor> = monitors.iter().filter(|m| m.kind == Kind::Push).collect();
+    for (i, a) in push.iter().enumerate() {
+        for b in &push[i + 1..] {
+            if a.push_token == b.push_token {
+                problems.error(
+                    &monitors_dir.join(format!("{}.toml", b.id)),
+                    format!(
+                        "push token is the same as in {}.toml; every push monitor needs its own",
+                        a.id
+                    ),
+                );
+            }
+        }
+    }
+    if !push.is_empty() && !g.server.enabled {
+        problems.warning(
+            monitors_dir,
+            "push monitors need the built-in server (server.enabled = true), or they will always be DOWN",
+        );
+    }
 }
 
 /// Checks across pages and the global configuration.

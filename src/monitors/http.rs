@@ -528,7 +528,7 @@ fn origin(url: &str) -> &str {
 
 /// Coarse error classes. Some error types (e.g. certificate name mismatch)
 /// carry data from the remote side, which must not be reflected.
-fn error_message(e: &ureq::Error) -> String {
+pub fn error_message(e: &ureq::Error) -> String {
     match e {
         ureq::Error::Timeout(_) => "timeout".into(),
         ureq::Error::HostNotFound => "host not found".into(),
