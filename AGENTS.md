@@ -30,50 +30,48 @@ disagree, the spec wins until it is explicitly changed in the same PR.
    resolution (§3.1) and default directories (§10.6). Every example, test and
    doc must work without `sudo`. A feature that needs privileges must be optional.
 
-## Planned source layout
+## Source layout
 
 ```
 src/
 ├── main.rs                CLI dispatch (run, check-config, rebuild-state, gen-token, hash-password, self-update, version)
+├── run.rs                 the service: event loop, notifications, push deadlines, maintenance; rebuild-state
 ├── config/                loading + validation of all TOML files
-│   ├── mod.rs
-│   ├── paths.rs           config-dir resolution, XDG/systemd default directories
+│   ├── mod.rs             directory walk, problems, cross-file checks
 │   ├── global.rs          kinomi.toml
+│   ├── pages.rs           pages/*.toml
+│   ├── incidents.rs       incidents/*.toml
+│   ├── maintenance.rs     maintenance/*.toml (+ window computation)
 │   ├── duration.rs        "30s" / "5m" parsing
 │   └── secret.rs          inline vs *_file secrets, permission checks
-├── monitors/
-│   ├── mod.rs             Monitor trait, MonitorConfig enum, registry
-│   ├── http.rs
-│   ├── tcp.rs
-│   ├── dns.rs
-│   └── push.rs
-├── notifiers/
-│   ├── mod.rs             Notifier trait, NotifierConfig enum, registry, retry thread
-│   ├── webhook.rs
-│   ├── ntfy.rs
-│   ├── gotify.rs
-│   └── telegram.rs
-├── scheduler.rs           dispatcher, bounded queue, workers, fair skipping
-├── state.rs               state machine (UP/WARN/PENDING/DOWN/...), aggregates
+├── paths.rs               config-dir resolution, XDG/systemd default directories
+├── monitors/              one file per type: http.rs, tcp.rs, dns.rs, push.rs (+ tls.rs for certificates)
+├── notifiers/             one file per type: webhook.rs, ntfy.rs, gotify.rs, telegram.rs (+ sender thread in mod.rs)
+├── scheduler.rs           time grid, bounded queue, workers, round-robin under overload, pause detection
+├── state.rs               state machine (UP/WARN/PENDING/DOWN/MAINTENANCE)
+├── history.rs             heartbeat bar, hourly/daily totals, state changes
 ├── storage/
-│   ├── log.rs             buffered logfmt writer, rotation, replay reader
+│   ├── log.rs             buffered logfmt writer, retention
+│   ├── replay.rs          logfmt parser, replay into histories
 │   └── statefile.rs       per-monitor TOML state
 ├── render/
-│   ├── mod.rs             renderer thread, change detection, atomic writes
-│   ├── escape.rs          HTML/XML escaping (the only way to emit text)
-│   ├── html.rs            page templates (Rust code, no template engine)
-│   ├── badge.rs           SVG badges
+│   ├── mod.rs             renderer thread, site, change detection, atomic writes
+│   ├── html.rs            pages and the escaping helper `esc` (the only way to emit text)
+│   ├── json.rs            status.json
 │   ├── feed.rs            Atom feed
-│   └── json.rs            status.json
+│   ├── badge.rs           SVG badges
+│   └── metrics.rs         /metrics
 ├── server/
 │   ├── mod.rs             accept loop, limits, routing
 │   ├── auth.rs            htpasswd (bcrypt) + verification cache
 │   └── push.rs            push endpoint
-├── clock.rs               monotonic scheduling, wall-clock jump detection
+├── heartbeat.rs           outbound heartbeat
+├── clock.rs               UTC formatting, clock plausibility, jump detection
+├── encoding.rs            base64 variants, JSON strings, constant-time comparison
 └── update.rs              self-update: signed checksums, download, test run, atomic replace
 assets/kinomi.css          default style sheet (embedded with include_str!)
-contrib/                   systemd unit, nginx/apache examples, ansible role, example config
-fuzz/                      cargo-fuzz targets (dns response, http response head, http request, config)
+contrib/                   example config, systemd units, nginx/apache, ansible, release tools
+testdata/                  generated test vectors (with their generator scripts)
 ```
 
 ## How to add a monitor type
@@ -144,7 +142,7 @@ cargo +nightly fuzz run <target>     # in fuzz/
 ```
 
 CI runs all of the above for every PR, plus a QEMU smoke test of the ARMv6
-binary (`check-config` on `contrib/examples/` and a short `run`).
+binary (`check-config` on `contrib/examples/config/` and a short `run`).
 
 ## Code style
 

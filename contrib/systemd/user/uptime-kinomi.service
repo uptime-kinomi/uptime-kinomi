@@ -1,0 +1,33 @@
+# uptime-kinomi as a systemd *user* service: no root needed (SPEC.md §10.6).
+#
+#   install -m 755 uptime-kinomi-<platform> ~/.local/bin/uptime-kinomi
+#   cp uptime-kinomi.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now uptime-kinomi
+#
+# To run while you are logged out and to start at boot, lingering must be
+# enabled once for your user: loginctl enable-linger
+#
+# Configuration: ~/.config/uptime-kinomi/
+# State and logs: ~/.local/state/uptime-kinomi/ and ~/.local/state/log/uptime-kinomi/
+# Pages: $XDG_RUNTIME_DIR/uptime-kinomi/www/ (a tmpfs; regenerated after a reboot)
+
+[Unit]
+Description=uptime-kinomi uptime monitor
+Documentation=https://github.com/uptime-kinomi/uptime-kinomi
+
+[Service]
+ExecStart=%h/.local/bin/uptime-kinomi run
+Restart=on-failure
+RestartSec=10
+# Checks first, page rendering and everything else second.
+Nice=10
+# systemd creates these and passes them to kinomi as $STATE_DIRECTORY etc.
+StateDirectory=uptime-kinomi
+LogsDirectory=uptime-kinomi
+RuntimeDirectory=uptime-kinomi
+NoNewPrivileges=yes
+UMask=0027
+
+[Install]
+WantedBy=default.target

@@ -365,14 +365,33 @@ fn check_config(cli_dir: Option<&Path>) -> ExitCode {
     println!("monitors:   {}", config.monitors.len());
     for m in &config.monitors {
         let state = if m.enabled { "" } else { " (disabled)" };
+        let every = config::duration::Dur(m.interval).to_string();
         println!(
-            "  {:<24} {:<5} every {:>4}s  {}{state}",
+            "  {:<24} {:<5} every {every:>5}  {}{state}",
             m.id,
             m.kind.name(),
-            m.interval.as_secs(),
             m.check.target()
         );
     }
+    let names = |ids: Vec<&str>| {
+        if ids.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", ids.join(", "))
+        }
+    };
+    println!(
+        "pages:      {}{}",
+        config.pages.len(),
+        names(config.pages.iter().map(|p| p.id.as_str()).collect())
+    );
+    println!(
+        "notifiers:  {}{}",
+        config.notifiers.len(),
+        names(config.notifiers.iter().map(|n| n.id.as_str()).collect())
+    );
+    println!("incidents:  {}", config.incidents.len());
+    println!("maintenance windows: {}", config.maintenance.len());
     println!("configuration OK");
     ExitCode::SUCCESS
 }

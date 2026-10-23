@@ -7,12 +7,10 @@ static status page generator written in Rust, built to run on a
 **Raspberry Pi 1**, configured with plain **TOML files**, and producing
 **JavaScript-free HTML + CSS status pages**.
 
-> ⚠️ **Status: early development.** Working today: `http`, `tcp`, `dns`
-> and `push` monitors, notifications (webhook, ntfy, Gotify, Telegram), the
-> check log, public and private status pages, the built-in server with Basic
-> Auth, the outbound heartbeat and signed `self-update`. Not yet: incidents,
-> maintenance windows, badges, feeds and the files in `contrib/` (milestone
-> M4 in [SPEC.md](SPEC.md)). This README describes the planned v1.0.
+> ⚠️ **Status: pre-1.0.** All features described here are implemented
+> (milestones M0 to M4 in [SPEC.md](SPEC.md)). Before 1.0: testing on real
+> Raspberry Pi 1 hardware, fuzzing of the parsers, and polishing. Expect
+> configuration details to change until then.
 
 ---
 
@@ -236,6 +234,13 @@ minisign -Vm SHA256SUMS -P RWQWavktNED2FrnDC8yLcpUPBKv4JeUoguh4zMF2wCBxwRJKVs3vR
 sha256sum --ignore-missing -c SHA256SUMS
 gh attestation verify uptime-kinomi-armv6 --repo uptime-kinomi/uptime-kinomi   # optional: build provenance
 ```
+
+## Examples and deployment files
+
+[`contrib/`](contrib/) has a complete example configuration
+([`contrib/examples/config/`](contrib/examples/config/)), systemd units for
+user and system installation, nginx and Apache configurations, and an
+Ansible playbook.
 
 ## Running behind a reverse proxy
 

@@ -1,0 +1,9 @@
+config_version = 1
+type = "tcp"
+name = "Home server SSH"
+description = "The NAS in the basement"
+
+[tcp]
+host = "192.168.1.10"
+port = 22
+expect_banner = "SSH-"

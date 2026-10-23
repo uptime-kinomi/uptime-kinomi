@@ -1,0 +1,73 @@
+# Deploy uptime-kinomi with Ansible (SPEC.md §10.5): one file per monitor,
+# notifier and page, so the configuration lives in Git next to this file.
+#
+# Layout next to this playbook:
+#   files/uptime-kinomi-armv6     the binary for your board (see README)
+#   files/config/                 your configuration directory
+#                                 (start from contrib/examples/config)
+#
+# Run:  ansible-playbook -i pi1.example.org, playbook.yml
+#
+# This installs as the *login user* without root (systemd user service).
+# For a system-wide installation, use contrib/systemd/system/ instead.
+
+- name: Deploy uptime-kinomi
+  hosts: all
+  vars:
+    kinomi_binary: files/uptime-kinomi-armv6
+    kinomi_config: files/config/
+    bin_dir: "{{ ansible_env.HOME }}/.local/bin"
+    config_dir: "{{ ansible_env.HOME }}/.config/uptime-kinomi"
+    staging_dir: "{{ ansible_env.HOME }}/.cache/uptime-kinomi-staging"
+
+  tasks:
+    - name: Binary
+      ansible.builtin.copy:
+        src: "{{ kinomi_binary }}"
+        dest: "{{ bin_dir }}/uptime-kinomi"
+        mode: "0755"
+      notify: Restart uptime-kinomi
+
+    # Validate the whole directory before it goes live: copy it to a staging
+    # directory, run check-config there, and only then replace the real one.
+    - name: Configuration (staging)
+      ansible.builtin.copy:
+        src: "{{ kinomi_config }}"
+        dest: "{{ staging_dir }}/"
+        mode: "u=rwX,g=,o="
+      register: staged
+
+    - name: Check the configuration
+      ansible.builtin.command:
+        cmd: "{{ bin_dir }}/uptime-kinomi check-config --config-dir {{ staging_dir }}"
+      changed_when: false
+
+    - name: Configuration
+      ansible.builtin.copy:
+        src: "{{ kinomi_config }}"
+        dest: "{{ config_dir }}/"
+        mode: "u=rwX,g=,o="
+      notify: Restart uptime-kinomi
+
+    - name: User unit
+      ansible.builtin.copy:
+        src: ../systemd/user/uptime-kinomi.service
+        dest: "{{ ansible_env.HOME }}/.config/systemd/user/uptime-kinomi.service"
+        mode: "0644"
+      notify: Restart uptime-kinomi
+
+    - name: Enable the service
+      ansible.builtin.systemd:
+        name: uptime-kinomi
+        scope: user
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Restart uptime-kinomi
+      ansible.builtin.systemd:
+        name: uptime-kinomi
+        scope: user
+        state: restarted
+        daemon_reload: true

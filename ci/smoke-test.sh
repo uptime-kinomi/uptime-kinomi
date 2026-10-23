@@ -76,6 +76,7 @@ EOF
 expect_exit 0 "$@" "$bin" check-config --config-dir "$config_dir"
 expect_exit 2 "$@" "$bin" no-such-command
 expect_exit 0 "$@" "$bin" --help
+expect_exit 0 "$@" "$bin" check-config --config-dir contrib/examples/config
 
 # 4. run: one check, then SIGTERM must flush the log and exit cleanly.
 "$@" "$bin" run --config-dir "$config_dir" 2>"$work/stderr" &

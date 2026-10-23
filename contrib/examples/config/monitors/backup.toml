@@ -1,0 +1,11 @@
+# The backup script calls this at its end:
+#   curl -fsS https://status.example.org/push/$(cat secrets/backup.token)
+config_version = 1
+type = "push"
+name = "Nightly backup"
+interval = "1d"
+grace = "2h"
+resend_interval = "12h"
+
+[push]
+token_file = "secrets/backup.token"   # create with: uptime-kinomi gen-token > secrets/backup.token

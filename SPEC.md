@@ -1,6 +1,6 @@
 # uptime-kinomi — Specification
 
-Status: **draft**, implemented up to milestone M3 (see §13)
+Status: **draft**, milestones M0 to M4 implemented (see §13); the real Pi 1 test of M0 is pending
 License: MIT
 
 uptime-kinomi is a self-hosted uptime monitor in the spirit of
@@ -756,16 +756,24 @@ Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error,
 3 update available (`self-update --check` only).
 
 ### 10.5 Shipped files (`contrib/`)
+- `examples/config/`: a complete configuration directory with every file
+  type; CI runs `check-config` on it.
 - `systemd/user/uptime-kinomi.service`: **user unit** for `systemctl --user`
   (no root needed, §10.6).
 - `systemd/system/uptime-kinomi.service`: system unit running as the dedicated
-  user `kinomi` (never root), with hardening (`User=kinomi`,
-  `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
-  `NoNewPrivileges=yes`, `CapabilityBoundingSet=`, `RestrictAddressFamilies=AF_INET
-  AF_INET6 AF_UNIX`, `StateDirectory=`, `LogsDirectory=`, `RuntimeDirectory=`, `Nice=10`).
-- nginx and Apache examples for modes A and B.
-- Example Ansible role / playbook (supports user and system installation).
-- Example configuration directory.
+  user `kinomi` (never root), hardened (`NoNewPrivileges`, empty
+  `CapabilityBoundingSet`, `ProtectSystem=strict`, `ProtectHome`,
+  `PrivateTmp`, `PrivateDevices`, `MemoryDenyWriteExecute`,
+  `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`,
+  `SystemCallFilter=@system-service`, ...) with `StateDirectory=`,
+  `LogsDirectory=`, `RuntimeDirectory=` and `Nice=10`.
+- `nginx/mode-a.conf`, `nginx/mode-b.conf`, `apache/mode-a.conf`,
+  `apache/mode-b.conf`: reverse proxy examples for both modes (§9.1),
+  including `/push/` and `/metrics` in mode B.
+- `ansible/playbook.yml`: deploys binary, configuration and user unit; the
+  configuration is copied to a staging directory and checked with
+  `check-config` before it goes live.
+- `release/sign-release.sh`: maintainer tool (§12.1).
 
 ### 10.6 Running without root
 kinomi is designed to run as an ordinary user. Nothing in v1 needs privileges:
@@ -948,11 +956,11 @@ into place.
 
 | Milestone | Content |
 |---|---|
-| **M0** | Repo, CI, cross builds for all targets with QEMU smoke tests, release workflow with signed checksums (§12.1), `self-update` (§12.2) as TLS proof of concept on ARMv6 (QEMU + real Pi 1), logo |
-| **M1** | Config loading + `check-config`, scheduler/queue, `http` and `tcp` monitors, check log |
-| **M2** | State files, replay, page rendering (public/private), built-in server, Basic Auth |
-| **M3** | `push` and `dns` monitors, notifiers (webhook, ntfy, gotify, telegram) |
-| **M4** | Incidents, maintenance, badges, Atom feed, status.json, `/metrics`, contrib files |
+| ✅ **M0** | Repo, CI, cross builds for all targets with QEMU smoke tests, release workflow with signed checksums (§12.1), `self-update` (§12.2) as TLS proof of concept on ARMv6 (QEMU + real Pi 1), logo |
+| ✅ **M1** | Config loading + `check-config`, scheduler/queue, `http` and `tcp` monitors, check log |
+| ✅ **M2** | State files, replay, page rendering (public/private), built-in server, Basic Auth |
+| ✅ **M3** | `push` and `dns` monitors, notifiers (webhook, ntfy, gotify, telegram) |
+| ✅ **M4** | Incidents, maintenance, badges, Atom feed, status.json, `/metrics`, contrib files |
 | **v1.0** | Hardening, fuzzing, documentation, first stable release |
 | later | `ping`, `smtp` notifier, `.deb` packages, uptime-kuma config importer |
 

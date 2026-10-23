@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   most once per 24 h) and reminder (`resend_interval`); sent by a separate
   thread with retries, every result logged as `event=NOTIFY`.
 - Outbound heartbeat (`[heartbeat]`), changes logged as `event=HEARTBEAT`.
+- Incidents (`incidents/*.toml`) on pages and in feeds.
+- Maintenance windows (`maintenance/*.toml`, once/daily/weekly in local
+  time): results are logged as `MAINT`, counted separately, and neither
+  change the state machine nor send notifications.
+- `status.json` per page (schema 1), Atom feed per page, SVG badges
+  (`show_badges`), `/metrics` in the Prometheus text format
+  (`server.metrics`, behind Basic Auth). Public files contain only what the
+  public page shows.
+- `contrib/`: example configuration (checked in CI), systemd user and
+  system units, nginx and Apache examples for both deployment modes, an
+  Ansible playbook.
+- `check-config` lists pages, notifiers, incidents and maintenance windows.
 
 ## [0.2.0] - 2026-10-23
 

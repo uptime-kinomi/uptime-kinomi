@@ -1,0 +1,67 @@
+# uptime-kinomi as a system service with a dedicated user (never root).
+#
+#   useradd --system --home-dir /var/lib/uptime-kinomi --shell /usr/sbin/nologin kinomi
+#   install -m 755 uptime-kinomi-<platform> /usr/local/bin/uptime-kinomi
+#   mkdir -p /etc/uptime-kinomi && chown -R root:kinomi /etc/uptime-kinomi && chmod -R g+rX,o-rwx /etc/uptime-kinomi
+#   cp uptime-kinomi.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now uptime-kinomi
+#
+# Data: /var/lib/uptime-kinomi, logs: /var/log/uptime-kinomi,
+# pages: /run/uptime-kinomi/www (mode 0750: add the web server user to the
+# group "kinomi" if it serves the files directly, SPEC.md §9.1 mode B).
+#
+# Updates: /usr/local/bin is read-only for the service, so run
+# "uptime-kinomi self-update" as an administrator who can write the binary,
+# then "systemctl restart uptime-kinomi".
+
+[Unit]
+Description=uptime-kinomi uptime monitor
+Documentation=https://github.com/uptime-kinomi/uptime-kinomi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kinomi
+Group=kinomi
+ExecStart=/usr/local/bin/uptime-kinomi run --config-dir /etc/uptime-kinomi
+Restart=on-failure
+RestartSec=10
+Nice=10
+UMask=0027
+
+StateDirectory=uptime-kinomi
+StateDirectoryMode=0700
+LogsDirectory=uptime-kinomi
+LogsDirectoryMode=0700
+RuntimeDirectory=uptime-kinomi
+RuntimeDirectoryMode=0750
+
+# Hardening: kinomi needs no privileges, no capabilities and no writable
+# system paths besides the directories above.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target
