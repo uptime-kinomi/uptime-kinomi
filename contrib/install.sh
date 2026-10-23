@@ -381,18 +381,6 @@ main() {
     cp "$work/$asset" "$BIN_DIR/.uptime-kinomi.new"
     mv "$BIN_DIR/.uptime-kinomi.new" "$BIN_DIR/uptime-kinomi"
 
-    # Older versions of this unit had StateDirectory=, which made systemd
-    # link ~/.local/state/uptime-kinomi to the config directory. Undo that.
-    state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/uptime-kinomi"
-    if [ -L "$state_dir" ]; then
-        step "Removing the link $state_dir (left by an older service file)"
-        rm -f "$state_dir"
-        if [ -d "$CONFIG_DIR/state" ]; then
-            mkdir -p "$state_dir"
-            mv "$CONFIG_DIR/state" "$state_dir/state"
-        fi
-    fi
-
     started=0
     if [ "$service" = 1 ] && user_systemd_works; then
         step "Installing the systemd user service"
