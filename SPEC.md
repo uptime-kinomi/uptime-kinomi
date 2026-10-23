@@ -1,6 +1,6 @@
 # uptime-kinomi — Specification
 
-Status: **draft v0.1** (design phase, nothing implemented yet)
+Status: **draft**, implemented up to milestone M2 (see §13)
 License: MIT
 
 uptime-kinomi is a self-hosted uptime monitor in the spirit of

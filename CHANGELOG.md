@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-23
+
+First version that monitors: `http` and `tcp` monitors, the check log and
+status pages with the built-in server (milestones M1 and M2).
+
 ### Added
 - `run`: the monitoring service. A dispatcher with a bounded queue and
   worker threads; every monitor has a fixed time grid; under overload,
@@ -75,6 +80,7 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/uptime-kinomi/uptime-kinomi/releases/tag/v0.1.0
