@@ -14,6 +14,7 @@
   --down: #d1263a;
   --unknown: #9a9aa3;
   --skipped: #d0d0d6;
+  --maint: #3b6fd4;
   --accent: #c51a4a;
 }
 
@@ -30,6 +31,7 @@
     --down: #f0475c;
     --unknown: #6e6e78;
     --skipped: #3a3a44;
+    --maint: #6a9bf4;
     --accent: #f25c84;
   }
 }
@@ -64,6 +66,7 @@ nav a[aria-current="page"] { color: var(--text); font-weight: 600; }
 .banner-partial { background: var(--pending); }
 .banner-down { background: var(--down); }
 .banner-unknown { background: var(--unknown); }
+.banner-maint { background: var(--maint); }
 
 section.group { margin: 24px 0; }
 section.group h2 { font-size: 1.1rem; margin: 0 0 8px; color: var(--muted); }
@@ -80,6 +83,7 @@ ul.monitors > li:first-child { border-top: 0; }
 .state-pending { background: var(--pending); }
 .state-down { background: var(--down); }
 .state-unknown, .state-paused { background: var(--unknown); }
+.state-maint { background: var(--maint); }
 .uptime { color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
 
 .beats { display: flex; gap: 2px; margin: 8px 0 4px; height: 22px; }
@@ -88,6 +92,7 @@ ul.monitors > li:first-child { border-top: 0; }
 .beat-warn { background: var(--warn); }
 .beat-fail { background: var(--pending); }
 .beat-down { background: var(--down); }
+.beat-maint { background: var(--maint); }
 .beat-empty { background: transparent; border: 1px dashed var(--border); }
 
 .details { color: var(--muted); font-size: 0.85rem; }
@@ -97,6 +102,17 @@ ul.monitors > li:first-child { border-top: 0; }
 
 table.self { border-collapse: collapse; font-size: 0.9rem; }
 table.self th { text-align: left; padding: 2px 16px 2px 0; color: var(--muted); font-weight: normal; }
+
+article.incident { background: var(--card); border: 1px solid var(--border); border-left: 6px solid var(--unknown); border-radius: 10px; padding: 10px 16px; margin: 0 0 10px; }
+article.incident-minor { border-left-color: var(--pending); }
+article.incident-major { border-left-color: var(--down); }
+article.incident-resolved { opacity: 0.75; }
+article.incident h3 { margin: 0; font-size: 1rem; }
+.incident-status { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--muted); margin-left: 8px; }
+article.incident p { margin: 6px 0; }
+article.incident p.when { color: var(--muted); font-size: 0.85rem; }
+ul.maintenance { margin: 0; padding-left: 20px; }
+ul.maintenance li { margin: 4px 0; }
 
 footer { margin-top: 32px; color: var(--muted); font-size: 0.85rem; }
 footer a { color: inherit; }

@@ -12,6 +12,9 @@ pub enum State {
     Warn,
     Pending,
     Down,
+    /// Inside a maintenance window (shown only; the state machine keeps
+    /// its own state, SPEC.md §14.2).
+    Maintenance,
 }
 
 impl State {
@@ -22,7 +25,21 @@ impl State {
             State::Warn => "WARN",
             State::Pending => "PENDING",
             State::Down => "DOWN",
+            State::Maintenance => "MAINTENANCE",
         }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        [
+            State::Unknown,
+            State::Up,
+            State::Warn,
+            State::Pending,
+            State::Down,
+            State::Maintenance,
+        ]
+        .into_iter()
+        .find(|s| s.name() == text)
     }
 }
 
@@ -34,6 +51,8 @@ pub enum LogResult {
     /// Failed, retries left (state PENDING).
     Fail,
     Down,
+    /// Any result inside a maintenance window.
+    Maint,
 }
 
 impl LogResult {
@@ -43,6 +62,7 @@ impl LogResult {
             LogResult::Warn => "WARN",
             LogResult::Fail => "FAIL",
             LogResult::Down => "DOWN",
+            LogResult::Maint => "MAINT",
         }
     }
 }
@@ -71,6 +91,12 @@ impl MonitorState {
             State::Down => retries.saturating_add(1),
             State::Pending => 1,
             _ => 0,
+        };
+        // MAINTENANCE is only shown; the state machine starts over.
+        let state = if state == State::Maintenance {
+            State::Unknown
+        } else {
+            state
         };
         MonitorState {
             state,

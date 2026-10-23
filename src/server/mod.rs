@@ -218,7 +218,7 @@ pub fn route(req: &Request, options: &Options, site: &crate::render::Site) -> Re
 
     // Everything below /private/ needs a login, even if it does not exist,
     // so the names of private pages are not revealed.
-    let private = path == "/private" || path.starts_with("/private/");
+    let private = path == "/private" || path.starts_with("/private/") || path == "/metrics";
     if private {
         let verdict = options
             .auth

@@ -12,6 +12,8 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::clock::{self, JumpDetector};
 use crate::config::Config;
+use crate::config::incidents::Incident;
+use crate::config::maintenance::Maintenance;
 use crate::history::History;
 use crate::monitors::{CheckResult, Kind, Monitor};
 use crate::notifiers::{self, Job, Message, Notifier};
@@ -44,6 +46,7 @@ struct Service {
     notify: Vec<NotifyState>,
     /// Push monitors: when the monitor fails if no push arrives.
     push_deadline: Vec<Option<Instant>>,
+    maintenance: Arc<Vec<Maintenance>>,
 }
 
 #[derive(Debug, Default)]
@@ -81,12 +84,16 @@ pub fn run(mut config: Config) -> Result<(), String> {
         config.global.pages.recent_checks as usize,
     );
     let output_dir = config.global.pages.output_dir.clone();
+    let base_url = config.global.server.base_url.clone();
+    let metrics = config.global.server.enabled && config.global.server.metrics;
     let heartbeat = config
         .global
         .heartbeat
         .as_ref()
         .map(|h| (h.url.clone(), h.interval.0));
     let notifier_list = Arc::new(std::mem::take(&mut config.notifiers));
+    let maintenance = Arc::new(std::mem::take(&mut config.maintenance));
+    let incidents: Arc<Vec<Incident>> = Arc::new(std::mem::take(&mut config.incidents));
     let (tx, rx) = mpsc::channel();
     let mut server_options = server_options(&config, &pages)?;
     if let Some(options) = server_options.as_mut() {
@@ -98,7 +105,12 @@ pub fn run(mut config: Config) -> Result<(), String> {
             options.push = Some(PushRegistry::new(&config.monitors, tx.clone()));
         }
     }
-    let mut service = Service::open(config, tz.clone(), notifier_list.clone())?;
+    let mut service = Service::open(
+        config,
+        tz.clone(),
+        notifier_list.clone(),
+        maintenance.clone(),
+    )?;
     if !notifier_list.is_empty() {
         let (job_tx, job_rx) = mpsc::channel();
         notifiers::spawn(notifier_list, job_rx, tx.clone());
@@ -138,6 +150,10 @@ pub fn run(mut config: Config) -> Result<(), String> {
         recent_checks,
         css,
         output_dir: output_dir.clone(),
+        incidents,
+        maintenance,
+        base_url,
+        metrics,
     };
     render::spawn(renderer, snapshot_rx, published.clone(), render_ms.clone());
     if let Some(options) = server_options {
@@ -303,6 +319,7 @@ impl Service {
         config: Config,
         tz: jiff::tz::TimeZone,
         notifiers: Arc<Vec<Notifier>>,
+        maintenance: Arc<Vec<Maintenance>>,
     ) -> Result<Self, String> {
         let storage = &config.global.storage;
         let retention_days =
@@ -364,6 +381,7 @@ impl Service {
             notify_tx: None,
             notify,
             push_deadline,
+            maintenance,
         })
     }
 
@@ -458,6 +476,11 @@ impl Service {
 
     /// Apply a check (or push) result: state, log, history, notifications.
     fn process(&mut self, monitor: usize, result: &CheckResult, time: SystemTime) {
+        let t = clock::unix_seconds(time);
+        if self.in_maintenance(monitor, t) {
+            self.process_maintenance(monitor, result, time);
+            return;
+        }
         let m = &self.monitors[monitor];
         let before = self.states[monitor].state;
         let (logged, previous) = self.states[monitor].apply(result.status);
@@ -494,6 +517,41 @@ impl Service {
             );
         }
         self.notify(monitor, before, after, &result.msg, t);
+    }
+
+    fn in_maintenance(&self, monitor: usize, t: i64) -> bool {
+        self.maintenance
+            .iter()
+            .any(|w| w.monitors.contains(&monitor) && w.active(&self.tz, t))
+    }
+
+    /// Inside a maintenance window: log and count the result as MAINT, but
+    /// leave the state machine and notifications alone (SPEC.md §14.2).
+    fn process_maintenance(&mut self, monitor: usize, result: &CheckResult, time: SystemTime) {
+        let m = &self.monitors[monitor];
+        let latency = result
+            .latency
+            .map(|l| u32::try_from(l.as_millis()).unwrap_or(u32::MAX));
+        let latency_text = latency.map(|l| l.to_string());
+        let mut fields = vec![("monitor", m.id.as_str()), ("result", "MAINT")];
+        if let Some(latency) = &latency_text {
+            fields.push(("latency_ms", latency));
+        }
+        fields.push(("msg", &result.msg));
+        self.log.record(time, &fields);
+        if let Some(h) = self.histories.get_mut(&m.id) {
+            if h.state != State::Maintenance {
+                eprintln!("{} ({}): maintenance window started", m.name, m.id);
+            }
+            let t = clock::unix_seconds(time);
+            h.record_check(
+                t,
+                crate::state::LogResult::Maint,
+                latency,
+                &result.msg,
+                result.cert_expires,
+            );
+        }
     }
 
     /// Decide whether a state change is worth a notification (SPEC.md §5.1)

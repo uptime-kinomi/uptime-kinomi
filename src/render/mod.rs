@@ -11,7 +11,11 @@
 //! private/<page>/index.html    /private/<page>/
 //! ```
 
+pub mod badge;
+pub mod feed;
 pub mod html;
+pub mod json;
+pub mod metrics;
 
 use std::collections::HashMap;
 use std::fs::{self, DirBuilder};
@@ -26,7 +30,9 @@ use std::time::Instant;
 
 use jiff::tz::TimeZone;
 
+use crate::config::incidents::Incident;
 use crate::config::is_valid_id;
+use crate::config::maintenance::Maintenance;
 use crate::config::pages::Page;
 use crate::history::{self, BeatRecord, History};
 use crate::monitors::Monitor;
@@ -48,6 +54,8 @@ pub struct MonitorView {
     pub uptime_30d: Option<f64>,
     pub avg_ms_24h: Option<u32>,
     pub skipped_24h: u32,
+    /// State changes (time, new state), oldest first.
+    pub changes: Vec<(i64, State)>,
 }
 
 impl MonitorView {
@@ -64,6 +72,7 @@ impl MonitorView {
             uptime_30d: history::uptime_percent(&h.last_days(now, 30)),
             avg_ms_24h: day.avg_ms(),
             skipped_24h: day.skipped,
+            changes: h.changes.iter().copied().collect(),
         }
     }
 }
@@ -111,6 +120,21 @@ pub struct Renderer {
     pub recent_checks: usize,
     pub css: String,
     pub output_dir: PathBuf,
+    pub incidents: Arc<Vec<Incident>>,
+    pub maintenance: Arc<Vec<Maintenance>>,
+    /// For absolute links in feeds.
+    pub base_url: Option<String>,
+    /// Generate `/metrics` (SPEC.md §9.5).
+    pub metrics: bool,
+}
+
+/// URL path of a generated file of a page.
+fn page_url(page: &Page, file: &str) -> String {
+    if page.public {
+        format!("/{}/{file}", page.id)
+    } else {
+        format!("/private/{}/{file}", page.id)
+    }
 }
 
 impl Renderer {
@@ -132,6 +156,9 @@ impl Renderer {
             tz: &self.tz,
             auto_refresh_s: self.auto_refresh_s,
             recent_checks: self.recent_checks,
+            incidents: &self.incidents,
+            maintenance: &self.maintenance,
+            now: snap.now,
         };
         let mut files = HashMap::new();
         let css = Arc::new(File {
@@ -152,20 +179,64 @@ impl Renderer {
             );
         }
         for page in self.pages.iter() {
-            let body = html::page(&ctx, page, snap).into_bytes();
-            let path = if page.public {
-                format!("/{}/", page.id)
-            } else {
-                format!("/private/{}/", page.id)
-            };
-            files.insert(
-                path,
-                Arc::new(File {
-                    content_type: "text/html; charset=utf-8",
-                    body,
+            let mut add = |name: &str, content_type: &'static str, body: String| {
+                let file = File {
+                    content_type,
+                    body: body.into_bytes(),
                     private: !page.public,
-                }),
+                };
+                files.insert(page_url(page, name), Arc::new(file));
+            };
+            add("", "text/html; charset=utf-8", html::page(&ctx, page, snap));
+            add(
+                "status.json",
+                "application/json",
+                json::status_json(&ctx, page, snap),
             );
+            add(
+                "feed.atom",
+                "application/atom+xml; charset=utf-8",
+                feed::feed(&ctx, page, snap, self.base_url.as_deref()),
+            );
+            if page.show_badges {
+                let mut seen = Vec::new();
+                for &i in page.groups.iter().flat_map(|g| g.monitors.iter()) {
+                    if seen.contains(&i) {
+                        continue;
+                    }
+                    seen.push(i);
+                    let (m, v) = (&self.monitors[i], &snap.monitors[i]);
+                    let state = json::state_name(m, v);
+                    add(
+                        &format!("badge/{}.svg", m.id),
+                        "image/svg+xml",
+                        badge::badge(&m.name, state, badge::color(state)),
+                    );
+                    let uptime = v.uptime_30d.map_or("–".to_string(), |p| {
+                        format!("{:.2} %", (p * 100.0).floor() / 100.0)
+                    });
+                    let color = match v.uptime_30d {
+                        Some(p) if p >= 99.0 => badge::color("UP"),
+                        Some(p) if p >= 95.0 => badge::color("WARN"),
+                        Some(_) => badge::color("DOWN"),
+                        None => badge::color(""),
+                    };
+                    add(
+                        &format!("badge/{}-uptime.svg", m.id),
+                        "image/svg+xml",
+                        badge::badge("uptime 30d", &uptime, color),
+                    );
+                }
+            }
+        }
+        if self.metrics {
+            let body = metrics::metrics(&self.monitors, snap).into_bytes();
+            let file = File {
+                content_type: "text/plain; version=0.0.4; charset=utf-8",
+                body,
+                private: true,
+            };
+            files.insert("/metrics".to_string(), Arc::new(file));
         }
         Site { files }
     }
@@ -189,6 +260,11 @@ fn disk_path(output_dir: &Path, url: &str) -> PathBuf {
 /// can serve them directly (SPEC.md §9.1, mode B).
 pub fn write(output_dir: &Path, site: &Site, previous: &Site, first: bool) -> io::Result<()> {
     for (url, file) in &site.files {
+        // Served by the built-in server only: never put it into the
+        // directory a proxy may serve without authentication.
+        if url == "/metrics" {
+            continue;
+        }
         if previous
             .files
             .get(url)
@@ -211,7 +287,24 @@ pub fn write(output_dir: &Path, site: &Site, previous: &Site, first: bool) -> io
     Ok(())
 }
 
-/// Remove `<page>/index.html` directories of pages that no longer exist.
+/// A directory containing nothing but files kinomi generates for a page.
+fn is_generated_page_dir(dir: &Path) -> bool {
+    let names = |d: &Path| -> Option<Vec<String>> {
+        fs::read_dir(d)
+            .ok()?
+            .flatten()
+            .map(|e| e.file_name().into_string().ok())
+            .collect()
+    };
+    let Some(top) = names(dir) else { return false };
+    top.iter().all(|n| match n.as_str() {
+        "index.html" | "status.json" | "feed.atom" => true,
+        "badge" => names(&dir.join("badge")).is_some_and(|b| b.iter().all(|f| f.ends_with(".svg"))),
+        _ => false,
+    })
+}
+
+/// Remove directories of pages that no longer exist.
 /// Only directories that look exactly like ours are touched.
 fn remove_stale(output_dir: &Path, site: &Site) -> io::Result<()> {
     for top in ["public", "private"] {
@@ -230,12 +323,8 @@ fn remove_stale(output_dir: &Path, site: &Site) -> io::Result<()> {
                 continue;
             }
             let dir = entry.path();
-            let only_index = fs::read_dir(&dir)
-                .map(|e| e.flatten().map(|f| f.file_name()).collect::<Vec<_>>())
-                .is_ok_and(|names| names.len() == 1 && names[0] == "index.html");
-            if only_index {
-                fs::remove_file(dir.join("index.html"))?;
-                fs::remove_dir(&dir)?;
+            if is_generated_page_dir(&dir) {
+                fs::remove_dir_all(&dir)?;
             }
         }
     }
@@ -312,6 +401,10 @@ mod tests {
             recent_checks: 10,
             css: Renderer::css(None).unwrap(),
             output_dir: output_dir.to_path_buf(),
+            incidents: Arc::new(vec![]),
+            maintenance: Arc::new(vec![]),
+            base_url: None,
+            metrics: false,
         }
     }
 
@@ -330,6 +423,144 @@ mod tests {
         }
     }
 
+    /// A snapshot where "web" went DOWN and came back, with a certificate.
+    fn busy_snapshot(now: i64) -> Snapshot {
+        use crate::state::LogResult;
+        let mut h = History::new(10, 30);
+        h.record_check(
+            now - 600,
+            LogResult::Up,
+            Some(80),
+            "HTTP 200",
+            Some(now + 40 * 86400),
+        );
+        h.record_check(
+            now - 300,
+            LogResult::Down,
+            None,
+            "secret-detail: timeout",
+            None,
+        );
+        h.record_check(now - 60, LogResult::Up, Some(90), "HTTP 200", None);
+        let mut snap = snapshot(now);
+        snap.monitors = vec![MonitorView::new(&h, now)];
+        snap
+    }
+
+    fn text(site: &Site, url: &str) -> String {
+        String::from_utf8(site.files[url].body.clone()).unwrap()
+    }
+
+    #[test]
+    fn public_files_contain_no_private_details() {
+        let dir = TestDir::new("render-visibility");
+        let mut r = renderer(dir.path());
+        Arc::get_mut(&mut r.pages)
+            .unwrap()
+            .iter_mut()
+            .for_each(|p| p.show_badges = true);
+        let site = r.build(&busy_snapshot(1_792_678_991));
+        let public = text(&site, "/home/status.json");
+        let private = text(&site, "/private/all/status.json");
+        for field in [
+            "\"target\"",
+            "\"last_msg\"",
+            "\"last_check\"",
+            "\"type\"",
+            "secret-detail",
+        ] {
+            assert!(
+                !public.contains(field),
+                "{field} in public status.json: {public}"
+            );
+        }
+        assert!(private.contains("\"target\": \"test\""), "{private}");
+        assert!(private.contains("\"last_msg\": \"HTTP 200\""), "{private}");
+        for url in [
+            "/home/",
+            "/home/feed.atom",
+            "/home/badge/web.svg",
+            "/home/badge/web-uptime.svg",
+        ] {
+            assert!(!text(&site, url).contains("secret-detail"), "{url}");
+            assert!(!site.files[url].private, "{url}");
+        }
+        for url in [
+            "/private/all/status.json",
+            "/private/all/feed.atom",
+            "/private/all/badge/web.svg",
+        ] {
+            assert!(site.files[url].private, "{url}");
+        }
+    }
+
+    #[test]
+    fn status_json_fields() {
+        let dir = TestDir::new("render-json");
+        let site = renderer(dir.path()).build(&busy_snapshot(1_792_678_991));
+        let json = text(&site, "/home/status.json");
+        assert!(json.starts_with("{\n  \"schema\": 1,\n"), "{json}");
+        assert!(json.contains("\"overall\": \"up\""), "{json}");
+        assert!(json.contains("\"id\": \"web\", \"name\": \"web\", \"group\": \"All\", \"state\": \"UP\", \"since\": \"2026-10-22T14:22:11Z\""), "{json}");
+        assert!(json.contains("\"uptime_24h\": 66.666"), "{json}");
+        assert!(json.contains("\"cert_expires\": \"2026-12-01\""), "{json}");
+        // No data yet: nulls.
+        let empty = text(
+            &renderer(dir.path()).build(&snapshot(1_792_678_991)),
+            "/home/status.json",
+        );
+        assert!(
+            empty.contains("\"since\": null, \"uptime_24h\": null"),
+            "{empty}"
+        );
+    }
+
+    #[test]
+    fn feed_lists_down_and_recovery() {
+        let dir = TestDir::new("render-feed");
+        let mut r = renderer(dir.path());
+        r.base_url = Some("https://status.example.org/".into());
+        let feed = text(&r.build(&busy_snapshot(1_792_678_991)), "/home/feed.atom");
+        assert!(feed.starts_with("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<feed xmlns=\"http://www.w3.org/2005/Atom\">"));
+        assert!(
+            feed.contains("<title>UP: web (after 4 min down)</title>"),
+            "{feed}"
+        );
+        assert!(feed.contains("<title>DOWN: web</title>"), "{feed}");
+        // UNKNOWN -> UP at the start is not an entry.
+        assert_eq!(feed.matches("<entry>").count(), 2, "{feed}");
+        assert!(
+            feed.contains(
+                "<link rel=\"self\" href=\"https://status.example.org/home/feed.atom\"/>"
+            )
+        );
+    }
+
+    #[test]
+    fn metrics_only_when_enabled_and_never_on_disk() {
+        let dir = TestDir::new("render-metrics");
+        let mut r = renderer(dir.path());
+        assert!(
+            !r.build(&busy_snapshot(1_792_678_991))
+                .files
+                .contains_key("/metrics")
+        );
+        r.metrics = true;
+        let site = r.build(&busy_snapshot(1_792_678_991));
+        let m = text(&site, "/metrics");
+        assert!(site.files["/metrics"].private);
+        assert!(
+            m.contains("kinomi_monitor_up{monitor=\"web\",type=\"tcp\"} 1\n"),
+            "{m}"
+        );
+        assert!(
+            m.contains("kinomi_monitor_uptime_ratio{monitor=\"web\",window=\"24h\"} 0.66667\n"),
+            "{m}"
+        );
+        write(dir.path(), &site, &Site::default(), true).unwrap();
+        assert!(!dir.path().join("public/metrics").exists());
+    }
+
     #[test]
     fn site_layout() {
         let dir = TestDir::new("render");
@@ -341,7 +572,11 @@ mod tests {
             [
                 "/assets/kinomi.css",
                 "/home/",
+                "/home/feed.atom",
+                "/home/status.json",
                 "/private/all/",
+                "/private/all/feed.atom",
+                "/private/all/status.json",
                 "/private/assets/kinomi.css"
             ]
         );

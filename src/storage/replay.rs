@@ -96,6 +96,7 @@ fn apply(line: &Line, histories: &mut HashMap<String, History>) {
         Some("WARN") => LogResult::Warn,
         Some("FAIL") => LogResult::Fail,
         Some("DOWN") => LogResult::Down,
+        Some("MAINT") => LogResult::Maint,
         Some("SKIPPED") => {
             let count = line.get("count").and_then(|c| c.parse().ok()).unwrap_or(1);
             history.record_skip(line.time, count);

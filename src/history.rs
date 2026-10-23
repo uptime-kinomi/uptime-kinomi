@@ -8,6 +8,9 @@ use std::collections::{BTreeMap, VecDeque};
 
 use crate::state::{LogResult, State};
 
+/// State changes kept per monitor (SPEC.md §8.7).
+const MAX_CHANGES: usize = 100;
+
 /// Hourly buckets are kept for this long (enough for "last 24 h").
 const HOURLY_KEEP_HOURS: i64 = 48;
 
@@ -20,6 +23,7 @@ pub enum Beat {
     Fail,
     Down,
     Skipped,
+    Maint,
 }
 
 impl Beat {
@@ -30,6 +34,7 @@ impl Beat {
             Beat::Fail => "FAIL",
             Beat::Down => "DOWN",
             Beat::Skipped => "SKIPPED",
+            Beat::Maint => "MAINT",
         }
     }
 
@@ -40,6 +45,7 @@ impl Beat {
             "FAIL" => Beat::Fail,
             "DOWN" => Beat::Down,
             "SKIPPED" => Beat::Skipped,
+            "MAINT" => Beat::Maint,
             _ => return None,
         })
     }
@@ -50,6 +56,7 @@ impl Beat {
             LogResult::Warn => Beat::Warn,
             LogResult::Fail => Beat::Fail,
             LogResult::Down => Beat::Down,
+            LogResult::Maint => Beat::Maint,
         }
     }
 }
@@ -102,6 +109,8 @@ pub struct History {
     pub recent: VecDeque<BeatRecord>,
     pub hourly: BTreeMap<i64, Bucket>,
     pub daily: BTreeMap<i64, Bucket>,
+    /// The last state changes (time, new state), for the feed.
+    pub changes: VecDeque<(i64, State)>,
     recent_max: usize,
     history_days: i64,
 }
@@ -118,6 +127,7 @@ impl History {
             recent: VecDeque::new(),
             hourly: BTreeMap::new(),
             daily: BTreeMap::new(),
+            changes: VecDeque::new(),
             recent_max: recent_max.max(1),
             history_days,
         }
@@ -136,10 +146,15 @@ impl History {
             LogResult::Warn => State::Warn,
             LogResult::Fail => State::Pending,
             LogResult::Down => State::Down,
+            LogResult::Maint => State::Maintenance,
         };
         if state != self.state {
             self.state = state;
             self.state_since = Some(time);
+            self.changes.push_back((time, state));
+            while self.changes.len() > MAX_CHANGES {
+                self.changes.pop_front();
+            }
         }
         self.last_check = Some(time);
         self.last_msg = msg.to_string();
@@ -147,10 +162,10 @@ impl History {
             self.cert_expires = cert_expires;
         }
         let mut bucket = Bucket::default();
-        if result == LogResult::Down {
-            bucket.down = 1;
-        } else {
-            bucket.up = 1;
+        match result {
+            LogResult::Down => bucket.down = 1,
+            LogResult::Maint => bucket.maint = 1,
+            _ => bucket.up = 1,
         }
         // The response time of failed checks (timeouts, refused
         // connections) says nothing about the service.

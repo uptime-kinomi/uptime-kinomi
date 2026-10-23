@@ -62,6 +62,16 @@ pub fn to_toml(monitor: &str, h: &History) -> String {
         );
     }
     let _ = writeln!(out, "]");
+    let _ = writeln!(out, "# state changes: time, new state");
+    let _ = writeln!(out, "changes = [");
+    for (t, state) in &h.changes {
+        let _ = writeln!(
+            out,
+            "  {},",
+            quote(&format!("{} {}", time(*t), state.name()))
+        );
+    }
+    let _ = writeln!(out, "]");
     for (table, buckets, key) in [
         ("hourly", &h.hourly, clock::format_hour as fn(i64) -> String),
         ("daily", &h.daily, |day| {
@@ -123,6 +133,8 @@ struct StateFile {
     #[serde(default)]
     recent: Vec<String>,
     #[serde(default)]
+    changes: Vec<String>,
+    #[serde(default)]
     hourly: BTreeMap<String, BucketFile>,
     #[serde(default)]
     daily: BTreeMap<String, BucketFile>,
@@ -164,14 +176,16 @@ pub fn from_toml(text: &str, monitor: &str, history: &mut History) -> Result<(),
             .map(|v| clock::parse_rfc3339(v).ok_or_else(|| format!("invalid {field}")))
             .transpose()
     };
-    let state = match file.state.as_str() {
-        "UNKNOWN" => State::Unknown,
-        "UP" => State::Up,
-        "WARN" => State::Warn,
-        "PENDING" => State::Pending,
-        "DOWN" => State::Down,
-        other => return Err(format!("invalid state '{other}'")),
-    };
+    let state =
+        State::parse(&file.state).ok_or_else(|| format!("invalid state '{}'", file.state))?;
+    let mut changes = std::collections::VecDeque::new();
+    for entry in &file.changes {
+        let (t, s) = entry.split_once(' ').ok_or("invalid change entry")?;
+        changes.push_back((
+            clock::parse_rfc3339(t).ok_or("invalid change time")?,
+            State::parse(s).ok_or("invalid change state")?,
+        ));
+    }
     let mut restored = History::new(history.recent_max(), 0);
     restored.restore(
         state,
@@ -220,6 +234,7 @@ pub fn from_toml(text: &str, monitor: &str, history: &mut History) -> Result<(),
     history.recent = restored.recent;
     history.hourly = restored.hourly;
     history.daily = restored.daily;
+    history.changes = changes;
     Ok(())
 }
 

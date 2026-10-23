@@ -7,6 +7,8 @@ use std::fmt::Write as _;
 use jiff::tz::TimeZone;
 
 use super::{MonitorView, SelfStatus, Snapshot};
+use crate::config::incidents::Incident;
+use crate::config::maintenance::Maintenance;
 use crate::config::pages::Page;
 use crate::history::{Beat, BeatRecord};
 use crate::monitors::Monitor;
@@ -19,7 +21,15 @@ pub struct Context<'a> {
     pub tz: &'a TimeZone,
     pub auto_refresh_s: u64,
     pub recent_checks: usize,
+    pub incidents: &'a [Incident],
+    pub maintenance: &'a [Maintenance],
+    pub now: i64,
 }
+
+/// Shown incidents: ongoing, scheduled, or resolved within this time.
+const RESOLVED_SHOWN: i64 = 7 * 86400;
+/// Maintenance windows starting within this time are announced.
+const MAINTENANCE_AHEAD: i64 = 7 * 86400;
 
 /// Escape text for HTML element content and attribute values.
 pub fn esc(text: &str) -> String {
@@ -79,14 +89,20 @@ fn state_label(m: &Monitor, v: &MonitorView) -> (&'static str, &'static str) {
         State::Pending => ("pending", "PENDING"),
         State::Down => ("down", "DOWN"),
         State::Unknown => ("unknown", "NO DATA"),
+        State::Maintenance => ("maint", "MAINTENANCE"),
     }
 }
 
 /// Overall banner: (css class, text).
-fn banner(views: &[&MonitorView]) -> (&'static str, &'static str) {
-    let measured: Vec<_> = views.iter().filter(|v| v.state != State::Unknown).collect();
+pub fn banner(views: &[&MonitorView]) -> (&'static str, &'static str) {
+    let measured: Vec<_> = views
+        .iter()
+        .filter(|v| !matches!(v.state, State::Unknown | State::Maintenance))
+        .collect();
     let down = measured.iter().filter(|v| v.state == State::Down).count();
-    if measured.is_empty() {
+    if measured.is_empty() && views.iter().any(|v| v.state == State::Maintenance) {
+        ("maint", "Maintenance")
+    } else if measured.is_empty() {
         ("unknown", "No data yet")
     } else if down == 0 {
         ("up", "All systems operational")
@@ -174,6 +190,8 @@ pub fn page(ctx: &Context, page: &Page, snap: &Snapshot) -> String {
         out,
         "<p class=\"banner banner-{class}\" role=\"status\">{text}</p>\n<main>"
     );
+    incidents(&mut out, ctx, page);
+    upcoming_maintenance(&mut out, ctx, page);
 
     for group in &page.groups {
         let _ = writeln!(
@@ -199,12 +217,91 @@ pub fn page(ctx: &Context, page: &Page, snap: &Snapshot) -> String {
     let _ = writeln!(out, "</main>");
     let _ = writeln!(
         out,
-        "<footer>Last updated {} · <a href=\"https://github.com/uptime-kinomi/uptime-kinomi\">uptime-kinomi</a> {}</footer>",
+        "<footer>Last updated {} · <a href=\"feed.atom\">Feed</a> · <a href=\"status.json\">JSON</a> · <a href=\"https://github.com/uptime-kinomi/uptime-kinomi\">uptime-kinomi</a> {}</footer>",
         esc(&time(tz, snap.now)),
         esc(env!("CARGO_PKG_VERSION"))
     );
     let _ = writeln!(out, "</div>\n</body>\n</html>");
     out
+}
+
+fn incidents(out: &mut String, ctx: &Context, page: &Page) {
+    let mut shown: Vec<&Incident> = ctx
+        .incidents
+        .iter()
+        .filter(|i| i.shown_on(page) && i.end.is_none_or(|e| e > ctx.now - RESOLVED_SHOWN))
+        .collect();
+    if shown.is_empty() {
+        return;
+    }
+    shown.sort_by_key(|i| std::cmp::Reverse(i.start));
+    let _ = writeln!(out, "<section class=\"group\">\n<h2>Incidents</h2>");
+    for i in shown {
+        let status = match i.end {
+            Some(end) if end <= ctx.now => "resolved",
+            _ if i.start > ctx.now => "scheduled",
+            _ => "ongoing",
+        };
+        let when = match i.end {
+            Some(end) => format!("{} – {}", time(ctx.tz, i.start), time(ctx.tz, end)),
+            None => format!("since {}", time(ctx.tz, i.start)),
+        };
+        let _ = writeln!(
+            out,
+            "<article class=\"incident incident-{} incident-{status}\">\n<h3>{} <span class=\"incident-status\">{status}</span></h3>\n<p class=\"when\">{}</p>",
+            i.severity.name(),
+            esc(&i.title),
+            esc(&when)
+        );
+        for p in &i.paragraphs {
+            let _ = writeln!(out, "<p>{}</p>", esc(p));
+        }
+        let _ = writeln!(out, "</article>");
+    }
+    let _ = writeln!(out, "</section>");
+}
+
+fn upcoming_maintenance(out: &mut String, ctx: &Context, page: &Page) {
+    let on_page: Vec<usize> = page
+        .groups
+        .iter()
+        .flat_map(|g| g.monitors.iter().copied())
+        .collect();
+    let mut windows: Vec<(i64, i64, &Maintenance)> = ctx
+        .maintenance
+        .iter()
+        .filter(|w| w.monitors.iter().any(|m| on_page.contains(m)))
+        .filter_map(|w| {
+            w.next(ctx.tz, ctx.now, MAINTENANCE_AHEAD)
+                .map(|(s, e)| (s, e, w))
+        })
+        .collect();
+    if windows.is_empty() {
+        return;
+    }
+    windows.sort_by_key(|(s, _, _)| *s);
+    let _ = writeln!(
+        out,
+        "<section class=\"group\">\n<h2>Planned maintenance</h2>\n<ul class=\"maintenance\">"
+    );
+    for (start, end, w) in windows {
+        let names: Vec<String> = w
+            .monitors
+            .iter()
+            .filter(|m| on_page.contains(m))
+            .map(|&m| esc(&ctx.monitors[m].name))
+            .collect();
+        let now_text = if start <= ctx.now { " (now)" } else { "" };
+        let _ = writeln!(
+            out,
+            "<li><strong>{}</strong>{now_text}: {} – {}<br><span class=\"details\">{}</span></li>",
+            esc(&w.title),
+            esc(&time(ctx.tz, start)),
+            esc(&time(ctx.tz, end)),
+            names.join(", ")
+        );
+    }
+    let _ = writeln!(out, "</ul>\n</section>");
 }
 
 fn monitor(out: &mut String, ctx: &Context, m: &Monitor, v: &MonitorView, public: bool, now: i64) {
@@ -352,6 +449,7 @@ mod tests {
             uptime_30d: Some(100.0),
             avg_ms_24h: Some(120),
             skipped_24h: 1,
+            changes: vec![],
         }
     }
 
@@ -382,6 +480,9 @@ mod tests {
             tz: &TimeZone::UTC,
             auto_refresh_s: 60,
             recent_checks: 5,
+            incidents: &[],
+            maintenance: &[],
+            now: T,
         };
         let snap = Snapshot {
             now: T,

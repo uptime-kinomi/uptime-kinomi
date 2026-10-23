@@ -5,6 +5,8 @@
 
 pub mod duration;
 pub mod global;
+pub mod incidents;
+pub mod maintenance;
 pub mod pages;
 pub mod secret;
 
@@ -16,13 +18,12 @@ use crate::monitors::{self, Kind, Monitor};
 use crate::notifiers::{self, Notifier};
 use crate::paths;
 use global::Global;
+use incidents::Incident;
+use maintenance::Maintenance;
 use pages::Page;
 
 /// Largest accepted config file (SPEC.md §3.2).
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
-
-/// Directories whose contents are validated in later milestones.
-const NOT_YET_VALIDATED: [(&str, &str); 2] = [("incidents", "M4"), ("maintenance", "M4")];
 
 #[derive(Debug)]
 pub struct Config {
@@ -31,6 +32,8 @@ pub struct Config {
     pub monitors: Vec<Monitor>,
     pub pages: Vec<Page>,
     pub notifiers: Vec<Notifier>,
+    pub incidents: Vec<Incident>,
+    pub maintenance: Vec<Maintenance>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -243,14 +246,29 @@ pub fn load(dir: &Path, env: paths::EnvFn) -> (Option<Config>, Problems) {
         );
     }
 
-    for (sub, milestone) in NOT_YET_VALIDATED {
-        let path = dir.join(sub);
-        let files = list_toml_files(&path, &mut problems);
-        if !files.is_empty() {
-            problems.warning(
-                &path,
-                format!("{} file(s) found; their contents are not validated yet (milestone {milestone})", files.len()),
-            );
+    let mut incident_list = Vec::new();
+    for (id, path) in list_toml_files(&dir.join("incidents"), &mut problems) {
+        match read_config_file(&path) {
+            Ok((text, _)) => {
+                if let Some(i) =
+                    incidents::parse(&id, &text, &page_list, &mut problems.for_file(&path))
+                {
+                    incident_list.push(i);
+                }
+            }
+            Err(e) => problems.error(&path, e),
+        }
+    }
+    let mut maintenance_list = Vec::new();
+    for (id, path) in list_toml_files(&dir.join("maintenance"), &mut problems) {
+        match read_config_file(&path) {
+            Ok((text, _)) => {
+                let mut p = problems.for_file(&path);
+                if let Some(m) = maintenance::parse(&id, &text, &monitor_list, &mut p) {
+                    maintenance_list.push(m);
+                }
+            }
+            Err(e) => problems.error(&path, e),
         }
     }
 
@@ -261,6 +279,8 @@ pub fn load(dir: &Path, env: paths::EnvFn) -> (Option<Config>, Problems) {
             monitors: monitor_list,
             pages: page_list,
             notifiers: notifier_list,
+            incidents: incident_list,
+            maintenance: maintenance_list,
         }),
         _ => None,
     };
@@ -314,6 +334,12 @@ fn check_pages(
                 ),
             );
         }
+    }
+    if g.server.enabled && g.server.metrics && g.server.htpasswd_file.is_none() {
+        problems.error(
+            global_file,
+            "server.metrics needs server.htpasswd_file (/metrics is behind Basic Auth)",
+        );
     }
     let private = pages.iter().filter(|p| !p.public).count();
     if private > 0 && g.server.enabled && g.server.htpasswd_file.is_none() {

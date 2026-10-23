@@ -26,6 +26,7 @@ use serde::Deserialize;
 use crate::clock;
 use crate::config::FileProblems;
 use crate::config::secret::{self, Secret, is_world_readable};
+use crate::encoding::json_string;
 use crate::render::html::human_duration;
 use crate::scheduler::Event;
 
@@ -321,22 +322,6 @@ pub fn json(fields: &[(&str, Json)]) -> String {
         }
     }
     out.push('}');
-    out
-}
-
-fn json_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
     out
 }
 
