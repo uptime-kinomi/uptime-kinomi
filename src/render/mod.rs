@@ -37,7 +37,7 @@ use crate::config::pages::Page;
 use crate::history::{self, BeatRecord, History};
 use crate::monitors::Monitor;
 use crate::state::State;
-use crate::storage::statefile::write_atomic;
+use crate::storage::statefile::{Durability, write_atomic};
 
 const DEFAULT_CSS: &str = include_str!("../../assets/kinomi.css");
 
@@ -279,7 +279,7 @@ pub fn write(output_dir: &Path, site: &Site, previous: &Site, first: bool) -> io
                 .mode(0o750)
                 .create(parent)?;
         }
-        write_atomic(&path, &file.body, 0o640)?;
+        write_atomic(&path, &file.body, 0o640, Durability::Regenerated)?;
     }
     if first {
         remove_stale(output_dir, site)?;

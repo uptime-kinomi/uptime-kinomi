@@ -266,12 +266,23 @@ pub fn save(data_dir: &Path, monitor: &str, history: &History) -> io::Result<()>
         &path(data_dir, monitor),
         to_toml(monitor, history).as_bytes(),
         0o600,
+        Durability::Durable,
     )
+}
+
+/// Durability of [`write_atomic`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Durability {
+    /// fsync before the rename: the file survives a power cut (state files).
+    Durable,
+    /// No fsync: for files that are regenerated anyway (status pages); spares
+    /// SD cards when `output_dir` is not on a tmpfs.
+    Regenerated,
 }
 
 /// Write `content` to `path` via a temporary file in the same directory and
 /// rename, so readers never see a partial file.
-pub fn write_atomic(path: &Path, content: &[u8], mode: u32) -> io::Result<()> {
+pub fn write_atomic(path: &Path, content: &[u8], mode: u32, sync: Durability) -> io::Result<()> {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".tmp-{}", std::process::id()));
     let tmp = path.with_file_name(name);
@@ -283,7 +294,9 @@ pub fn write_atomic(path: &Path, content: &[u8], mode: u32) -> io::Result<()> {
             .mode(mode)
             .open(&tmp)?;
         file.write_all(content)?;
-        file.sync_data()?;
+        if sync == Durability::Durable {
+            file.sync_data()?;
+        }
         fs::rename(&tmp, path)
     })();
     if result.is_err() {

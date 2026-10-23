@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `--no-service`, `--uninstall`.
 
 ### Fixed
+- Status pages are written without fsync (they are regenerated anyway):
+  on a Raspberry Pi 1 with `output_dir` on the SD card, 50 monitors wrote
+  4.2 MB in 10 minutes. State files are still written durably.
 - The systemd user unit no longer uses `StateDirectory=`: systemd 255+
   linked `~/.local/state/uptime-kinomi` to the configuration directory
   `~/.config/uptime-kinomi` (found on a Raspberry Pi with systemd 257).
