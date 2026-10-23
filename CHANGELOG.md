@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   anything, and installs a systemd user service. `--listen`, `--version`,
   `--no-service`, `--uninstall`.
 
+### Changed
+- The default `output_dir` is `$XDG_RUNTIME_DIR/uptime-kinomi/www` (a tmpfs)
+  when there is no `$RUNTIME_DIRECTORY`, so pages do not wear the SD card
+  without systemd either.
+- SPEC.md §1 lists resource measurements from a Raspberry Pi 1.
+
 ### Fixed
 - Status pages are written without fsync (they are regenerated anyway):
   on a Raspberry Pi 1 with `output_dir` on the SD card, 50 monitors wrote

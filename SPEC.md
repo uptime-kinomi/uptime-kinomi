@@ -1,6 +1,6 @@
 # uptime-kinomi — Specification
 
-Status: **draft**, milestones M0 to M4 implemented (see §13); the real Pi 1 test of M0 is pending
+Status: **draft**, milestones M0 to M4 implemented and tested on a Raspberry Pi 1 (see §13)
 License: MIT
 
 uptime-kinomi is a self-hosted uptime monitor in the spirit of
@@ -45,13 +45,22 @@ Keywords in this document: **MUST**, **SHOULD**, **MAY** as in RFC 2119.
   MAY expose a minimal `/metrics`, §9.5).
 
 ### Resource targets (Raspberry Pi 1, 50 monitors, 60 s interval)
-| Metric | Target |
-|---|---|
-| Resident memory | < 10 MB |
-| Average CPU | < 5 % |
-| Startup until first check | < 1 s (excluding log replay of > 1 day) |
-| Binary size (stripped, static) | < 6 MB |
-| SD card writes | ≤ 1 log flush per `flush_interval` (default 30 s) |
+
+Measured on 2026-10-23 on a Raspberry Pi Model B Rev 1 (ARMv6 700 MHz,
+256 MB, Raspbian 13) with 10 HTTPS, 10 DNS and 30 TCP/HTTP monitors, two
+pages and 100 badges, over 10 minutes:
+
+| Metric | Target | Measured (0.3.0) |
+|---|---|---|
+| Resident memory | < 10 MB | 4.8 MB (peak 6.0 MB), 12 threads |
+| Average CPU | < 5 % | 1.8 % of the single core |
+| Startup until the server answers | < 1 s (excluding log replay of > 1 day) | 0.4–0.5 s |
+| Binary size (stripped, static) | < 6 MB | 3.3 MB |
+| SD card writes | ≤ 1 log flush per `flush_interval` (default 30 s) | log + state: ~0.3 MB / 10 min; pages on a tmpfs by default (§10.2) |
+| Page render (2 pages, JSON, feeds, 100 badges) | – | 162 ms |
+| First login (bcrypt cost 10) / cached | – | 0.76 s / 10 ms |
+| HTTPS check incl. TLS handshake | – | 80–370 ms |
+| `self-update` (download, verify, test run, replace) | – | 3.5 s |
 
 ---
 
@@ -730,9 +739,15 @@ data are left out as well.
 
 ### 10.2 SD card friendliness
 - Buffered log writes (§7.1), state files every 10 min (§7.2), pages only
-  rewritten on change (§8.3).
-- `output_dir` MAY be a tmpfs (e.g. `/run/uptime-kinomi/www` or `$XDG_RUNTIME_DIR`); pages are
-  regenerated within one render cycle after a reboot.
+  rewritten on change (§8.3) and without fsync (they are regenerated anyway).
+- Pages change at almost every render (heartbeat bars, durations). Measured
+  on a Raspberry Pi 1 with 50 monitors every 60 s: about 370 KB of page
+  files per render, i.e. roughly 500 MB per day. Therefore the default
+  `output_dir` is a tmpfs (`$RUNTIME_DIRECTORY` with the systemd units,
+  otherwise `$XDG_RUNTIME_DIR`, §10.6); pages are regenerated within one
+  render cycle after a reboot. Log and state files together are about
+  0.3 MB per 10 minutes for the same setup. If `output_dir` must be on the
+  SD card (e.g. for a proxy in mode B), consider `render_interval = "5m"`.
 
 ### 10.3 Self-monitoring
 - Optional outbound heartbeat (`[heartbeat]`): a `GET` of `url` every
@@ -786,7 +801,7 @@ writes only to its own directories.
 |---|---|---|
 | `data_dir` | `$STATE_DIRECTORY` | `$XDG_STATE_HOME/uptime-kinomi` (`~/.local/state/uptime-kinomi`) |
 | `log_dir` | `$LOGS_DIRECTORY` | `$XDG_STATE_HOME/uptime-kinomi/log` |
-| `output_dir` | `$RUNTIME_DIRECTORY/www` | `$XDG_STATE_HOME/uptime-kinomi/www` |
+| `output_dir` | `$RUNTIME_DIRECTORY/www` | `$XDG_RUNTIME_DIR/uptime-kinomi/www` (a tmpfs), else `$XDG_STATE_HOME/uptime-kinomi/www` |
 
 With the system unit, these become `/var/lib/uptime-kinomi`,
 `/var/log/uptime-kinomi` and `/run/uptime-kinomi/www`. The user unit only

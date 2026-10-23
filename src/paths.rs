@@ -51,10 +51,17 @@ pub fn default_log_dir(env: EnvFn) -> Option<PathBuf> {
 }
 
 /// Default `output_dir`: `$RUNTIME_DIRECTORY/www` (systemd), else
-/// `$XDG_STATE_HOME/uptime-kinomi/www`.
+/// `$XDG_RUNTIME_DIR/uptime-kinomi/www`, else
+/// `$XDG_STATE_HOME/uptime-kinomi/www`. The first two are a tmpfs: pages
+/// change every render, and on an SD card that adds up (SPEC.md §10.2).
 pub fn default_output_dir(env: EnvFn) -> Option<PathBuf> {
     systemd_dir(env, "RUNTIME_DIRECTORY")
         .map(|d| d.join("www"))
+        .or_else(|| {
+            env("XDG_RUNTIME_DIR")
+                .and_then(|v| absolute(PathBuf::from(v)))
+                .map(|d| d.join(APP_DIR).join("www"))
+        })
         .or_else(|| app_state_dir(env).map(|d| d.join("www")))
 }
 
@@ -199,6 +206,20 @@ mod tests {
         assert_eq!(
             default_output_dir(&env),
             Some(PathBuf::from("/state/uptime-kinomi/www"))
+        );
+    }
+
+    #[test]
+    fn output_dir_prefers_a_tmpfs() {
+        let env = env_of(&[("XDG_RUNTIME_DIR", "/run/user/1000"), ("HOME", "/home/u")]);
+        assert_eq!(
+            default_output_dir(&env),
+            Some(PathBuf::from("/run/user/1000/uptime-kinomi/www"))
+        );
+        // State and logs stay persistent.
+        assert_eq!(
+            default_data_dir(&env),
+            Some(PathBuf::from("/home/u/.local/state/uptime-kinomi"))
         );
     }
 
