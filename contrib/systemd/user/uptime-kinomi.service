@@ -9,7 +9,7 @@
 # enabled once for your user: loginctl enable-linger
 #
 # Configuration: ~/.config/uptime-kinomi/
-# State and logs: ~/.local/state/uptime-kinomi/ and ~/.local/state/log/uptime-kinomi/
+# State and logs: ~/.local/state/uptime-kinomi/ (logs in log/)
 # Pages: $XDG_RUNTIME_DIR/uptime-kinomi/www/ (a tmpfs; regenerated after a reboot)
 
 [Unit]
@@ -22,9 +22,11 @@ Restart=on-failure
 RestartSec=10
 # Checks first, page rendering and everything else second.
 Nice=10
-# systemd creates these and passes them to kinomi as $STATE_DIRECTORY etc.
-StateDirectory=uptime-kinomi
-LogsDirectory=uptime-kinomi
+# Pages on a tmpfs ($XDG_RUNTIME_DIR/uptime-kinomi/www). State and logs use
+# kinomi's XDG defaults (~/.local/state/uptime-kinomi). No StateDirectory=
+# here: for user units, systemd >= 255 "migrates" an existing
+# ~/.config/<name> (the old location of user StateDirectory=) by linking
+# ~/.local/state/<name> to it - which would be kinomi's config directory.
 RuntimeDirectory=uptime-kinomi
 NoNewPrivileges=yes
 UMask=0027

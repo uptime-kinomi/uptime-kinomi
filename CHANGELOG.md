@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `--no-service`, `--uninstall`.
 
 ### Fixed
+- The systemd user unit no longer uses `StateDirectory=`: systemd 255+
+  linked `~/.local/state/uptime-kinomi` to the configuration directory
+  `~/.config/uptime-kinomi` (found on a Raspberry Pi with systemd 257).
+  `install.sh` removes such a link.
 - Output to a closed pipe (e.g. `uptime-kinomi check-config | head`) no
   longer panics with "Broken pipe".
 

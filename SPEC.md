@@ -789,9 +789,12 @@ writes only to its own directories.
 | `output_dir` | `$RUNTIME_DIRECTORY/www` | `$XDG_STATE_HOME/uptime-kinomi/www` |
 
 With the system unit, these become `/var/lib/uptime-kinomi`,
-`/var/log/uptime-kinomi` and `/run/uptime-kinomi/www`. With the user unit,
-systemd sets them to directories in the user's home and `$XDG_RUNTIME_DIR`
-(see `systemd.exec(5)`, "RuntimeDirectory="). kinomi creates missing directories with mode `0700`
+`/var/log/uptime-kinomi` and `/run/uptime-kinomi/www`. The user unit only
+sets `RuntimeDirectory=` (pages in `$XDG_RUNTIME_DIR/uptime-kinomi/www`, a
+tmpfs); state and logs use the XDG defaults. It deliberately does **not** use
+`StateDirectory=`: for user units, systemd ≥ 255 treats an existing
+`~/.config/<name>` as old state and links `~/.local/state/<name>` to it,
+which would be kinomi's configuration directory. kinomi creates missing directories with mode `0700`
 (`0750` for `output_dir`, so a web server group can read the pages in mode B).
 
 **Starting automatically without root:**
