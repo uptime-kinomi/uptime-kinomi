@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-23
+
+All planned features: push and DNS monitors, notifications, heartbeat
+(M3), incidents, maintenance windows, status.json, feeds, badges,
+/metrics and deployment examples (M4).
+
 ### Added
 - `push` monitors: `GET`/`POST /push/<token>` (uptime-kuma compatible,
   `?status=down` supported, everything else ignored and never stored),
@@ -105,7 +111,8 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/uptime-kinomi/uptime-kinomi/releases/tag/v0.1.0
