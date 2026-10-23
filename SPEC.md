@@ -742,12 +742,21 @@ data are left out as well.
   rewritten on change (§8.3) and without fsync (they are regenerated anyway).
 - Pages change at almost every render (heartbeat bars, durations). Measured
   on a Raspberry Pi 1 with 50 monitors every 60 s: about 370 KB of page
-  files per render, i.e. roughly 500 MB per day. Therefore the default
-  `output_dir` is a tmpfs (`$RUNTIME_DIRECTORY` with the systemd units,
-  otherwise `$XDG_RUNTIME_DIR`, §10.6); pages are regenerated within one
-  render cycle after a reboot. Log and state files together are about
-  0.3 MB per 10 minutes for the same setup. If `output_dir` must be on the
-  SD card (e.g. for a proxy in mode B), consider `render_interval = "5m"`.
+  files per render, i.e. roughly 500 MB per day. Therefore, with the
+  systemd units, `output_dir` is a tmpfs that systemd creates for the
+  service (`RuntimeDirectory=`: `/run/uptime-kinomi` for the system unit,
+  `/run/user/<uid>/uptime-kinomi` for the user unit, which with lingering
+  exists from boot without a login) and removes when the service stops.
+  Losing the pages is harmless: they are regenerated from the state files
+  within one render cycle. Log and state files together are about 0.3 MB
+  per 10 minutes for the same setup.
+- `$XDG_RUNTIME_DIR` is deliberately not used outside the service: without
+  lingering it disappears at logout, and cron does not set it. Without
+  systemd (e.g. `@reboot` in crontab), pages go to the state directory on
+  the SD card; set `output_dir` to a tmpfs or use `render_interval = "5m"`.
+- In mode B (§9.1) the proxy must read the pages: use the system unit
+  (`/run/uptime-kinomi`, group `kinomi`); `/run/user/<uid>` is private to
+  the user.
 
 ### 10.3 Self-monitoring
 - Optional outbound heartbeat (`[heartbeat]`): a `GET` of `url` every
@@ -801,7 +810,7 @@ writes only to its own directories.
 |---|---|---|
 | `data_dir` | `$STATE_DIRECTORY` | `$XDG_STATE_HOME/uptime-kinomi` (`~/.local/state/uptime-kinomi`) |
 | `log_dir` | `$LOGS_DIRECTORY` | `$XDG_STATE_HOME/uptime-kinomi/log` |
-| `output_dir` | `$RUNTIME_DIRECTORY/www` | `$XDG_RUNTIME_DIR/uptime-kinomi/www` (a tmpfs), else `$XDG_STATE_HOME/uptime-kinomi/www` |
+| `output_dir` | `$RUNTIME_DIRECTORY/www` (a tmpfs) | `$XDG_STATE_HOME/uptime-kinomi/www` |
 
 With the system unit, these become `/var/lib/uptime-kinomi`,
 `/var/log/uptime-kinomi` and `/run/uptime-kinomi/www`. The user unit only

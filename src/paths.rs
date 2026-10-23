@@ -50,18 +50,15 @@ pub fn default_log_dir(env: EnvFn) -> Option<PathBuf> {
     systemd_dir(env, "LOGS_DIRECTORY").or_else(|| app_state_dir(env).map(|d| d.join("log")))
 }
 
-/// Default `output_dir`: `$RUNTIME_DIRECTORY/www` (systemd), else
-/// `$XDG_RUNTIME_DIR/uptime-kinomi/www`, else
-/// `$XDG_STATE_HOME/uptime-kinomi/www`. The first two are a tmpfs: pages
-/// change every render, and on an SD card that adds up (SPEC.md §10.2).
+/// Default `output_dir`: `$RUNTIME_DIRECTORY/www` (a tmpfs created by
+/// systemd for the service, SPEC.md §10.2), else
+/// `$XDG_STATE_HOME/uptime-kinomi/www`.
+///
+/// Deliberately not `$XDG_RUNTIME_DIR`: without lingering it disappears at
+/// logout while kinomi may keep running, and cron does not set it.
 pub fn default_output_dir(env: EnvFn) -> Option<PathBuf> {
     systemd_dir(env, "RUNTIME_DIRECTORY")
         .map(|d| d.join("www"))
-        .or_else(|| {
-            env("XDG_RUNTIME_DIR")
-                .and_then(|v| absolute(PathBuf::from(v)))
-                .map(|d| d.join(APP_DIR).join("www"))
-        })
         .or_else(|| app_state_dir(env).map(|d| d.join("www")))
 }
 
@@ -210,16 +207,21 @@ mod tests {
     }
 
     #[test]
-    fn output_dir_prefers_a_tmpfs() {
+    fn output_dir_ignores_the_login_session_dir() {
+        // $XDG_RUNTIME_DIR vanishes at logout without lingering.
         let env = env_of(&[("XDG_RUNTIME_DIR", "/run/user/1000"), ("HOME", "/home/u")]);
         assert_eq!(
             default_output_dir(&env),
-            Some(PathBuf::from("/run/user/1000/uptime-kinomi/www"))
+            Some(PathBuf::from("/home/u/.local/state/uptime-kinomi/www"))
         );
-        // State and logs stay persistent.
+        // The service's own runtime directory is used.
+        let env = env_of(&[
+            ("RUNTIME_DIRECTORY", "/run/user/1000/uptime-kinomi"),
+            ("HOME", "/home/u"),
+        ]);
         assert_eq!(
-            default_data_dir(&env),
-            Some(PathBuf::from("/home/u/.local/state/uptime-kinomi"))
+            default_output_dir(&env),
+            Some(PathBuf::from("/run/user/1000/uptime-kinomi/www"))
         );
     }
 
