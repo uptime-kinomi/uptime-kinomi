@@ -164,6 +164,7 @@ pub fn parse(
     file: &Path,
     config_dir: &Path,
     env: paths::EnvFn,
+    runtime: Option<&Path>,
     problems: &mut Problems,
 ) -> Option<Global> {
     let raw: GlobalFile = match toml::from_str(text) {
@@ -271,7 +272,7 @@ pub fn parse(
         let output_dir = s
             .output_dir
             .map(|d| resolve_path(config_dir, &d))
-            .or_else(|| paths::default_output_dir(env))
+            .or_else(|| paths::default_output_dir(env, runtime))
             .unwrap_or_else(|| {
                 p.error("pages.output_dir cannot be determined (no $HOME); set it explicitly");
                 PathBuf::new()
@@ -416,6 +417,7 @@ mod tests {
             Path::new("kinomi.toml"),
             Path::new("/cfg"),
             &env,
+            None,
             &mut problems,
         );
         (global, problems)

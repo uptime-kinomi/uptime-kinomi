@@ -219,7 +219,11 @@ curl -fsSLo ~/.config/systemd/user/uptime-kinomi.service \
 systemctl --user enable --now uptime-kinomi
 ```
 
-State, logs and pages end up in `~/.local/state/uptime-kinomi/`.
+State and logs end up in `~/.local/state/uptime-kinomi/`, the generated
+pages in `/run/user/<uid>/uptime-kinomi/www` (a tmpfs, to spare the SD
+card). The directories are the same whether systemd starts kinomi or you run
+`uptime-kinomi run` yourself, e.g. for debugging after
+`systemctl --user stop uptime-kinomi`.
 
 To keep the service running after you log out and start it at boot, *lingering*
 must be enabled once for your user (`loginctl enable-linger`; on some systems an
@@ -231,8 +235,9 @@ administrator has to do this). Without systemd, a crontab line does the job:
 
 **System-wide installation** works the same way, with a dedicated `kinomi`
 user (never root), config in `/etc/uptime-kinomi/` and the hardened system unit
-from `contrib/systemd/system/`. Data then goes to `/var/lib/uptime-kinomi`,
-`/var/log/uptime-kinomi` and `/run/uptime-kinomi`. See [SPEC.md](SPEC.md) §10.6.
+from `contrib/systemd/system/`, which creates `/var/lib/uptime-kinomi`,
+`/var/log/uptime-kinomi` and `/run/uptime-kinomi`; set these paths in
+`kinomi.toml` (see the comment in the unit). See [SPEC.md](SPEC.md) §10.6.
 
 Everything is explained in [SPEC.md](SPEC.md).
 

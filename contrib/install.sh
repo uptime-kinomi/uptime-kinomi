@@ -262,8 +262,8 @@ ExecStart=%h/.local/bin/uptime-kinomi run
 Restart=on-failure
 RestartSec=10
 Nice=10
-# No StateDirectory=: see contrib/systemd/user/uptime-kinomi.service.
-RuntimeDirectory=uptime-kinomi
+# No directories here: kinomi derives them from the user, so a manual
+# "uptime-kinomi run" uses the same ones (contrib/systemd/user/).
 NoNewPrivileges=yes
 UMask=0027
 
@@ -409,6 +409,8 @@ main() {
         say "  service:       systemctl --user status uptime-kinomi"
         say "  logs:          journalctl --user -u uptime-kinomi"
         say "  status page:   http://$listen/"
+        say "  pages:         /run/user/$(id -u)/uptime-kinomi/www (tmpfs)"
+        say "  data, logs:    ${XDG_STATE_HOME:-$HOME/.local/state}/uptime-kinomi"
         if [ "$linger" != yes ]; then
             say ""
             say "To keep it running after you log out and to start it at boot, run once:"

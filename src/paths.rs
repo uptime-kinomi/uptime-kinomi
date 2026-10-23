@@ -1,9 +1,12 @@
 //! Configuration directory resolution (SPEC.md §3.1) and default data
 //! directories (SPEC.md §10.6).
 //!
-//! The functions take the environment and the file system check as
-//! parameters, so they can be tested without touching the real process
-//! environment.
+//! The defaults depend only on the user (HOME, XDG_STATE_HOME, UID), never
+//! on how kinomi was started: the systemd service and a manual
+//! `uptime-kinomi run` of the same user use the same directories.
+//!
+//! The functions take the environment as a parameter, so they can be tested
+//! without touching the real process environment.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -38,35 +41,50 @@ pub fn config_dir(cli: Option<&Path>, env: EnvFn, is_dir: &dyn Fn(&Path) -> bool
     PathBuf::from(SYSTEM_CONFIG_DIR)
 }
 
-/// Default `data_dir`: `$STATE_DIRECTORY` (systemd), else
-/// `$XDG_STATE_HOME/uptime-kinomi`. `None` if neither can be determined.
+/// Default `data_dir`: `$XDG_STATE_HOME/uptime-kinomi`
+/// (`~/.local/state/uptime-kinomi`). `None` without a usable `$HOME`.
 pub fn default_data_dir(env: EnvFn) -> Option<PathBuf> {
-    systemd_dir(env, "STATE_DIRECTORY").or_else(|| app_state_dir(env))
+    app_state_dir(env)
 }
 
-/// Default `log_dir`: `$LOGS_DIRECTORY` (systemd), else
-/// `$XDG_STATE_HOME/uptime-kinomi/log`.
+/// Default `log_dir`: `<data_dir>/log`.
 pub fn default_log_dir(env: EnvFn) -> Option<PathBuf> {
-    systemd_dir(env, "LOGS_DIRECTORY").or_else(|| app_state_dir(env).map(|d| d.join("log")))
+    app_state_dir(env).map(|d| d.join("log"))
 }
 
-/// Default `output_dir`: `$RUNTIME_DIRECTORY/www` (a tmpfs created by
-/// systemd for the service, SPEC.md §10.2), else
-/// `$XDG_STATE_HOME/uptime-kinomi/www`.
-///
-/// Deliberately not `$XDG_RUNTIME_DIR`: without lingering it disappears at
-/// logout while kinomi may keep running, and cron does not set it.
-pub fn default_output_dir(env: EnvFn) -> Option<PathBuf> {
-    systemd_dir(env, "RUNTIME_DIRECTORY")
-        .map(|d| d.join("www"))
-        .or_else(|| app_state_dir(env).map(|d| d.join("www")))
+/// Default `output_dir`: `/run/user/<uid>/uptime-kinomi/www` (a tmpfs) if the
+/// user's runtime directory exists, else `<data_dir>/www`. `runtime` is the
+/// result of [`user_runtime_dir`].
+pub fn default_output_dir(env: EnvFn, runtime: Option<&Path>) -> Option<PathBuf> {
+    match runtime {
+        Some(dir) => Some(dir.join(APP_DIR).join("www")),
+        None => app_state_dir(env).map(|d| d.join("www")),
+    }
 }
 
-/// systemd passes `StateDirectory=a b` as `/var/lib/a:/var/lib/b`; we use the first.
-fn systemd_dir(env: EnvFn, key: &str) -> Option<PathBuf> {
-    let value = env(key)?;
-    let first = value.to_str()?.split(':').next()?;
-    absolute(PathBuf::from(first))
+/// `/run/user/<uid>` of the current user, if it exists and belongs to us.
+/// systemd-logind keeps it from boot to shutdown when lingering is enabled
+/// (`loginctl enable-linger`), otherwise while the user is logged in. The
+/// UID comes from /proc, not from `$XDG_RUNTIME_DIR`, so it is the same for
+/// the service and a login shell.
+pub fn user_runtime_dir() -> Option<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    let uid = current_uid()?;
+    let dir = PathBuf::from(format!("/run/user/{uid}"));
+    let meta = std::fs::metadata(&dir).ok()?;
+    (meta.is_dir() && meta.uid() == uid).then_some(dir)
+}
+
+/// Real UID of this process, from /proc/self/status (no libc call).
+pub fn current_uid() -> Option<u32> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("Uid:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
 }
 
 fn app_state_dir(env: EnvFn) -> Option<PathBuf> {
@@ -168,25 +186,30 @@ mod tests {
     }
 
     #[test]
-    fn default_dirs_from_systemd() {
-        let env = env_of(&[
-            ("STATE_DIRECTORY", "/var/lib/uptime-kinomi:/var/lib/other"),
+    fn service_and_shell_get_the_same_directories() {
+        // What systemd sets for a service, and what a login shell has.
+        let service = env_of(&[
+            ("STATE_DIRECTORY", "/var/lib/uptime-kinomi"),
             ("LOGS_DIRECTORY", "/var/log/uptime-kinomi"),
-            ("RUNTIME_DIRECTORY", "/run/uptime-kinomi"),
+            ("RUNTIME_DIRECTORY", "/run/user/1000/other"),
             ("HOME", "/home/u"),
         ]);
-        assert_eq!(
-            default_data_dir(&env),
-            Some(PathBuf::from("/var/lib/uptime-kinomi"))
-        );
-        assert_eq!(
-            default_log_dir(&env),
-            Some(PathBuf::from("/var/log/uptime-kinomi"))
-        );
-        assert_eq!(
-            default_output_dir(&env),
-            Some(PathBuf::from("/run/uptime-kinomi/www"))
-        );
+        let shell = env_of(&[("HOME", "/home/u"), ("XDG_RUNTIME_DIR", "/run/user/1000")]);
+        let runtime = Some(Path::new("/run/user/1000"));
+        for env in [&service as EnvFn, &shell] {
+            assert_eq!(
+                default_data_dir(env),
+                Some(PathBuf::from("/home/u/.local/state/uptime-kinomi"))
+            );
+            assert_eq!(
+                default_log_dir(env),
+                Some(PathBuf::from("/home/u/.local/state/uptime-kinomi/log"))
+            );
+            assert_eq!(
+                default_output_dir(env, runtime),
+                Some(PathBuf::from("/run/user/1000/uptime-kinomi/www"))
+            );
+        }
     }
 
     #[test]
@@ -200,45 +223,26 @@ mod tests {
             default_log_dir(&env),
             Some(PathBuf::from("/state/uptime-kinomi/log"))
         );
+        // Without a runtime directory the pages go below the data directory.
         assert_eq!(
-            default_output_dir(&env),
+            default_output_dir(&env, None),
             Some(PathBuf::from("/state/uptime-kinomi/www"))
         );
     }
 
     #[test]
-    fn output_dir_ignores_the_login_session_dir() {
-        // $XDG_RUNTIME_DIR vanishes at logout without lingering.
-        let env = env_of(&[("XDG_RUNTIME_DIR", "/run/user/1000"), ("HOME", "/home/u")]);
-        assert_eq!(
-            default_output_dir(&env),
-            Some(PathBuf::from("/home/u/.local/state/uptime-kinomi/www"))
-        );
-        // The service's own runtime directory is used.
-        let env = env_of(&[
-            ("RUNTIME_DIRECTORY", "/run/user/1000/uptime-kinomi"),
-            ("HOME", "/home/u"),
-        ]);
-        assert_eq!(
-            default_output_dir(&env),
-            Some(PathBuf::from("/run/user/1000/uptime-kinomi/www"))
-        );
-    }
-
-    #[test]
-    fn default_dirs_from_home() {
-        let env = env_of(&[("HOME", "/home/u")]);
-        assert_eq!(
-            default_data_dir(&env),
-            Some(PathBuf::from("/home/u/.local/state/uptime-kinomi"))
-        );
+    fn uid_and_runtime_dir() {
+        assert!(current_uid().is_some());
+        if let Some(dir) = user_runtime_dir() {
+            assert!(dir.starts_with("/run/user/"));
+        }
     }
 
     #[test]
     fn default_dirs_unknown_without_home() {
-        let env = env_of(&[("STATE_DIRECTORY", "relative")]);
+        let env = env_of(&[("STATE_DIRECTORY", "/var/lib/x")]);
         assert_eq!(default_data_dir(&env), None);
         assert_eq!(default_log_dir(&env), None);
-        assert_eq!(default_output_dir(&env), None);
+        assert_eq!(default_output_dir(&env, None), None);
     }
 }

@@ -6,8 +6,19 @@
 #   cp uptime-kinomi.service /etc/systemd/system/
 #   systemctl daemon-reload && systemctl enable --now uptime-kinomi
 #
-# Data: /var/lib/uptime-kinomi, logs: /var/log/uptime-kinomi,
-# pages: /run/uptime-kinomi/www (mode 0750: add the web server user to the
+# systemd creates the directories below (the kinomi user cannot create
+# anything in /var/lib, /var/log or /run). Set the same paths in
+# /etc/uptime-kinomi/kinomi.toml, so that a manual run as the kinomi user
+# ("sudo -u kinomi uptime-kinomi run --config-dir /etc/uptime-kinomi") uses
+# the same directories as the service (SPEC.md §10.6):
+#
+#   [storage]
+#   data_dir = "/var/lib/uptime-kinomi"
+#   log_dir = "/var/log/uptime-kinomi"
+#   [pages]
+#   output_dir = "/run/uptime-kinomi/www"
+#
+# /run/uptime-kinomi is a tmpfs (mode 0750: add the web server user to the
 # group "kinomi" if it serves the files directly, SPEC.md §9.1 mode B).
 #
 # Updates: /usr/local/bin is read-only for the service, so run
@@ -35,6 +46,8 @@ LogsDirectory=uptime-kinomi
 LogsDirectoryMode=0700
 RuntimeDirectory=uptime-kinomi
 RuntimeDirectoryMode=0750
+# Keep it when the service stops, for a manual run as the kinomi user.
+RuntimeDirectoryPreserve=yes
 
 # Hardening: kinomi needs no privileges, no capabilities and no writable
 # system paths besides the directories above.

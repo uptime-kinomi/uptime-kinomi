@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `--no-service`, `--uninstall`.
 
 ### Changed
+- Default directories depend only on the user, never on how kinomi was
+  started: the systemd service and a manual `uptime-kinomi run` use the same
+  data, log and page directories. `$STATE_DIRECTORY` and the other systemd
+  variables are no longer read; pages go to `/run/user/<uid>/uptime-kinomi/www`
+  (a tmpfs) when that directory exists. The user unit sets no directories;
+  for the system unit, the paths are set in `kinomi.toml`.
+- `run` prints the config, data, log and page directories and the server
+  address at startup.
 - SPEC.md §1 lists resource measurements from a Raspberry Pi 1; §10.2
   explains why pages belong on the tmpfs that systemd creates for the
   service.

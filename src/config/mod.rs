@@ -153,11 +153,13 @@ pub fn resolve_path(config_dir: &Path, path: &Path) -> PathBuf {
     }
 }
 
-pub fn load(dir: &Path, env: paths::EnvFn) -> (Option<Config>, Problems) {
+/// `runtime` is the user's runtime directory for the default page
+/// directory ([`paths::user_runtime_dir`]); tests pass `None`.
+pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Config>, Problems) {
     let mut problems = Problems::default();
     let global_file = dir.join("kinomi.toml");
     let global = match read_config_file(&global_file) {
-        Ok((text, _)) => global::parse(&text, &global_file, dir, env, &mut problems),
+        Ok((text, _)) => global::parse(&text, &global_file, dir, env, runtime, &mut problems),
         Err(e) => {
             problems.error(&global_file, e);
             None
@@ -448,7 +450,7 @@ mod tests {
             "pages/home.toml",
             "config_version = 1\ntitle = \"Home\"\npublic = true\n[[groups]]\nname = \"All\"\nmonitors = [\"*\"]\n",
         );
-        let (config, problems) = load(dir.path(), &env);
+        let (config, problems) = load(dir.path(), &env, None);
         let config = config.unwrap_or_else(|| panic!("{problems:?}"));
         let ids: Vec<_> = config.monitors.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids, ["ssh", "web"]);
@@ -466,7 +468,7 @@ mod tests {
         dir.write("monitors/bad.toml", "config_version = 1\ntype = \"tcp\"\n");
         dir.write("monitors/Bad Name.toml", TCP);
         dir.write("pages/home.toml", "anything");
-        let (config, problems) = load(dir.path(), &env);
+        let (config, problems) = load(dir.path(), &env, None);
         assert!(config.is_none());
         let all = format!("{problems:?}");
         assert!(all.contains("defaults.notifications"), "{all}");
@@ -478,7 +480,7 @@ mod tests {
     #[test]
     fn missing_global_file() {
         let dir = TestDir::new("config-missing");
-        let (config, problems) = load(dir.path(), &env);
+        let (config, problems) = load(dir.path(), &env, None);
         assert!(config.is_none());
         assert!(format!("{problems:?}").contains("kinomi.toml"));
     }
@@ -490,7 +492,7 @@ mod tests {
             "kinomi.toml",
             &format!("config_version = 1\n#{}\n", "x".repeat(70_000)),
         );
-        let (_, problems) = load(dir.path(), &env);
+        let (_, problems) = load(dir.path(), &env, None);
         assert!(format!("{problems:?}").contains("larger than"));
     }
 }

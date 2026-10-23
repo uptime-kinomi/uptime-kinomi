@@ -75,6 +75,8 @@ pub fn run(mut config: Config) -> Result<(), String> {
     let state_interval = g.storage.state_interval.0;
     let (workers, max_queue) = (g.scheduler.workers as usize, g.scheduler.max_queue as usize);
     let log_dir = g.storage.log_dir.clone();
+    let data_dir = g.storage.data_dir.clone();
+    let config_dir = config.dir.clone();
     let render_interval = g.pages.render_interval.0;
     let pages = Arc::new(std::mem::take(&mut config.pages));
     let tz = timezone(&config.global.pages.timezone);
@@ -134,10 +136,11 @@ pub fn run(mut config: Config) -> Result<(), String> {
         ],
     );
     service.flush();
-    eprintln!(
-        "uptime-kinomi {VERSION}: {enabled} monitors, log in {}",
-        log_dir.display()
-    );
+    eprintln!("uptime-kinomi {VERSION}: {enabled} monitors");
+    eprintln!("  config: {}", config_dir.display());
+    eprintln!("  data:   {}", data_dir.display());
+    eprintln!("  log:    {}", log_dir.display());
+    eprintln!("  pages:  {}", output_dir.display());
 
     let published: render::Published = Arc::default();
     let render_ms = Arc::new(AtomicU64::new(0));
@@ -159,10 +162,7 @@ pub fn run(mut config: Config) -> Result<(), String> {
     if let Some(options) = server_options {
         let listen = options.listen;
         server::start(options, published)?;
-        eprintln!(
-            "serving status pages on http://{listen}/ (pages also in {})",
-            output_dir.display()
-        );
+        eprintln!("  server: http://{listen}/");
     }
 
     let scheduler = Scheduler::start(service.monitors.clone(), workers, max_queue, tx);

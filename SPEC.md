@@ -742,18 +742,15 @@ data are left out as well.
   rewritten on change (§8.3) and without fsync (they are regenerated anyway).
 - Pages change at almost every render (heartbeat bars, durations). Measured
   on a Raspberry Pi 1 with 50 monitors every 60 s: about 370 KB of page
-  files per render, i.e. roughly 500 MB per day. Therefore, with the
-  systemd units, `output_dir` is a tmpfs that systemd creates for the
-  service (`RuntimeDirectory=`: `/run/uptime-kinomi` for the system unit,
-  `/run/user/<uid>/uptime-kinomi` for the user unit, which with lingering
-  exists from boot without a login) and removes when the service stops.
-  Losing the pages is harmless: they are regenerated from the state files
-  within one render cycle. Log and state files together are about 0.3 MB
-  per 10 minutes for the same setup.
-- `$XDG_RUNTIME_DIR` is deliberately not used outside the service: without
-  lingering it disappears at logout, and cron does not set it. Without
-  systemd (e.g. `@reboot` in crontab), pages go to the state directory on
-  the SD card; set `output_dir` to a tmpfs or use `render_interval = "5m"`.
+  files per render, i.e. roughly 500 MB per day. Therefore the default
+  `output_dir` is a tmpfs: `/run/user/<uid>/uptime-kinomi/www` (§10.6), or
+  `/run/uptime-kinomi/www` with the system unit. Losing the pages is
+  harmless: they are regenerated from the state files within one render
+  cycle. Log and state files together are about 0.3 MB per 10 minutes for
+  the same setup.
+- Without `/run/user/<uid>` (no lingering, no login, e.g. `@reboot` in
+  crontab), pages go to the state directory on the SD card; set
+  `output_dir` to a tmpfs or use `render_interval = "5m"`.
 - In mode B (§9.1) the proxy must read the pages: use the system unit
   (`/run/uptime-kinomi`, group `kinomi`); `/run/user/<uid>` is private to
   the user.
@@ -804,22 +801,35 @@ kinomi is designed to run as an ordinary user. Nothing in v1 needs privileges:
 it listens on an unprivileged port (default 8080), uses no raw sockets, and
 writes only to its own directories.
 
-**Default directories** (when not set in `kinomi.toml`), first match wins:
+**Default directories** (when not set in `kinomi.toml`). They depend only
+on the user (`$HOME`, `$XDG_STATE_HOME`, UID), never on how kinomi was
+started. The systemd service and a manual `uptime-kinomi run` of the same
+user (e.g. after `systemctl --user stop uptime-kinomi` for debugging)
+therefore use exactly the same directories and, from the same
+`kinomi.toml`, the same port. kinomi does not read `$STATE_DIRECTORY`,
+`$LOGS_DIRECTORY`, `$RUNTIME_DIRECTORY` or `$XDG_RUNTIME_DIR`.
 
-| Purpose | systemd variable (set by `StateDirectory=` etc.) | Otherwise (XDG) |
-|---|---|---|
-| `data_dir` | `$STATE_DIRECTORY` | `$XDG_STATE_HOME/uptime-kinomi` (`~/.local/state/uptime-kinomi`) |
-| `log_dir` | `$LOGS_DIRECTORY` | `$XDG_STATE_HOME/uptime-kinomi/log` |
-| `output_dir` | `$RUNTIME_DIRECTORY/www` (a tmpfs) | `$XDG_STATE_HOME/uptime-kinomi/www` |
+| Purpose | Default |
+|---|---|
+| `data_dir` | `$XDG_STATE_HOME/uptime-kinomi` (`~/.local/state/uptime-kinomi`) |
+| `log_dir` | `<data_dir>/log` |
+| `output_dir` | `/run/user/<uid>/uptime-kinomi/www` if `/run/user/<uid>` exists and belongs to the user (a tmpfs), else `<data_dir>/www` |
 
-With the system unit, these become `/var/lib/uptime-kinomi`,
-`/var/log/uptime-kinomi` and `/run/uptime-kinomi/www`. The user unit only
-sets `RuntimeDirectory=` (pages in `$XDG_RUNTIME_DIR/uptime-kinomi/www`, a
-tmpfs); state and logs use the XDG defaults. It deliberately does **not** use
-`StateDirectory=`: for user units, systemd ≥ 255 treats an existing
-`~/.config/<name>` as old state and links `~/.local/state/<name>` to it,
-which would be kinomi's configuration directory. kinomi creates missing directories with mode `0700`
-(`0750` for `output_dir`, so a web server group can read the pages in mode B).
+`/run/user/<uid>` is created by systemd-logind. With lingering
+(`loginctl enable-linger`, done by `contrib/install.sh`) it exists from boot
+to shutdown, with or without a login; otherwise only while the user is
+logged in. The UID is read from `/proc/self/status`, so the result is the
+same in a service and in a login shell. kinomi creates missing directories
+with mode `0700` (`0750` for `output_dir`). `check-config` and the start
+message of `run` print all directories.
+
+- **User unit** (`contrib/systemd/user/`): sets no directories at all.
+- **System unit** (`contrib/systemd/system/`): systemd creates
+  `/var/lib/uptime-kinomi`, `/var/log/uptime-kinomi` and
+  `/run/uptime-kinomi` (kept when the service stops,
+  `RuntimeDirectoryPreserve=yes`), because the `kinomi` user cannot create
+  them. The same paths are set in `/etc/uptime-kinomi/kinomi.toml`, so a
+  manual run as `kinomi` uses them too.
 
 **Starting automatically without root:**
 - `systemctl --user enable --now uptime-kinomi`. To keep it running while

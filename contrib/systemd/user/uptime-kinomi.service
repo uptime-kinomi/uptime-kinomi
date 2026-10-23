@@ -10,7 +10,12 @@
 #
 # Configuration: ~/.config/uptime-kinomi/
 # State and logs: ~/.local/state/uptime-kinomi/ (logs in log/)
-# Pages: $XDG_RUNTIME_DIR/uptime-kinomi/www/ (a tmpfs; regenerated after a reboot)
+# Pages: /run/user/<uid>/uptime-kinomi/www/ (a tmpfs; regenerated after a reboot)
+#
+# The unit sets no directories on purpose: kinomi derives them from the
+# user alone, so "systemctl --user stop uptime-kinomi" followed by a manual
+# "uptime-kinomi run" uses exactly the same directories and port
+# (SPEC.md §10.6).
 
 [Unit]
 Description=uptime-kinomi uptime monitor
@@ -22,12 +27,9 @@ Restart=on-failure
 RestartSec=10
 # Checks first, page rendering and everything else second.
 Nice=10
-# Pages on a tmpfs ($XDG_RUNTIME_DIR/uptime-kinomi/www). State and logs use
-# kinomi's XDG defaults (~/.local/state/uptime-kinomi). No StateDirectory=
-# here: for user units, systemd >= 255 "migrates" an existing
-# ~/.config/<name> (the old location of user StateDirectory=) by linking
-# ~/.local/state/<name> to it - which would be kinomi's config directory.
-RuntimeDirectory=uptime-kinomi
+# No StateDirectory=/LogsDirectory=/RuntimeDirectory= (see above). Also,
+# for user units systemd >= 255 would "migrate" ~/.config/<name> for
+# StateDirectory= by linking ~/.local/state/<name> to it.
 NoNewPrivileges=yes
 UMask=0027
 

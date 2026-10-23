@@ -243,7 +243,7 @@ fn version_string() -> String {
 fn run(cli_dir: Option<&Path>) -> ExitCode {
     let env = |key: &str| std::env::var_os(key);
     let dir = paths::config_dir(cli_dir, &env, &|p| p.is_dir());
-    let (config, problems) = config::load(&dir, &env);
+    let (config, problems) = config::load(&dir, &env, paths::user_runtime_dir().as_deref());
     for problem in problems.all() {
         eprintln!("{problem}");
     }
@@ -338,7 +338,7 @@ fn hash_password(user: &str) -> ExitCode {
 fn rebuild_state(cli_dir: Option<&Path>) -> ExitCode {
     let env = |key: &str| std::env::var_os(key);
     let dir = paths::config_dir(cli_dir, &env, &|p| p.is_dir());
-    let (config, problems) = config::load(&dir, &env);
+    let (config, problems) = config::load(&dir, &env, paths::user_runtime_dir().as_deref());
     for problem in problems.all() {
         eprintln!("{problem}");
     }
@@ -358,7 +358,7 @@ fn rebuild_state(cli_dir: Option<&Path>) -> ExitCode {
 fn check_config(cli_dir: Option<&Path>) -> ExitCode {
     let env = |key: &str| std::env::var_os(key);
     let dir = paths::config_dir(cli_dir, &env, &|p| p.is_dir());
-    let (config, problems) = config::load(&dir, &env);
+    let (config, problems) = config::load(&dir, &env, paths::user_runtime_dir().as_deref());
     for problem in problems.all() {
         eprintln!("{problem}");
     }
