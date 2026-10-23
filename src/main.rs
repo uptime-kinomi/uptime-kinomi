@@ -4,6 +4,15 @@
 
 #![forbid(unsafe_code)]
 
+/// Like `println!`, but a closed stdout (e.g. `uptime-kinomi ... | head`)
+/// is ignored instead of panicking with "Broken pipe".
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stdout(), $($arg)*);
+    }};
+}
+
 mod clock;
 mod config;
 mod encoding;
@@ -86,11 +95,11 @@ fn main() -> ExitCode {
     };
     match args.command {
         Command::Help => {
-            print!("{USAGE}");
+            say!("{}", USAGE.trim_end());
             ExitCode::SUCCESS
         }
         Command::Version => {
-            println!("{}", version_string());
+            say!("{}", version_string());
             ExitCode::SUCCESS
         }
         Command::CheckConfig => check_config(args.config_dir.as_deref()),
@@ -267,7 +276,7 @@ fn random_bytes<const N: usize>() -> Result<[u8; N], String> {
 fn gen_token() -> ExitCode {
     match random_bytes::<32>() {
         Ok(bytes) => {
-            println!("{}", encoding::base64url(&bytes));
+            say!("{}", encoding::base64url(&bytes));
             ExitCode::SUCCESS
         }
         Err(e) => {
@@ -313,7 +322,7 @@ fn hash_password(user: &str) -> ExitCode {
     };
     match random_bytes::<16>() {
         Ok(salt) => {
-            println!(
+            say!(
                 "{}",
                 server::auth::htpasswd_line(user, password.as_bytes(), salt)
             );
@@ -358,15 +367,15 @@ fn check_config(cli_dir: Option<&Path>) -> ExitCode {
         return ExitCode::from(EXIT_CONFIG_ERROR);
     };
     let g = &config.global;
-    println!("config dir: {}", config.dir.display());
-    println!("data dir:   {}", g.storage.data_dir.display());
-    println!("log dir:    {}", g.storage.log_dir.display());
-    println!("output dir: {}", g.pages.output_dir.display());
-    println!("monitors:   {}", config.monitors.len());
+    say!("config dir: {}", config.dir.display());
+    say!("data dir:   {}", g.storage.data_dir.display());
+    say!("log dir:    {}", g.storage.log_dir.display());
+    say!("output dir: {}", g.pages.output_dir.display());
+    say!("monitors:   {}", config.monitors.len());
     for m in &config.monitors {
         let state = if m.enabled { "" } else { " (disabled)" };
         let every = config::duration::Dur(m.interval).to_string();
-        println!(
+        say!(
             "  {:<24} {:<5} every {every:>5}  {}{state}",
             m.id,
             m.kind.name(),
@@ -380,19 +389,19 @@ fn check_config(cli_dir: Option<&Path>) -> ExitCode {
             format!(" ({})", ids.join(", "))
         }
     };
-    println!(
+    say!(
         "pages:      {}{}",
         config.pages.len(),
         names(config.pages.iter().map(|p| p.id.as_str()).collect())
     );
-    println!(
+    say!(
         "notifiers:  {}{}",
         config.notifiers.len(),
         names(config.notifiers.iter().map(|n| n.id.as_str()).collect())
     );
-    println!("incidents:  {}", config.incidents.len());
-    println!("maintenance windows: {}", config.maintenance.len());
-    println!("configuration OK");
+    say!("incidents:  {}", config.incidents.len());
+    say!("maintenance windows: {}", config.maintenance.len());
+    say!("configuration OK");
     ExitCode::SUCCESS
 }
 

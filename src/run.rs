@@ -243,7 +243,7 @@ pub fn rebuild_state(config: &Config) -> Result<(), String> {
         statefile::save(&g.storage.data_dir, id, history)
             .map_err(|e| format!("cannot write the state of {id}: {e}"))?;
     }
-    println!(
+    say!(
         "rebuilt {} state files from {lines} log lines in {}",
         histories.len(),
         g.storage.log_dir.display()

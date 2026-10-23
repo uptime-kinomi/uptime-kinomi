@@ -134,16 +134,16 @@ pub fn run(options: &Options) -> Result<Outcome, Error> {
 
     if options.check {
         return Ok(if release > current {
-            println!("update available: {current} -> {release}");
+            say!("update available: {current} -> {release}");
             Outcome::UpdateAvailable
         } else {
-            println!("up to date ({current}, latest signed release {release})");
+            say!("up to date ({current}, latest signed release {release})");
             Outcome::UpToDate
         });
     }
     if release <= current && !(options.allow_downgrade && options.release.is_some()) {
         if release == current {
-            println!("already up to date ({current})");
+            say!("already up to date ({current})");
             return Ok(Outcome::UpToDate);
         }
         return Err(err(format!(
@@ -152,7 +152,7 @@ pub fn run(options: &Options) -> Result<Outcome, Error> {
         )));
     }
 
-    println!("downloading {asset} {release}");
+    say!("downloading {asset} {release}");
     let temp = TempFile::create(&exe)?;
     download_verified(
         &agent,
@@ -167,7 +167,7 @@ pub fn run(options: &Options) -> Result<Outcome, Error> {
         )));
     }
     replace(&exe, temp)?;
-    println!(
+    say!(
         "updated {current} -> {release} ({}). The previous version is kept as {}.\n\
          Restart the service to use it, e.g.: systemctl --user restart uptime-kinomi",
         exe.display(),
@@ -472,7 +472,7 @@ fn rollback(exe: &Path) -> Result<Outcome, Error> {
     let version = test_run(&backup, TEST_RUN_TIMEOUT)?;
     fs::rename(&backup, exe)
         .map_err(|e| err(format!("cannot restore {}: {e}", backup.display())))?;
-    println!(
+    say!(
         "restored {version} at {}. Restart the service to use it, e.g.: \
          systemctl --user restart uptime-kinomi",
         exe.display()

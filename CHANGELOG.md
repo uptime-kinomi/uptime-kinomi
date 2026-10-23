@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   anything, and installs a systemd user service. `--listen`, `--version`,
   `--no-service`, `--uninstall`.
 
+### Fixed
+- Output to a closed pipe (e.g. `uptime-kinomi check-config | head`) no
+  longer panics with "Broken pipe".
+
 ## [0.3.0] - 2026-10-23
 
 All planned features: push and DNS monitors, notifications, heartbeat
