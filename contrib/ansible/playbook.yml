@@ -8,56 +8,151 @@
 #
 # Run:  ansible-playbook -i pi1.example.org, playbook.yml
 #
-# This installs as the *login user* without root (systemd user service).
-# For a system-wide installation, use contrib/systemd/system/ instead.
+# kinomi runs as KINOMI_USER, as a systemd *user* service (no root at run
+# time). Default: the login user; then no sudo is needed, except for
+# enabling lingering on systems that do not allow it for the user itself.
+# Another user is created if it does not exist, and lingering for another
+# user always needs root - then run with -K (--ask-become-pass):
+#
+#   ansible-playbook -i pi1.example.org, -K -e KINOMI_USER=kinomi playbook.yml
+#
+# For a system-wide service, use contrib/systemd/system/ instead.
 
 - name: Deploy uptime-kinomi
   hosts: all
   vars:
+    KINOMI_USER: "{{ ansible_facts['user_id'] }}"
     kinomi_binary: files/uptime-kinomi-armv6
     kinomi_config: files/config/
-    bin_dir: "{{ ansible_env.HOME }}/.local/bin"
-    config_dir: "{{ ansible_env.HOME }}/.config/uptime-kinomi"
-    staging_dir: "{{ ansible_env.HOME }}/.cache/uptime-kinomi-staging"
+    # Another user than the login user: files are copied with sudo and then
+    # owned by KINOMI_USER; commands run as KINOMI_USER.
+    other_user: "{{ KINOMI_USER != ansible_facts['user_id'] }}"
+    # Modules run without temporary files, so become_user works without
+    # ACL tools (setfacl) on the target.
+    ansible_pipelining: true
 
   tasks:
+    - name: Look up KINOMI_USER
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ KINOMI_USER }}"
+        fail_key: false
+
+    - name: Create KINOMI_USER (sudo, only if it does not exist)
+      become: true
+      ansible.builtin.user:
+        name: "{{ KINOMI_USER }}"
+        shell: /bin/bash
+        create_home: true
+      when: ansible_facts['getent_passwd'][KINOMI_USER] is none
+
+    - name: Look up KINOMI_USER again (UID, home)
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ KINOMI_USER }}"
+
+    - name: Paths
+      ansible.builtin.set_fact:
+        kinomi_uid: "{{ ansible_facts['getent_passwd'][KINOMI_USER][1] }}"
+        kinomi_home: "{{ ansible_facts['getent_passwd'][KINOMI_USER][4] }}"
+
+    - name: Paths (derived)
+      ansible.builtin.set_fact:
+        bin_dir: "{{ kinomi_home }}/.local/bin"
+        config_dir: "{{ kinomi_home }}/.config/uptime-kinomi"
+        unit_dir: "{{ kinomi_home }}/.config/systemd/user"
+        staging_dir: "{{ kinomi_home }}/.cache/uptime-kinomi-staging"
+        runtime_dir: "/run/user/{{ kinomi_uid }}"
+
+    # Without lingering, the user service stops at the last logout and does
+    # not start at boot (SPEC.md §10.6).
+    - name: Lingering (without root, for the login user)
+      ansible.builtin.command:
+        cmd: "loginctl enable-linger {{ KINOMI_USER }}"
+        creates: "/var/lib/systemd/linger/{{ KINOMI_USER }}"
+      register: linger
+      failed_when: false
+      when: not other_user
+
+    - name: Lingering (sudo, for another user or if the step above was not allowed)
+      become: true
+      ansible.builtin.command:
+        cmd: "loginctl enable-linger {{ KINOMI_USER }}"
+        creates: "/var/lib/systemd/linger/{{ KINOMI_USER }}"
+      when: other_user or (linger.rc is defined and linger.rc != 0)
+
+    - name: Wait for the user's systemd instance
+      become: "{{ other_user }}"
+      ansible.builtin.wait_for:
+        path: "{{ runtime_dir }}/bus"
+        timeout: 60
+
+    # One by one, so that every new level belongs to KINOMI_USER. No mode:
+    # existing directories in the home keep theirs.
+    - name: Directories
+      become: "{{ other_user }}"
+      ansible.builtin.file:
+        path: "{{ kinomi_home }}/{{ item }}"
+        state: directory
+        owner: "{{ KINOMI_USER }}"
+      loop:
+        - .local
+        - .local/bin
+        - .config
+        - .config/systemd
+        - .config/systemd/user
+        - .cache
+
     - name: Binary
+      become: "{{ other_user }}"
       ansible.builtin.copy:
         src: "{{ kinomi_binary }}"
         dest: "{{ bin_dir }}/uptime-kinomi"
+        owner: "{{ KINOMI_USER }}"
         mode: "0755"
       notify: Restart uptime-kinomi
 
     # Validate the whole directory before it goes live: copy it to a staging
     # directory, run check-config there, and only then replace the real one.
     - name: Configuration (staging)
+      become: "{{ other_user }}"
       ansible.builtin.copy:
         src: "{{ kinomi_config }}"
         dest: "{{ staging_dir }}/"
+        owner: "{{ KINOMI_USER }}"
         mode: "u=rwX,g=,o="
-      register: staged
 
     - name: Check the configuration
+      become: "{{ other_user }}"
+      become_user: "{{ KINOMI_USER }}"
       ansible.builtin.command:
         cmd: "{{ bin_dir }}/uptime-kinomi check-config --config-dir {{ staging_dir }}"
       changed_when: false
 
     - name: Configuration
+      become: "{{ other_user }}"
       ansible.builtin.copy:
         src: "{{ kinomi_config }}"
         dest: "{{ config_dir }}/"
+        owner: "{{ KINOMI_USER }}"
         mode: "u=rwX,g=,o="
       notify: Restart uptime-kinomi
 
     - name: User unit
+      become: "{{ other_user }}"
       ansible.builtin.copy:
         src: ../systemd/user/uptime-kinomi.service
-        dest: "{{ ansible_env.HOME }}/.config/systemd/user/uptime-kinomi.service"
+        dest: "{{ unit_dir }}/uptime-kinomi.service"
+        owner: "{{ KINOMI_USER }}"
         mode: "0644"
       notify: Restart uptime-kinomi
 
     - name: Enable the service
-      ansible.builtin.systemd:
+      become: "{{ other_user }}"
+      become_user: "{{ KINOMI_USER }}"
+      environment:
+        XDG_RUNTIME_DIR: "{{ runtime_dir }}"
+      ansible.builtin.systemd_service:
         name: uptime-kinomi
         scope: user
         enabled: true
@@ -66,7 +161,11 @@
 
   handlers:
     - name: Restart uptime-kinomi
-      ansible.builtin.systemd:
+      become: "{{ other_user }}"
+      become_user: "{{ KINOMI_USER }}"
+      environment:
+        XDG_RUNTIME_DIR: "{{ runtime_dir }}"
+      ansible.builtin.systemd_service:
         name: uptime-kinomi
         scope: user
         state: restarted

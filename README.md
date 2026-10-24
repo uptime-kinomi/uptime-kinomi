@@ -299,7 +299,11 @@ One file per day, UTC timestamps first, `grep`- and `awk`-friendly.
 
 Because every monitor is a file, a deployment is a `template:` loop plus a
 handler that restarts the service. `uptime-kinomi check-config` can be used as
-the `validate:` command. An example role is planned in `contrib/ansible/`.
+the `validate:` command. [`contrib/ansible/playbook.yml`](contrib/ansible/playbook.yml)
+is a complete example: it checks the configuration in a staging directory
+before it goes live, installs the systemd user service and enables lingering.
+`-e KINOMI_USER=kinomi` deploys for another user and creates that user if it
+does not exist (needs sudo, `-K`).
 
 ## Contributing
 
