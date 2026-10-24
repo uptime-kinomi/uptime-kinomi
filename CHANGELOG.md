@@ -12,11 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   minisign or OpenSSL 3 and the checksum, creates a starter configuration,
   checks an existing configuration with the new version before replacing
   anything, and installs a systemd user service. `--listen`, `--version`,
-  `--no-service`, `--uninstall`.
+  `--no-service`, `--no-auto-update`, `--binary-only`, `--uninstall`.
 - `contrib/ansible-role-kinomi/`: the Ansible playbook is now a role.
   `KINOMI_USER` (default `kinomi`) selects the user kinomi runs as; it is
   created if it does not exist. The role enables lingering, so the service
-  starts at boot without a login.
+  starts at boot without a login. It installs the latest release (via
+  `install.sh --binary-only`) only if no binary is installed, and never
+  replaces an installed one.
 
 - Weekly self-update: `contrib/systemd/user/uptime-kinomi-update.timer` and
   `.service` run `self-update`, check the configuration with the new version,

@@ -72,14 +72,42 @@
     - .config/systemd/user
     - .cache
 
-- name: Binary
+# An existing binary is never touched: updates are the job of
+# "uptime-kinomi self-update" (or the weekly timer below).
+- name: Check for an installed binary
   become: "{{ kinomi_other_user }}"
-  ansible.builtin.copy:
-    src: "{{ kinomi_binary }}"
-    dest: "{{ kinomi_bin_dir }}/uptime-kinomi"
-    owner: "{{ KINOMI_USER }}"
-    mode: "0755"
-  notify: Restart uptime-kinomi
+  ansible.builtin.stat:
+    path: "{{ kinomi_bin_dir }}/uptime-kinomi"
+  register: kinomi_installed
+
+# contrib/install.sh downloads the latest release for the CPU and verifies
+# its signature (minisign or OpenSSL 3) and checksum. Needs curl or wget.
+- name: Install the latest release (only if not installed)
+  when: not kinomi_installed.stat.exists
+  block:
+    - name: Installer
+      become: "{{ kinomi_other_user }}"
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../install.sh"
+        dest: "{{ kinomi_home }}/.cache/uptime-kinomi-install.sh"
+        owner: "{{ KINOMI_USER }}"
+        mode: "0644"
+
+    - name: Download and verify
+      become: "{{ kinomi_other_user }}"
+      become_user: "{{ KINOMI_USER }}"
+      ansible.builtin.command:
+        cmd: "sh {{ kinomi_home }}/.cache/uptime-kinomi-install.sh --binary-only"
+        chdir: "{{ kinomi_home }}"
+      environment:
+        HOME: "{{ kinomi_home }}"
+      notify: Restart uptime-kinomi
+
+    - name: Remove the installer
+      become: "{{ kinomi_other_user }}"
+      ansible.builtin.file:
+        path: "{{ kinomi_home }}/.cache/uptime-kinomi-install.sh"
+        state: absent
 
 # Validate the whole directory before it goes live: copy it to a staging
 # directory, run check-config there, and only then replace the real one.

@@ -316,7 +316,9 @@ handler that restarts the service. `uptime-kinomi check-config` can be used as
 the `validate:` command. [`contrib/ansible-role-kinomi/`](contrib/ansible-role-kinomi/)
 is a complete Ansible role: it creates `KINOMI_USER` (default `kinomi`) if
 needed, checks the configuration in a staging directory before it goes live,
-installs the systemd user service and enables lingering.
+installs the systemd user service and enables lingering. It installs the
+latest release only if no binary is installed yet; updates are left to
+`self-update`.
 
 ## Contributing
 
