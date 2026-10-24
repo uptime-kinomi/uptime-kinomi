@@ -1,0 +1,11 @@
+# The user kinomi runs as, as a systemd *user* service. Created if it does
+# not exist (needs become). If it is not the Ansible login user, the role
+# uses become for the files, user creation and lingering.
+KINOMI_USER: kinomi
+
+# The binary for the target board (see the release assets).
+kinomi_binary: "{{ playbook_dir }}/files/uptime-kinomi-armv6"
+
+# The configuration directory (start from contrib/examples/config). Keep the
+# trailing slash: the contents are copied, not the directory itself.
+kinomi_config: "{{ playbook_dir }}/files/config/"

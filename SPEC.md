@@ -791,12 +791,12 @@ Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error,
 - `nginx/mode-a.conf`, `nginx/mode-b.conf`, `apache/mode-a.conf`,
   `apache/mode-b.conf`: reverse proxy examples for both modes (§9.1),
   including `/push/` and `/metrics` in mode B.
-- `ansible/playbook.yml`: deploys binary, configuration and user unit for
-  `KINOMI_USER` (default: the login user) and enables lingering; the
+- `ansible-role-kinomi/`: Ansible role that deploys binary, configuration
+  and user unit for `KINOMI_USER` (default in `defaults/main.yml`: `kinomi`),
+  creates that user if it does not exist and enables lingering; the
   configuration is copied to a staging directory and checked with
-  `check-config` before it goes live. A `KINOMI_USER` that does not exist is
-  created (sudo); for the login user, sudo is only needed where `loginctl
-  enable-linger` is not allowed without it.
+  `check-config` before it goes live. Become is needed for another user than
+  the login user, and where `loginctl enable-linger` is not allowed without it.
 - `release/sign-release.sh`: maintainer tool (§12.1).
 
 ### 10.6 Running without root

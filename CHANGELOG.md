@@ -13,9 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   checks an existing configuration with the new version before replacing
   anything, and installs a systemd user service. `--listen`, `--version`,
   `--no-service`, `--uninstall`.
-- Ansible playbook: `KINOMI_USER` (default: the login user) selects the user
-  kinomi runs as; it is created if it does not exist. The playbook enables
-  lingering, so the service starts at boot without a login.
+- `contrib/ansible-role-kinomi/`: the Ansible playbook is now a role.
+  `KINOMI_USER` (default `kinomi`) selects the user kinomi runs as; it is
+  created if it does not exist. The role enables lingering, so the service
+  starts at boot without a login.
 
 ### Changed
 - Default directories depend only on the user, never on how kinomi was

@@ -1,0 +1,7 @@
+# Another user than the login user: files are copied with become and then
+# owned by KINOMI_USER; commands run as KINOMI_USER.
+kinomi_other_user: "{{ KINOMI_USER != ansible_facts['user_id'] }}"
+
+# Modules run without temporary files, so become_user works without ACL
+# tools (setfacl) on the target.
+ansible_pipelining: true
