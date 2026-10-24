@@ -107,7 +107,8 @@ curl -fsSL https://raw.githubusercontent.com/uptime-kinomi/uptime-kinomi/main/co
 Raspberry Pi OS bookworm) and the checksum, installs to `~/.local/bin`,
 creates a starter configuration in `~/.config/uptime-kinomi` (an existing one
 is never overwritten, and is checked with the new version before anything is
-replaced), and installs and starts a systemd user service. Options:
+replaced), installs and starts a systemd user service, and enables a weekly
+self-update timer (see [Updating](#updating-and-verifying-downloads)). Options:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/uptime-kinomi/uptime-kinomi/main/contrib/install.sh | sh -s -- --listen 0.0.0.0:8080
@@ -115,7 +116,8 @@ curl -fsSL https://raw.githubusercontent.com/uptime-kinomi/uptime-kinomi/main/co
 
 `--listen 0.0.0.0:8080` makes the status page reachable from your LAN
 (default: only `127.0.0.1`), `--version X.Y.Z` installs a specific release,
-`--no-service` skips systemd, `--uninstall` removes binary and service
+`--no-service` skips systemd, `--no-auto-update` leaves the weekly update
+timer off, `--uninstall` removes binary and service
 (configuration and data are kept). Prefer to read it first? Download it,
 read it, then run `sh install.sh`.
 
@@ -255,6 +257,18 @@ project's offline [minisign](https://jedisct1.github.io/minisign/) keys
 anything, and keeps the previous version (`self-update --rollback`). It works
 without root as long as the binary lives in a directory you own, such as
 `~/.local/bin`.
+
+**Automatic updates:** `install.sh` and the Ansible role enable
+`uptime-kinomi-update.timer` ([`contrib/systemd/user/`](contrib/systemd/user/)),
+which runs `self-update` once a week (Monday morning), checks your
+configuration with the new version, restarts the service, and rolls back if
+the check fails or the service does not stay up:
+
+```sh
+systemctl --user list-timers uptime-kinomi-update.timer   # next run
+systemctl --user start uptime-kinomi-update               # update now
+systemctl --user disable --now uptime-kinomi-update.timer # turn it off
+```
 
 To verify a manual download (primary key `16F640342DF96A16`; the backup key
 is listed in [SPEC.md](SPEC.md) §12.1 and in [keys/](keys/)):

@@ -9,3 +9,9 @@ kinomi_binary: "{{ playbook_dir }}/files/uptime-kinomi-armv6"
 # The configuration directory (start from contrib/examples/config). Keep the
 # trailing slash: the contents are copied, not the directory itself.
 kinomi_config: "{{ playbook_dir }}/files/config/"
+
+# Enable the weekly self-update timer (contrib/systemd/user/
+# uptime-kinomi-update.timer). Only signed releases are installed; the
+# configuration is checked with the new version before the restart.
+# Set to false if Ansible should be the only thing that changes the binary.
+kinomi_auto_update: true

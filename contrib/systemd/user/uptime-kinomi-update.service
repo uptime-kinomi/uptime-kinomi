@@ -1,0 +1,42 @@
+# Weekly self-update of uptime-kinomi, started by uptime-kinomi-update.timer
+# (SPEC.md §12.3). Install both files next to uptime-kinomi.service:
+#
+#   cp uptime-kinomi-update.service uptime-kinomi-update.timer ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now uptime-kinomi-update.timer
+#
+# Run it now:  systemctl --user start uptime-kinomi-update
+# Its output:  journalctl --user -u uptime-kinomi-update
+#
+# Only signed releases are installed (self-update verifies them). After an
+# update, the configuration is checked with the new version and the service
+# is restarted; if the check fails or the service does not stay up, the
+# previous version is put back and the unit fails.
+
+[Unit]
+Description=uptime-kinomi self-update
+Documentation=https://github.com/uptime-kinomi/uptime-kinomi
+
+[Service]
+Type=oneshot
+Nice=10
+NoNewPrivileges=yes
+UMask=0022
+# "$$" is a literal "$" for systemd.
+ExecStart=/bin/sh -euc '\
+  bin=%h/.local/bin/uptime-kinomi; \
+  old=$$("$$bin" version); \
+  "$$bin" self-update; \
+  [ "$$("$$bin" version)" != "$$old" ] || exit 0; \
+  if ! "$$bin" check-config; then \
+    echo "the configuration does not work with the new version, rolling back" >&2; \
+    "$$bin" self-update --rollback; exit 1; \
+  fi; \
+  systemctl --user try-restart uptime-kinomi.service; \
+  sleep 15; \
+  if systemctl --user is-enabled --quiet uptime-kinomi.service \
+     && ! systemctl --user is-active --quiet uptime-kinomi.service; then \
+    echo "the service did not stay up with the new version, rolling back" >&2; \
+    "$$bin" self-update --rollback; \
+    systemctl --user restart uptime-kinomi.service; exit 1; \
+  fi'

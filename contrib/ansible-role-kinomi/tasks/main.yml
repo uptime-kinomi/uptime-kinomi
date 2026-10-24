@@ -107,7 +107,7 @@
     mode: "u=rwX,g=,o="
   notify: Restart uptime-kinomi
 
-# The unit shipped in contrib/systemd/user/, next to this role.
+# The units shipped in contrib/systemd/user/, next to this role.
 - name: User unit
   become: "{{ kinomi_other_user }}"
   ansible.builtin.copy:
@@ -116,6 +116,17 @@
     owner: "{{ KINOMI_USER }}"
     mode: "0644"
   notify: Restart uptime-kinomi
+
+- name: Self-update units
+  become: "{{ kinomi_other_user }}"
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../systemd/user/{{ item }}"
+    dest: "{{ kinomi_unit_dir }}/{{ item }}"
+    owner: "{{ KINOMI_USER }}"
+    mode: "0644"
+  loop:
+    - uptime-kinomi-update.service
+    - uptime-kinomi-update.timer
 
 - name: Enable the service
   become: "{{ kinomi_other_user }}"
@@ -127,4 +138,16 @@
     scope: user
     enabled: true
     state: started
+    daemon_reload: true
+
+- name: Weekly self-update timer
+  become: "{{ kinomi_other_user }}"
+  become_user: "{{ KINOMI_USER }}"
+  environment:
+    XDG_RUNTIME_DIR: "{{ kinomi_runtime_dir }}"
+  ansible.builtin.systemd_service:
+    name: uptime-kinomi-update.timer
+    scope: user
+    enabled: "{{ kinomi_auto_update | bool }}"
+    state: "{{ 'started' if kinomi_auto_update | bool else 'stopped' }}"
     daemon_reload: true

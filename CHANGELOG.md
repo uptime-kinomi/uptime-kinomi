@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   created if it does not exist. The role enables lingering, so the service
   starts at boot without a login.
 
+- Weekly self-update: `contrib/systemd/user/uptime-kinomi-update.timer` and
+  `.service` run `self-update`, check the configuration with the new version,
+  restart the service and roll back if the check fails or the service does
+  not stay up. Enabled by `install.sh` (`--no-auto-update` to skip) and the
+  Ansible role (`kinomi_auto_update`).
+
 ### Changed
 - Default directories depend only on the user, never on how kinomi was
   started: the systemd service and a manual `uptime-kinomi run` use the same

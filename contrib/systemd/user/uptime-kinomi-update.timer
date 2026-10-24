@@ -1,0 +1,14 @@
+# Runs uptime-kinomi-update.service once a week (see there).
+
+[Unit]
+Description=Weekly uptime-kinomi self-update
+Documentation=https://github.com/uptime-kinomi/uptime-kinomi
+
+[Timer]
+OnCalendar=Mon *-*-* 04:00
+# Spread the downloads; catch up after the board was off at that time.
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

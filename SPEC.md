@@ -781,6 +781,8 @@ Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error,
   type; CI runs `check-config` on it.
 - `systemd/user/uptime-kinomi.service`: **user unit** for `systemctl --user`
   (no root needed, §10.6).
+- `systemd/user/uptime-kinomi-update.service` and `.timer`: weekly
+  `self-update` with configuration check and rollback (§12.3).
 - `systemd/system/uptime-kinomi.service`: system unit running as the dedicated
   user `kinomi` (never root), hardened (`NoNewPrivileges`, empty
   `CapabilityBoundingSet`, `ProtectSystem=strict`, `ProtectHome`,
@@ -955,8 +957,10 @@ the matching public keys are compiled into kinomi.
 ### 12.2 `self-update`
 
 `uptime-kinomi self-update` replaces the running binary with the latest
-signed release for the same platform. It never runs automatically; the
-administrator (or an Ansible task, or a cron job) decides when to update.
+signed release for the same platform. The uptime-kinomi binary never runs
+`self-update` automatically; the administrator decides when to update. Regular
+updates can be achieved with a systemd timer: see
+[`contrib/systemd/user/`](contrib/systemd/user/) and §12.3.
 
 1. **Preconditions:** the binary's own directory must be writable by the
    current user (e.g. `~/.local/bin`). kinomi refuses to update binaries in
@@ -989,6 +993,24 @@ administrator (or an Ansible task, or a cron job) decides when to update.
 Options: `--check` only reports whether a newer signed release exists (exit
 code 3 if so, 0 if up to date). `--rollback` swaps `uptime-kinomi.old` back
 into place.
+
+### 12.3 Weekly update timer
+
+`contrib/systemd/user/uptime-kinomi-update.timer` starts
+`uptime-kinomi-update.service` (a oneshot user unit) on Mondays at 04:00 plus
+a random delay of up to 2 h (`Persistent=true`: a missed run is made up after
+boot). The service:
+
+1. runs `self-update`; if the version did not change, it stops (exit 0);
+2. runs `check-config` with the new version; if that fails, it runs
+   `self-update --rollback` and fails;
+3. restarts `uptime-kinomi.service` if it is running (`try-restart`) and
+   checks 15 s later that it is still active; if not, it rolls back,
+   restarts the service with the previous version and fails.
+
+A failed run is visible in `systemctl --user --failed`, its output in the
+journal of `uptime-kinomi-update.service`. `install.sh` and the Ansible role
+enable the timer by default (`--no-auto-update`, `kinomi_auto_update: false`).
 
 ---
 

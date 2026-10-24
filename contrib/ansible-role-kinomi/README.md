@@ -8,7 +8,9 @@ Deploys uptime-kinomi as a systemd **user** service for `KINOMI_USER`
 - installs the binary to `~/.local/bin/uptime-kinomi`;
 - copies the configuration to a staging directory, runs `check-config` on
   it, and only then replaces `~/.config/uptime-kinomi`;
-- installs `contrib/systemd/user/uptime-kinomi.service` and (re)starts it.
+- installs `contrib/systemd/user/uptime-kinomi.service` and (re)starts it;
+- installs and enables the weekly self-update timer
+  (`uptime-kinomi-update.timer`), unless `kinomi_auto_update: false`.
 
 The role uses `contrib/systemd/user/` from this repository, so keep it inside
 `contrib/` (or copy that directory next to it).
@@ -19,7 +21,12 @@ The role uses `contrib/systemd/user/` from this repository, so keep it inside
 |---|---|---|
 | `KINOMI_USER` | `kinomi` | User kinomi runs as. |
 | `kinomi_binary` | `{{ playbook_dir }}/files/uptime-kinomi-armv6` | Binary for the target board. |
+| `kinomi_auto_update` | `true` | Enable the weekly self-update timer. With `false`, the binary only changes when the role runs. |
 | `kinomi_config` | `{{ playbook_dir }}/files/config/` | Configuration directory (start from `contrib/examples/config`). |
+
+With `kinomi_auto_update: true`, keep `kinomi_binary` at the latest release:
+the role installs that file on every run, so an older one would replace what
+the timer installed.
 
 ## Become
 

@@ -8,13 +8,15 @@
 #   --listen ADDR     address of the built-in server in a new configuration
 #                     (default 127.0.0.1:8080; 0.0.0.0:8080 for the whole LAN)
 #   --no-service      do not install or start the systemd user service
+#   --no-auto-update  do not enable the weekly self-update timer
 #   --uninstall       stop and remove binary and service (keeps config and data)
 #
 # What it does: downloads the release for this CPU, verifies the minisign
 # signature of the checksums against the project's public keys (embedded
 # below) and the checksum of the binary, installs it to ~/.local/bin, creates
 # a starter configuration in ~/.config/uptime-kinomi (never overwrites one),
-# and installs and starts a systemd user service.
+# installs and starts a systemd user service, and enables a timer that runs
+# "uptime-kinomi self-update" once a week (signed releases only).
 #
 # Prefer reading before running? Download it, read it, then run: sh install.sh
 #
@@ -272,14 +274,62 @@ WantedBy=default.target
 EOF
 }
 
+# Keep in sync with contrib/systemd/user/uptime-kinomi-update.{service,timer}.
+write_update_units() {
+    cat >"$1/uptime-kinomi-update.service" <<'EOF'
+[Unit]
+Description=uptime-kinomi self-update
+Documentation=https://github.com/uptime-kinomi/uptime-kinomi
+
+[Service]
+Type=oneshot
+Nice=10
+NoNewPrivileges=yes
+UMask=0022
+# "$$" is a literal "$" for systemd.
+ExecStart=/bin/sh -euc '\
+  bin=%h/.local/bin/uptime-kinomi; \
+  old=$$("$$bin" version); \
+  "$$bin" self-update; \
+  [ "$$("$$bin" version)" != "$$old" ] || exit 0; \
+  if ! "$$bin" check-config; then \
+    echo "the configuration does not work with the new version, rolling back" >&2; \
+    "$$bin" self-update --rollback; exit 1; \
+  fi; \
+  systemctl --user try-restart uptime-kinomi.service; \
+  sleep 15; \
+  if systemctl --user is-enabled --quiet uptime-kinomi.service \
+     && ! systemctl --user is-active --quiet uptime-kinomi.service; then \
+    echo "the service did not stay up with the new version, rolling back" >&2; \
+    "$$bin" self-update --rollback; \
+    systemctl --user restart uptime-kinomi.service; exit 1; \
+  fi'
+EOF
+    cat >"$1/uptime-kinomi-update.timer" <<'EOF'
+[Unit]
+Description=Weekly uptime-kinomi self-update
+Documentation=https://github.com/uptime-kinomi/uptime-kinomi
+
+[Timer]
+OnCalendar=Mon *-*-* 04:00
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+}
+
 user_systemd_works() {
     have systemctl && systemctl --user show-environment >/dev/null 2>&1
 }
 
 uninstall() {
     if user_systemd_works; then
+        systemctl --user disable --now uptime-kinomi-update.timer >/dev/null 2>&1 || true
         systemctl --user disable --now uptime-kinomi >/dev/null 2>&1 || true
-        rm -f "$UNIT_DIR/uptime-kinomi.service"
+        rm -f "$UNIT_DIR/uptime-kinomi.service" "$UNIT_DIR/uptime-kinomi-update.service" \
+            "$UNIT_DIR/uptime-kinomi-update.timer"
         systemctl --user daemon-reload || true
     fi
     rm -f "$BIN_DIR/uptime-kinomi" "$BIN_DIR/uptime-kinomi.old"
@@ -291,6 +341,7 @@ main() {
     version=""
     listen="127.0.0.1:8080"
     service=1
+    auto_update=1
     action=install
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -305,9 +356,10 @@ main() {
                 shift
                 ;;
             --no-service) service=0 ;;
+            --no-auto-update) auto_update=0 ;;
             --uninstall) action=uninstall ;;
             -h | --help)
-                sed -n '2,20p' "$0" 2>/dev/null || say "see https://github.com/$REPO"
+                sed -n '2,21p' "$0" 2>/dev/null || say "see https://github.com/$REPO"
                 return 0
                 ;;
             *) die "unknown option $1" ;;
@@ -390,6 +442,13 @@ main() {
         systemctl --user enable uptime-kinomi >/dev/null 2>&1
         systemctl --user restart uptime-kinomi
         started=1
+        write_update_units "$UNIT_DIR"
+        systemctl --user daemon-reload
+        if [ "$auto_update" = 1 ]; then
+            systemctl --user enable --now uptime-kinomi-update.timer >/dev/null 2>&1
+        else
+            systemctl --user disable --now uptime-kinomi-update.timer >/dev/null 2>&1 || true
+        fi
         linger=$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || echo unknown)
         if [ "$linger" != yes ]; then
             # Allowed without root on many systems; otherwise explain.
@@ -408,6 +467,11 @@ main() {
     if [ "$started" = 1 ]; then
         say "  service:       systemctl --user status uptime-kinomi"
         say "  logs:          journalctl --user -u uptime-kinomi"
+        if [ "$auto_update" = 1 ]; then
+            say "  updates:       weekly (systemctl --user list-timers uptime-kinomi-update.timer)"
+        else
+            say "  updates:       uptime-kinomi self-update (weekly timer not enabled)"
+        fi
         say "  status page:   http://$listen/"
         say "  pages:         /run/user/$(id -u)/uptime-kinomi/www (tmpfs)"
         say "  data, logs:    ${XDG_STATE_HOME:-$HOME/.local/state}/uptime-kinomi"
@@ -427,7 +491,11 @@ main() {
     say ""
     say "Next: add your monitors to $CONFIG_DIR/monitors/, then"
     say "  uptime-kinomi check-config && systemctl --user restart uptime-kinomi"
-    say "Updates: uptime-kinomi self-update"
+    if [ "$started" = 1 ] && [ "$auto_update" = 1 ]; then
+        say "Updates: installed automatically once a week; now: systemctl --user start uptime-kinomi-update"
+    else
+        say "Updates: uptime-kinomi self-update"
+    fi
 }
 
 main "$@"
