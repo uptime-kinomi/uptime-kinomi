@@ -1,7 +1,7 @@
 galaxy_info:
-  role_name: kinomi
+  role_name: kinomi_user
   author: uptime-kinomi
-  description: Deploy uptime-kinomi as a systemd user service
+  description: Deploy uptime-kinomi as a user service of the login user
   license: MIT
   min_ansible_version: "2.15"
   platforms:

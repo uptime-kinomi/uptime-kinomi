@@ -1,0 +1,27 @@
+# Filled in by the "KINOMI_USER" task (ansible.builtin.user result).
+kinomi_home: "{{ kinomi_account.home }}"
+kinomi_bin_dir: "{{ kinomi_home }}/.local/bin"
+kinomi_config_dir: "{{ kinomi_home }}/.config/uptime-kinomi"
+kinomi_unit_dir: "{{ kinomi_home }}/.config/systemd/user"
+kinomi_staging_dir: "{{ kinomi_home }}/.cache/uptime-kinomi-staging"
+kinomi_runtime_dir: "/run/user/{{ kinomi_account.uid }}"
+
+# Modules run without temporary files, so become_user works without ACL
+# tools (setfacl) on the target.
+ansible_pipelining: true
+
+# Release asset per CPU (`uname -m`), as in contrib/install.sh.
+kinomi_assets:
+  armv6l: armv6
+  armv7l: armv7
+  armv8l: armv7
+  aarch64: aarch64
+  x86_64: x86_64
+  riscv64: riscv64
+kinomi_asset: "uptime-kinomi-{{ kinomi_assets[ansible_facts['architecture']] }}"
+kinomi_release_url: https://github.com/uptime-kinomi/uptime-kinomi/releases/latest/download
+
+# Release signing keys (keys/ in the repository, SPEC.md §12.1).
+kinomi_release_keys:
+  - RWQWavktNED2FrnDC8yLcpUPBKv4JeUoguh4zMF2wCBxwRJKVs3vRZu3
+  - RWSyZnlqX2HRasxyKYKZQUmcQYpm5e9zHsDUFWTgvWDerhQj+DccOfUH

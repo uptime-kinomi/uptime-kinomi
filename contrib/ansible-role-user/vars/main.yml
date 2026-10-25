@@ -1,10 +1,10 @@
-# Another user than the login user: files are copied with become and then
-# owned by KINOMI_USER; commands run as KINOMI_USER.
-kinomi_other_user: "{{ KINOMI_USER != ansible_facts['user_id'] }}"
-
-# Modules run without temporary files, so become_user works without ACL
-# tools (setfacl) on the target.
-ansible_pipelining: true
+kinomi_home: "{{ ansible_facts['user_dir'] }}"
+kinomi_bin_dir: "{{ kinomi_home }}/.local/bin"
+kinomi_config_dir: "{{ kinomi_home }}/.config/uptime-kinomi"
+kinomi_unit_dir: "{{ kinomi_home }}/.config/systemd/user"
+kinomi_staging_dir: "{{ kinomi_home }}/.cache/uptime-kinomi-staging"
+kinomi_download_dir: "{{ kinomi_home }}/.cache/uptime-kinomi-download"
+kinomi_runtime_dir: "/run/user/{{ ansible_facts['user_uid'] }}"
 
 # Release asset per CPU (`uname -m`), as in contrib/install.sh.
 kinomi_assets:

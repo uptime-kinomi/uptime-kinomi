@@ -1,8 +1,8 @@
-# Deploy uptime-kinomi (SPEC.md §10.5) for KINOMI_USER as a systemd user
-# service (no root at run time). See ../README.md for an example playbook.
+# Deploy uptime-kinomi (SPEC.md §10.5) as root: packages, KINOMI_USER and
+# lingering, then binary, configuration and systemd user service of that
+# user. kinomi itself never runs as root. See ../README.md.
 
 - name: Packages
-  become: true
   ansible.builtin.apt:
     name:
       - curl
@@ -11,48 +11,21 @@
     state: present
     cache_valid_time: 86400
 
-- name: Look up KINOMI_USER
-  ansible.builtin.getent:
-    database: passwd
-    key: "{{ KINOMI_USER }}"
-    fail_key: false
-
-- name: Create KINOMI_USER (become, only if it does not exist)
-  become: true
+- name: KINOMI_USER
   ansible.builtin.user:
     name: "{{ KINOMI_USER }}"
     shell: /bin/bash
     create_home: true
-  when: ansible_facts['getent_passwd'][KINOMI_USER] is none
-
-- name: Look up KINOMI_USER again (UID, home)
-  ansible.builtin.getent:
-    database: passwd
-    key: "{{ KINOMI_USER }}"
-
-- name: Paths
-  ansible.builtin.set_fact:
-    kinomi_uid: "{{ ansible_facts['getent_passwd'][KINOMI_USER][1] }}"
-    kinomi_home: "{{ ansible_facts['getent_passwd'][KINOMI_USER][4] }}"
-
-- name: Paths (derived)
-  ansible.builtin.set_fact:
-    kinomi_bin_dir: "{{ kinomi_home }}/.local/bin"
-    kinomi_config_dir: "{{ kinomi_home }}/.config/uptime-kinomi"
-    kinomi_unit_dir: "{{ kinomi_home }}/.config/systemd/user"
-    kinomi_staging_dir: "{{ kinomi_home }}/.cache/uptime-kinomi-staging"
-    kinomi_runtime_dir: "/run/user/{{ kinomi_uid }}"
+  register: kinomi_account
 
 # Without lingering, the user service stops at the last logout and does not
 # start at boot (SPEC.md §10.6).
 - name: Lingering
-  become: "{{ kinomi_other_user }}"
   ansible.builtin.command:
     cmd: "loginctl enable-linger {{ KINOMI_USER }}"
     creates: "/var/lib/systemd/linger/{{ KINOMI_USER }}"
 
 - name: Wait for the user's systemd instance
-  become: "{{ kinomi_other_user }}"
   ansible.builtin.wait_for:
     path: "{{ kinomi_runtime_dir }}/bus"
     timeout: 60
@@ -60,11 +33,11 @@
 # One by one, so that every new level belongs to KINOMI_USER. No mode:
 # existing directories in the home keep theirs.
 - name: Directories
-  become: "{{ kinomi_other_user }}"
   ansible.builtin.file:
     path: "{{ kinomi_home }}/{{ item }}"
     state: directory
     owner: "{{ KINOMI_USER }}"
+    group: "{{ kinomi_account.group }}"
   loop:
     - .local
     - .local/bin
@@ -76,7 +49,6 @@
 # An existing binary is never touched: updates are the job of
 # "uptime-kinomi self-update" (or the weekly timer below).
 - name: Check for an installed binary
-  become: "{{ kinomi_other_user }}"
   ansible.builtin.stat:
     path: "{{ kinomi_bin_dir }}/uptime-kinomi"
   register: kinomi_installed
@@ -85,21 +57,17 @@
 # the minisign signature of SHA256SUMS, then the checksum of the binary.
 - name: Install the latest release (only if not installed)
   when: not kinomi_installed.stat.exists
-  become: "{{ kinomi_other_user }}"
-  become_user: "{{ KINOMI_USER }}"
-  vars:
-    download_dir: "{{ kinomi_home }}/.cache/uptime-kinomi-download"
   block:
     - name: Download directory
-      ansible.builtin.file:
-        path: "{{ download_dir }}"
+      ansible.builtin.tempfile:
         state: directory
-        mode: "0700"
+        prefix: uptime-kinomi-
+      register: kinomi_download
 
     - name: Download
       ansible.builtin.get_url:
         url: "{{ kinomi_release_url }}/{{ item }}"
-        dest: "{{ download_dir }}/"
+        dest: "{{ kinomi_download.path }}/"
         mode: "0644"
       loop:
         - SHA256SUMS
@@ -112,70 +80,68 @@
           {% for key in kinomi_release_keys %}minisign -Vq -P {{ key }} -m SHA256SUMS ||
           {% endfor %}exit 1;
           sha256sum --check --ignore-missing --strict SHA256SUMS
-        chdir: "{{ download_dir }}"
+        chdir: "{{ kinomi_download.path }}"
       changed_when: false
 
     - name: Binary
       ansible.builtin.copy:
-        src: "{{ download_dir }}/{{ kinomi_asset }}"
+        src: "{{ kinomi_download.path }}/{{ kinomi_asset }}"
         dest: "{{ kinomi_bin_dir }}/uptime-kinomi"
         remote_src: true
+        owner: "{{ KINOMI_USER }}"
+        group: "{{ kinomi_account.group }}"
         mode: "0755"
       notify: Restart uptime-kinomi
 
   always:
     - name: Remove the download
       ansible.builtin.file:
-        path: "{{ download_dir }}"
+        path: "{{ kinomi_download.path }}"
         state: absent
+      when: kinomi_download.path is defined
 
+# Validate the whole directory before it goes live: copy it to a staging
+# directory, run check-config there, and only then replace the real one.
 - name: Configuration (staging)
-  become: "{{ kinomi_other_user }}"
   ansible.builtin.copy:
     src: "{{ kinomi_config }}"
     dest: "{{ kinomi_staging_dir }}/"
     owner: "{{ KINOMI_USER }}"
+    group: "{{ kinomi_account.group }}"
     mode: "u=rwX,g=,o="
 
 - name: Check the configuration
-  become: "{{ kinomi_other_user }}"
+  become: true
   become_user: "{{ KINOMI_USER }}"
   ansible.builtin.command:
     cmd: "{{ kinomi_bin_dir }}/uptime-kinomi check-config --config-dir {{ kinomi_staging_dir }}"
   changed_when: false
 
 - name: Configuration
-  become: "{{ kinomi_other_user }}"
   ansible.builtin.copy:
     src: "{{ kinomi_config }}"
     dest: "{{ kinomi_config_dir }}/"
     owner: "{{ KINOMI_USER }}"
+    group: "{{ kinomi_account.group }}"
     mode: "u=rwX,g=,o="
   notify: Restart uptime-kinomi
 
 # The units shipped in contrib/systemd/user/, next to this role.
-- name: User unit
-  become: "{{ kinomi_other_user }}"
-  ansible.builtin.copy:
-    src: "{{ role_path }}/../systemd/user/uptime-kinomi.service"
-    dest: "{{ kinomi_unit_dir }}/uptime-kinomi.service"
-    owner: "{{ KINOMI_USER }}"
-    mode: "0644"
-  notify: Restart uptime-kinomi
-
-- name: Self-update units
-  become: "{{ kinomi_other_user }}"
+- name: User units
   ansible.builtin.copy:
     src: "{{ role_path }}/../systemd/user/{{ item }}"
     dest: "{{ kinomi_unit_dir }}/{{ item }}"
     owner: "{{ KINOMI_USER }}"
+    group: "{{ kinomi_account.group }}"
     mode: "0644"
   loop:
+    - uptime-kinomi.service
     - uptime-kinomi-update.service
     - uptime-kinomi-update.timer
+  notify: Restart uptime-kinomi
 
 - name: Enable the service
-  become: "{{ kinomi_other_user }}"
+  become: true
   become_user: "{{ KINOMI_USER }}"
   environment:
     XDG_RUNTIME_DIR: "{{ kinomi_runtime_dir }}"
@@ -187,7 +153,7 @@
     daemon_reload: true
 
 - name: Weekly self-update timer
-  become: "{{ kinomi_other_user }}"
+  become: true
   become_user: "{{ KINOMI_USER }}"
   environment:
     XDG_RUNTIME_DIR: "{{ kinomi_runtime_dir }}"
@@ -196,4 +162,3 @@
     scope: user
     enabled: "{{ kinomi_auto_update | bool }}"
     state: "{{ 'started' if kinomi_auto_update | bool else 'stopped' }}"
-    daemon_reload: true

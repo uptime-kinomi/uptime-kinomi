@@ -13,18 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   checks an existing configuration with the new version before replacing
   anything, and installs a systemd user service. `--listen`, `--version`,
   `--no-service`, `--no-auto-update`, `--uninstall`.
-- `contrib/ansible-role-kinomi/`: the Ansible playbook is now a role.
-  `KINOMI_USER` (default `kinomi`) selects the user kinomi runs as; it is
-  created if it does not exist. The role enables lingering, so the service
-  starts at boot without a login. It installs `curl`, `wget` and `minisign`
-  with apt, and downloads and verifies the latest release only if no binary
-  is installed; an installed one is never replaced.
+- Ansible: the playbook is replaced by two roles. `contrib/ansible-role-user/`
+  deploys for the login user without any become. `contrib/ansible-role-root/`
+  logs in as root, installs `curl`, `wget` and `minisign` with apt, and
+  creates `KINOMI_USER` (default `kinomi`) if it does not exist. Both enable
+  lingering, so the service starts at boot without a login, and download and
+  verify the latest release only if no binary is installed; an installed one
+  is never replaced.
 
 - Weekly self-update: `contrib/systemd/user/uptime-kinomi-update.timer` and
   `.service` run `self-update`, check the configuration with the new version,
   restart the service and roll back if the check fails or the service does
   not stay up. Enabled by `install.sh` (`--no-auto-update` to skip) and the
-  Ansible role (`kinomi_auto_update`).
+  Ansible roles (`kinomi_auto_update`).
 
 ### Changed
 - Default directories depend only on the user, never on how kinomi was

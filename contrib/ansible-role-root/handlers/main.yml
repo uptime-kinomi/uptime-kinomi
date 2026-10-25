@@ -1,0 +1,10 @@
+- name: Restart uptime-kinomi
+  become: true
+  become_user: "{{ KINOMI_USER }}"
+  environment:
+    XDG_RUNTIME_DIR: "{{ kinomi_runtime_dir }}"
+  ansible.builtin.systemd_service:
+    name: uptime-kinomi
+    scope: user
+    state: restarted
+    daemon_reload: true

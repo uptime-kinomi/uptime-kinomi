@@ -793,15 +793,17 @@ Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error,
 - `nginx/mode-a.conf`, `nginx/mode-b.conf`, `apache/mode-a.conf`,
   `apache/mode-b.conf`: reverse proxy examples for both modes (§9.1),
   including `/push/` and `/metrics` in mode B.
-- `ansible-role-kinomi/`: Ansible role for `KINOMI_USER` (default in
-  `defaults/main.yml`: `kinomi`). It installs `curl`, `wget` and `minisign`
-  with apt, creates the user if it does not exist, enables lingering, and
-  deploys configuration and user units; the configuration is copied to a
-  staging directory and checked with `check-config` before it goes live. If
-  no binary is installed, it downloads the latest release for the CPU and
-  verifies its minisign signature and checksum; an installed binary is never
-  touched (updates: `self-update`, §12.2). Needs become for apt and for
-  another user than the login user.
+- `ansible-role-user/` and `ansible-role-root/`: Ansible roles. Both enable
+  lingering, deploy the configuration and the user units, and check the
+  configuration in a staging directory with `check-config` before it goes
+  live. If no binary is installed, they download the latest release for the
+  CPU and verify its minisign signature and checksum; an installed binary is
+  never touched (updates: `self-update`, §12.2).
+  - `ansible-role-user`: kinomi runs as the login user; no become at all.
+    `minisign` must be installed.
+  - `ansible-role-root`: Ansible logs in as root, installs `curl`, `wget`
+    and `minisign` with apt, and creates `KINOMI_USER` (default `kinomi`) if
+    it does not exist; files belong to that user and user commands run as it.
 - `release/sign-release.sh`: maintainer tool (§12.1).
 
 ### 10.6 Running without root
@@ -1012,7 +1014,7 @@ boot). The service:
    restarts the service with the previous version and fails.
 
 A failed run is visible in `systemctl --user --failed`, its output in the
-journal of `uptime-kinomi-update.service`. `install.sh` and the Ansible role
+journal of `uptime-kinomi-update.service`. `install.sh` and the Ansible roles
 enable the timer by default (`--no-auto-update`, `kinomi_auto_update: false`).
 
 ---

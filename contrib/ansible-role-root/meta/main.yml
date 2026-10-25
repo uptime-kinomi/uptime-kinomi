@@ -1,0 +1,11 @@
+galaxy_info:
+  role_name: kinomi_root
+  author: uptime-kinomi
+  description: Deploy uptime-kinomi as root, for a user service of KINOMI_USER
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - all
+dependencies: []

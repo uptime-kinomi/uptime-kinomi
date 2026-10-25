@@ -1,0 +1,124 @@
+# Deploy uptime-kinomi (SPEC.md §10.5) for the login user as a systemd user
+# service. No become anywhere. See ../README.md.
+
+# Without lingering, the user service stops at the last logout and does not
+# start at boot (SPEC.md §10.6).
+- name: Lingering
+  ansible.builtin.command:
+    cmd: "loginctl enable-linger {{ ansible_facts['user_id'] }}"
+    creates: "/var/lib/systemd/linger/{{ ansible_facts['user_id'] }}"
+
+- name: Wait for the user's systemd instance
+  ansible.builtin.wait_for:
+    path: "{{ kinomi_runtime_dir }}/bus"
+    timeout: 60
+
+- name: Directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ kinomi_bin_dir }}"
+    - "{{ kinomi_unit_dir }}"
+
+# An existing binary is never touched: updates are the job of
+# "uptime-kinomi self-update" (or the weekly timer below).
+- name: Check for an installed binary
+  ansible.builtin.stat:
+    path: "{{ kinomi_bin_dir }}/uptime-kinomi"
+  register: kinomi_installed
+
+# The latest release for this CPU, verified like contrib/install.sh does:
+# the minisign signature of SHA256SUMS, then the checksum of the binary.
+- name: Install the latest release (only if not installed)
+  when: not kinomi_installed.stat.exists
+  block:
+    - name: Download directory
+      ansible.builtin.file:
+        path: "{{ kinomi_download_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Download
+      ansible.builtin.get_url:
+        url: "{{ kinomi_release_url }}/{{ item }}"
+        dest: "{{ kinomi_download_dir }}/"
+        mode: "0644"
+      loop:
+        - SHA256SUMS
+        - SHA256SUMS.minisig
+        - "{{ kinomi_asset }}"
+
+    - name: Verify signature and checksum (needs minisign)
+      ansible.builtin.shell:
+        cmd: >-
+          {% for key in kinomi_release_keys %}minisign -Vq -P {{ key }} -m SHA256SUMS ||
+          {% endfor %}exit 1;
+          sha256sum --check --ignore-missing --strict SHA256SUMS
+        chdir: "{{ kinomi_download_dir }}"
+      changed_when: false
+
+    - name: Binary
+      ansible.builtin.copy:
+        src: "{{ kinomi_download_dir }}/{{ kinomi_asset }}"
+        dest: "{{ kinomi_bin_dir }}/uptime-kinomi"
+        remote_src: true
+        mode: "0755"
+      notify: Restart uptime-kinomi
+
+  always:
+    - name: Remove the download
+      ansible.builtin.file:
+        path: "{{ kinomi_download_dir }}"
+        state: absent
+
+# Validate the whole directory before it goes live: copy it to a staging
+# directory, run check-config there, and only then replace the real one.
+- name: Configuration (staging)
+  ansible.builtin.copy:
+    src: "{{ kinomi_config }}"
+    dest: "{{ kinomi_staging_dir }}/"
+    mode: "u=rwX,g=,o="
+
+- name: Check the configuration
+  ansible.builtin.command:
+    cmd: "{{ kinomi_bin_dir }}/uptime-kinomi check-config --config-dir {{ kinomi_staging_dir }}"
+  changed_when: false
+
+- name: Configuration
+  ansible.builtin.copy:
+    src: "{{ kinomi_config }}"
+    dest: "{{ kinomi_config_dir }}/"
+    mode: "u=rwX,g=,o="
+  notify: Restart uptime-kinomi
+
+# The units shipped in contrib/systemd/user/, next to this role.
+- name: User units
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../systemd/user/{{ item }}"
+    dest: "{{ kinomi_unit_dir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - uptime-kinomi.service
+    - uptime-kinomi-update.service
+    - uptime-kinomi-update.timer
+  notify: Restart uptime-kinomi
+
+- name: Enable the service
+  environment:
+    XDG_RUNTIME_DIR: "{{ kinomi_runtime_dir }}"
+  ansible.builtin.systemd_service:
+    name: uptime-kinomi
+    scope: user
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Weekly self-update timer
+  environment:
+    XDG_RUNTIME_DIR: "{{ kinomi_runtime_dir }}"
+  ansible.builtin.systemd_service:
+    name: uptime-kinomi-update.timer
+    scope: user
+    enabled: "{{ kinomi_auto_update | bool }}"
+    state: "{{ 'started' if kinomi_auto_update | bool else 'stopped' }}"

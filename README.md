@@ -258,7 +258,7 @@ anything, and keeps the previous version (`self-update --rollback`). It works
 without root as long as the binary lives in a directory you own, such as
 `~/.local/bin`.
 
-**Automatic updates:** `install.sh` and the Ansible role enable
+**Automatic updates:** `install.sh` and the Ansible roles enable
 `uptime-kinomi-update.timer` ([`contrib/systemd/user/`](contrib/systemd/user/)),
 which runs `self-update` once a week (Monday morning), checks your
 configuration with the new version, restarts the service, and rolls back if
@@ -313,12 +313,16 @@ One file per day, UTC timestamps first, `grep`- and `awk`-friendly.
 
 Because every monitor is a file, a deployment is a `template:` loop plus a
 handler that restarts the service. `uptime-kinomi check-config` can be used as
-the `validate:` command. [`contrib/ansible-role-kinomi/`](contrib/ansible-role-kinomi/)
-is a complete Ansible role: it creates `KINOMI_USER` (default `kinomi`) if
-needed, checks the configuration in a staging directory before it goes live,
-installs the systemd user service and enables lingering. It installs the
-latest release only if no binary is installed yet; updates are left to
-`self-update`.
+the `validate:` command. Two complete Ansible roles are included; both check
+the configuration in a staging directory before it goes live, install the
+systemd user service, enable lingering, and install the latest signed release
+only if no binary is installed yet (updates are left to `self-update`):
+
+- [`contrib/ansible-role-user/`](contrib/ansible-role-user/): kinomi runs as
+  the Ansible login user; no root needed.
+- [`contrib/ansible-role-root/`](contrib/ansible-role-root/): Ansible logs in
+  as root, installs the packages and creates `KINOMI_USER` (default
+  `kinomi`) for kinomi to run as.
 
 ## Contributing
 
