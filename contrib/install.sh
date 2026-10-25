@@ -9,8 +9,6 @@
 #                     (default 127.0.0.1:8080; 0.0.0.0:8080 for the whole LAN)
 #   --no-service      do not install or start the systemd user service
 #   --no-auto-update  do not enable the weekly self-update timer
-#   --binary-only     only install the verified binary to ~/.local/bin
-#                     (no configuration, no service; used by the Ansible role)
 #   --uninstall       stop and remove binary and service (keeps config and data)
 #
 # What it does: downloads the release for this CPU, verifies the minisign
@@ -344,7 +342,6 @@ main() {
     listen="127.0.0.1:8080"
     service=1
     auto_update=1
-    binary_only=0
     action=install
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -360,10 +357,9 @@ main() {
                 ;;
             --no-service) service=0 ;;
             --no-auto-update) auto_update=0 ;;
-            --binary-only) binary_only=1 ;;
             --uninstall) action=uninstall ;;
             -h | --help)
-                sed -n '2,23p' "$0" 2>/dev/null || say "see https://github.com/$REPO"
+                sed -n '2,21p' "$0" 2>/dev/null || say "see https://github.com/$REPO"
                 return 0
                 ;;
             *) die "unknown option $1" ;;
@@ -418,15 +414,6 @@ main() {
         *) die "unexpected output of the binary: $reported" ;;
     esac
     say "    $reported, signed release $signed"
-
-    if [ "$binary_only" = 1 ]; then
-        step "Installing to $BIN_DIR"
-        mkdir -p "$BIN_DIR"
-        cp "$work/$asset" "$BIN_DIR/.uptime-kinomi.new"
-        mv "$BIN_DIR/.uptime-kinomi.new" "$BIN_DIR/uptime-kinomi"
-        say "Installed $BIN_DIR/uptime-kinomi ($signed)."
-        return 0
-    fi
 
     if [ -e "$CONFIG_DIR/kinomi.toml" ]; then
         step "Keeping the existing configuration in $CONFIG_DIR"

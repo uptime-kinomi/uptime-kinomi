@@ -1,6 +1,16 @@
 # Deploy uptime-kinomi (SPEC.md §10.5) for KINOMI_USER as a systemd user
 # service (no root at run time). See ../README.md for an example playbook.
 
+- name: Packages
+  become: true
+  ansible.builtin.apt:
+    name:
+      - curl
+      - wget
+      - minisign
+    state: present
+    cache_valid_time: 86400
+
 - name: Look up KINOMI_USER
   ansible.builtin.getent:
     database: passwd
@@ -35,20 +45,11 @@
 
 # Without lingering, the user service stops at the last logout and does not
 # start at boot (SPEC.md §10.6).
-- name: Lingering (without root, for the login user)
+- name: Lingering
+  become: "{{ kinomi_other_user }}"
   ansible.builtin.command:
     cmd: "loginctl enable-linger {{ KINOMI_USER }}"
     creates: "/var/lib/systemd/linger/{{ KINOMI_USER }}"
-  register: kinomi_linger
-  failed_when: false
-  when: not kinomi_other_user
-
-- name: Lingering (become, for another user or if the step above was not allowed)
-  become: true
-  ansible.builtin.command:
-    cmd: "loginctl enable-linger {{ KINOMI_USER }}"
-    creates: "/var/lib/systemd/linger/{{ KINOMI_USER }}"
-  when: kinomi_other_user or (kinomi_linger.rc is defined and kinomi_linger.rc != 0)
 
 - name: Wait for the user's systemd instance
   become: "{{ kinomi_other_user }}"
@@ -80,37 +81,54 @@
     path: "{{ kinomi_bin_dir }}/uptime-kinomi"
   register: kinomi_installed
 
-# contrib/install.sh downloads the latest release for the CPU and verifies
-# its signature (minisign or OpenSSL 3) and checksum. Needs curl or wget.
+# The latest release for this CPU, verified like contrib/install.sh does:
+# the minisign signature of SHA256SUMS, then the checksum of the binary.
 - name: Install the latest release (only if not installed)
   when: not kinomi_installed.stat.exists
+  become: "{{ kinomi_other_user }}"
+  become_user: "{{ KINOMI_USER }}"
+  vars:
+    download_dir: "{{ kinomi_home }}/.cache/uptime-kinomi-download"
   block:
-    - name: Installer
-      become: "{{ kinomi_other_user }}"
-      ansible.builtin.copy:
-        src: "{{ role_path }}/../install.sh"
-        dest: "{{ kinomi_home }}/.cache/uptime-kinomi-install.sh"
-        owner: "{{ KINOMI_USER }}"
-        mode: "0644"
+    - name: Download directory
+      ansible.builtin.file:
+        path: "{{ download_dir }}"
+        state: directory
+        mode: "0700"
 
-    - name: Download and verify
-      become: "{{ kinomi_other_user }}"
-      become_user: "{{ KINOMI_USER }}"
-      ansible.builtin.command:
-        cmd: "sh {{ kinomi_home }}/.cache/uptime-kinomi-install.sh --binary-only"
-        chdir: "{{ kinomi_home }}"
-      environment:
-        HOME: "{{ kinomi_home }}"
+    - name: Download
+      ansible.builtin.get_url:
+        url: "{{ kinomi_release_url }}/{{ item }}"
+        dest: "{{ download_dir }}/"
+        mode: "0644"
+      loop:
+        - SHA256SUMS
+        - SHA256SUMS.minisig
+        - "{{ kinomi_asset }}"
+
+    - name: Verify signature and checksum
+      ansible.builtin.shell:
+        cmd: >-
+          {% for key in kinomi_release_keys %}minisign -Vq -P {{ key }} -m SHA256SUMS ||
+          {% endfor %}exit 1;
+          sha256sum --check --ignore-missing --strict SHA256SUMS
+        chdir: "{{ download_dir }}"
+      changed_when: false
+
+    - name: Binary
+      ansible.builtin.copy:
+        src: "{{ download_dir }}/{{ kinomi_asset }}"
+        dest: "{{ kinomi_bin_dir }}/uptime-kinomi"
+        remote_src: true
+        mode: "0755"
       notify: Restart uptime-kinomi
 
-    - name: Remove the installer
-      become: "{{ kinomi_other_user }}"
+  always:
+    - name: Remove the download
       ansible.builtin.file:
-        path: "{{ kinomi_home }}/.cache/uptime-kinomi-install.sh"
+        path: "{{ download_dir }}"
         state: absent
 
-# Validate the whole directory before it goes live: copy it to a staging
-# directory, run check-config there, and only then replace the real one.
 - name: Configuration (staging)
   become: "{{ kinomi_other_user }}"
   ansible.builtin.copy:

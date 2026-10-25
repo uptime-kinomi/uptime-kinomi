@@ -3,20 +3,21 @@
 Deploys uptime-kinomi as a systemd **user** service for `KINOMI_USER`
 (SPEC.md §10.5, §10.6):
 
+- installs `curl`, `wget` and `minisign` with apt (become);
 - creates `KINOMI_USER` if it does not exist (become);
 - enables lingering, so the service starts at boot without a login;
-- if `~/.local/bin/uptime-kinomi` does not exist: installs the latest
-  release for the CPU with `contrib/install.sh --binary-only` (signature and
-  checksum verified; needs `curl` or `wget`, and `minisign` or OpenSSL 3). An
-  existing binary is never touched; updates are done by `self-update`;
+- if `~/.local/bin/uptime-kinomi` does not exist: downloads the latest
+  release for the CPU, verifies the minisign signature of `SHA256SUMS` and
+  the checksum, and installs it. An existing binary is never touched;
+  updates are done by `self-update`;
 - copies the configuration to a staging directory, runs `check-config` on
   it, and only then replaces `~/.config/uptime-kinomi`;
 - installs `contrib/systemd/user/uptime-kinomi.service` and (re)starts it;
 - installs and enables the weekly self-update timer
   (`uptime-kinomi-update.timer`), unless `kinomi_auto_update: false`.
 
-The role uses `contrib/systemd/user/` and `contrib/install.sh` from this
-repository, so keep it inside `contrib/` (or copy those next to it).
+The role uses `contrib/systemd/user/` from this repository, so keep it inside
+`contrib/` (or copy that directory next to it).
 
 ## Variables
 
@@ -28,11 +29,10 @@ repository, so keep it inside `contrib/` (or copy those next to it).
 
 ## Become
 
-If `KINOMI_USER` is the Ansible login user, nothing needs root, except
-lingering on systems where `loginctl enable-linger` is not allowed for the
-user itself. For any other user, files are copied, the user is created and
-lingering is enabled with become; run with `-K` (`--ask-become-pass`) if
-sudo needs a password.
+The apt task always needs become. If `KINOMI_USER` is the Ansible login user,
+everything else runs without it. For any other user, the user is created,
+files are copied and lingering is enabled with become. Run with `-K`
+(`--ask-become-pass`) if sudo needs a password.
 
 ## Example
 
