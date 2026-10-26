@@ -27,7 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   not stay up. Enabled by `install.sh` (`--no-auto-update` to skip) and the
   Ansible roles (`kinomi_auto_update`).
 
+- Favicon: every page links `assets/favicon.svg`, served at
+  `/assets/favicon.svg` (and below `/private/`).
+
 ### Changed
+- New logo: a blackberry with a pulse line, as a round sticker. `docs/logo.py`
+  generates `docs/logo.svg` and `assets/favicon.svg`.
 - Default directories depend only on the user, never on how kinomi was
   started: the systemd service and a manual `uptime-kinomi run` use the same
   data, log and page directories. `$STATE_DIRECTORY` and the other systemd

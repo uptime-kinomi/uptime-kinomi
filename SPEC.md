@@ -530,11 +530,13 @@ kinomi self-status (version, uptime, queue length, skipped checks in the last
 ```
 {output_dir}/                          URL path (built-in server)
 ├── public/assets/kinomi.css           /assets/kinomi.css
+├── public/assets/favicon.svg          /assets/favicon.svg
 ├── public/{page}/index.html           /{page}/
 ├── public/{page}/status.json          /{page}/status.json         (§8.6)
 ├── public/{page}/feed.atom            /{page}/feed.atom           (§8.7)
 ├── public/{page}/badge/{monitor}.svg  /{page}/badge/{monitor}.svg (§8.8, if show_badges)
 ├── private/assets/kinomi.css          /private/assets/kinomi.css
+├── private/assets/favicon.svg         /private/assets/favicon.svg
 └── private/{page}/...                 /private/{page}/...        (public = false)
 ```
 - The file tree mirrors the URL space, so in mode B (§9.1) a proxy serves

@@ -147,7 +147,9 @@ pub fn page(ctx: &Context, page: &Page, snap: &Snapshot) -> String {
     let _ = writeln!(out, "<title>{}</title>", esc(&page.title));
     let _ = writeln!(
         out,
-        "<link rel=\"stylesheet\" href=\"../assets/kinomi.css\">\n</head>\n<body>\n<div class=\"wrap\">"
+        "<link rel=\"stylesheet\" href=\"../assets/kinomi.css\">\n\
+         <link rel=\"icon\" href=\"../assets/favicon.svg\" type=\"image/svg+xml\">\n\
+         </head>\n<body>\n<div class=\"wrap\">"
     );
 
     let _ = writeln!(out, "<header>\n<h1>{}</h1>", esc(&page.title));

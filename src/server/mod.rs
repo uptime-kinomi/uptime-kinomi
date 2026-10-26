@@ -245,7 +245,7 @@ pub fn route(req: &Request, options: &Options, site: &crate::render::Site) -> Re
     if let Some(file) = site.files.get(&path) {
         let cache = if file.private {
             "private, no-store"
-        } else if file.content_type.starts_with("text/css") {
+        } else if path.starts_with("/assets/") {
             "public, max-age=300"
         } else {
             "no-cache"

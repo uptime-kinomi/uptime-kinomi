@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/logo.svg" width="160" alt="uptime-kinomi logo: a raspberry shaped like a banana"></p>
+<p align="center"><img src="docs/logo.svg" width="160" alt="uptime-kinomi logo: a blackberry with a pulse line"></p>
 
 # uptime-kinomi
 
