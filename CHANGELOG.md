@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Ansible roles: the configuration is sent as one archive and unpacked on
+  the target, instead of one transfer per file (twice: staging and live).
+  On a Raspberry Pi 1 under load a run went from about 20 to 13 minutes;
+  the gain grows with the number of files. The live directory is replaced
+  only if something differs.
+
 ## [0.5.0] - 2026-10-27
 
 No action is needed for upgrading: state files of 0.4.0 are read as before

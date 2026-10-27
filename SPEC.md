@@ -917,8 +917,10 @@ Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error,
 - `ansible-role-user/` and `ansible-role-root/`: Ansible roles. Both enable
   lingering, deploy the configuration and the user units, and check the
   configuration in an emptied staging directory with `check-config` before
-  it goes live. The configuration directory on the target then has exactly
-  the files of the source: removed or renamed files are deleted there too.
+  it goes live. The configuration is sent as one archive (not file by
+  file, which is slow on a Pi 1) and replaces the live directory only if
+  something differs; the live directory then has exactly the files of the
+  source, so removed or renamed files are deleted there too.
   If no binary is installed, they download the latest release for the CPU
   and verify it like `install.sh` (minisign signature by a release key,
   trusted comment `uptime-kinomi X.Y.Z`, checksum, and a test run that
