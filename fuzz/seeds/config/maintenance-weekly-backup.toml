@@ -1,0 +1,6 @@
+config_version = 1
+title = "Weekly NAS backup"
+monitors = ["ssh"]
+schedule = "weekly"
+start = "2026-10-25T03:00:00"   # every Sunday 03:00 local time
+duration = "2h"

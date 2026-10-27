@@ -1,0 +1,83 @@
+# Fuzz targets for cargo-fuzz (nightly): see fuzz/README.md.
+[package]
+name = "uptime-kinomi-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+uptime-kinomi = { path = ".." }
+
+# Not part of the main build.
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "http_request"
+path = "fuzz_targets/http_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dns_response"
+path = "fuzz_targets/dns_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "x509"
+path = "fuzz_targets/x509.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "release"
+path = "fuzz_targets/release.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "auth"
+path = "fuzz_targets/auth.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config"
+path = "fuzz_targets/config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "storage"
+path = "fuzz_targets/storage.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encodings"
+path = "fuzz_targets/encodings.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_redirect"
+path = "fuzz_targets/http_redirect.rs"
+test = false
+doc = false
+bench = false

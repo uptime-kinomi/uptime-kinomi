@@ -1,0 +1,13 @@
+config_version = 1
+title = "Our services"
+public = true
+description = "Is it down, or is it just me?"
+show_badges = true
+
+[[groups]]
+name = "Web"
+tags = ["web"]
+
+[[groups]]
+name = "Home"
+monitors = ["ssh", "backup"]

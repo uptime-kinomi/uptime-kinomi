@@ -240,7 +240,7 @@ fn fetch(agent: &ureq::Agent, url: &str, limit: u64) -> Result<Vec<u8>, Error> {
         .map_err(fail)
 }
 
-fn release_keys() -> Result<Vec<PublicKey>, Error> {
+pub(crate) fn release_keys() -> Result<Vec<PublicKey>, Error> {
     PUBLIC_KEYS
         .iter()
         .map(|text| {
@@ -251,7 +251,11 @@ fn release_keys() -> Result<Vec<PublicKey>, Error> {
 
 /// Verify the minisign signature of `sums` and return the version from the
 /// signed trusted comment.
-fn verify_signature(sums: &[u8], signature: &[u8], keys: &[PublicKey]) -> Result<Version, Error> {
+pub(crate) fn verify_signature(
+    sums: &[u8],
+    signature: &[u8],
+    keys: &[PublicKey],
+) -> Result<Version, Error> {
     let text =
         std::str::from_utf8(signature).map_err(|_| err("SHA256SUMS.minisig is not valid UTF-8"))?;
     let signature = Signature::decode(text)
@@ -273,7 +277,7 @@ fn verify_signature(sums: &[u8], signature: &[u8], keys: &[PublicKey]) -> Result
 }
 
 /// Find the SHA-256 of `asset` in a strictly formatted `SHA256SUMS`.
-fn checksum_for(sums: &[u8], asset: &str) -> Result<String, Error> {
+pub(crate) fn checksum_for(sums: &[u8], asset: &str) -> Result<String, Error> {
     let malformed = |why: &str| err(format!("SHA256SUMS is malformed: {why}"));
     let text = std::str::from_utf8(sums).map_err(|_| malformed("not UTF-8"))?;
     let mut found = None;

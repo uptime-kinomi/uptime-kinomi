@@ -1,0 +1,3 @@
+GET /home/../private/%2e%2e/all/ HTTP/1.1
+Host: STATUS.example.org:443
+

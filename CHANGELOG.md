@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   not stay up. Enabled by `install.sh` (`--no-auto-update` to skip) and the
   Ansible roles (`kinomi_auto_update`).
 
+- Fuzzing: nine cargo-fuzz targets in `fuzz/` for every parser of network
+  data (HTTP requests and routing, Basic Auth, push, redirect targets, DNS,
+  certificates, release metadata) and of configuration, log and state files,
+  some with round-trip properties. CI fuzzes each target for a minute on
+  every change and for 30 minutes weekly; `cargo test` runs the seeds on
+  stable. The code is now a library plus a small `main.rs`, so that the
+  parsers can be fuzzed.
 - Favicon: every page links `assets/favicon.svg`, served at
   `/assets/favicon.svg` (and below `/private/`).
 
@@ -46,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   service.
 
 ### Fixed
+- An htpasswd line with a multi-byte character in the hash crashed
+  `check-config` and startup instead of being reported (found by fuzzing).
 - Status pages are written without fsync (they are regenerated anyway):
   on a Raspberry Pi 1 with `output_dir` on the SD card, 50 monitors wrote
   4.2 MB in 10 minutes. State files are still written durably.

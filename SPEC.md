@@ -863,7 +863,10 @@ setting `net.ipv4.ping_group_range` instead of root.
 ## 11. Security summary
 1. No `unsafe` in kinomi's code (`#![forbid(unsafe_code)]`).
 2. Every byte from the network is size-limited before parsing; every parser
-   of network data (HTTP response head, DNS, HTTP request) is fuzzed in CI.
+   of network data is fuzzed in CI (`fuzz/`): HTTP requests and routing,
+   Basic Auth, push, redirect targets, DNS responses, certificates, release
+   metadata. So are the parsers of configuration, log and state files. HTTP
+   responses are parsed by ureq.
 3. Nothing fetched from monitored targets is stored, displayed or forwarded,
    only kinomi's own summary.
 4. Push endpoint: constant-time token check, rate limit, body never read,

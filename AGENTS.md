@@ -95,7 +95,8 @@ testdata/                  generated test vectors (with their generator scripts)
 2. In `src/monitors/mod.rs`: add a variant to `Kind`, an `Option<<Type>File>`
    field to `MonitorFile`, and an arm to `build_check`.
 3. Document the type in SPEC.md §4 and add an example to `contrib/examples/`.
-4. If it parses network data: add a fuzz target in `fuzz/`.
+4. If it parses network data: add an entry point to `src/fuzzing.rs` and a
+   target in `fuzz/` (see fuzz/README.md).
 
 Adding a notifier works the same way in `src/notifiers/`.
 
@@ -138,7 +139,7 @@ cross build --release --target arm-unknown-linux-musleabihf
 CC_x86_64_unknown_linux_musl=gcc cargo build --release --target x86_64-unknown-linux-musl   # quick local static build
 python3 testdata/update/generate.py   # regenerate self-update test vectors (TEST keys only)
 cargo deny check
-cargo +nightly fuzz run <target>     # in fuzz/
+cargo +nightly fuzz run <target> fuzz/corpus/<target> fuzz/seeds/<target>   # see fuzz/README.md
 ```
 
 CI runs all of the above for every PR, plus a QEMU smoke test of the ARMv6

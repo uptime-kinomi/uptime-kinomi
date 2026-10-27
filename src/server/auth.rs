@@ -166,7 +166,8 @@ fn parse_hash(text: &str) -> Option<Hash> {
         .or_else(|| text.strip_prefix("$2b$"))
         .or_else(|| text.strip_prefix("$2a$"))?;
     let (cost, rest) = rest.split_once('$')?;
-    if cost.len() != 2 || rest.len() != 53 {
+    // ASCII only, so the slicing below is on character boundaries.
+    if cost.len() != 2 || rest.len() != 53 || !rest.is_ascii() {
         return None;
     }
     let cost: u32 = cost.parse().ok()?;
@@ -297,6 +298,9 @@ mod tests {
             "alice:$apr1$abc$def",
             "alice:$2y$03$q2C9wPe5iV0OYbDGCKjpgeS2lSPX0N4D6gCLgoRaQ8bVA9zTkqyei",
             "alice:$2y$04$short",
+            // Found by fuzzing: a multi-byte character used to panic
+            // (slicing inside a character).
+            "alice:$2y$10$vn5tdPfhSmAeoTrf.KHZp\u{77e}bbQvIOqvv1wOM8svQJOKRZ2yhGbrUK",
             &format!("{APACHE_LINE}\n{APACHE_LINE}"),
         ] {
             assert!(Auth::parse(bad).is_err(), "{bad}");

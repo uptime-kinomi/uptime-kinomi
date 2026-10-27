@@ -330,7 +330,7 @@ impl Reader<'_> {
 }
 
 /// Values of the answers of `kind` for `name`. Errors are coarse classes.
-fn parse_response(
+pub(crate) fn parse_response(
     msg: &[u8],
     id: u16,
     name: &str,

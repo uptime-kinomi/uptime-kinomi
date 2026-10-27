@@ -1,0 +1,9 @@
+config_version = 1
+title = "Router firmware update"
+severity = "minor"
+start = "2026-10-22T18:00:00+02:00"
+end = "2026-10-22T19:00:00+02:00"
+text = """
+The router is being updated. The internet connection will be unavailable
+for a few minutes.
+"""

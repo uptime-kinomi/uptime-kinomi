@@ -1,0 +1,9 @@
+config_version = 1
+type = "dns"
+name = "DNS for example.org"
+interval = "5m"
+
+[dns]
+name = "example.org"
+record_type = "A"
+server = "1.1.1.1"

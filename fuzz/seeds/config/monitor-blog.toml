@@ -1,0 +1,9 @@
+config_version = 1
+type = "http"
+name = "Blog"
+tags = ["web"]
+
+[http]
+url = "https://example.org/"
+keyword = "Example Domain"
+tls_expiry_warn = "14d"

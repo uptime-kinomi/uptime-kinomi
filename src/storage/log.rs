@@ -15,7 +15,7 @@ use std::time::SystemTime;
 use crate::clock;
 
 const MAX_MSG_CHARS: usize = 120;
-const MAX_VALUE_CHARS: usize = 200;
+pub(crate) const MAX_VALUE_CHARS: usize = 200;
 /// If writing keeps failing (e.g. disk full), keep at most this many lines.
 const MAX_BUFFERED_LINES: usize = 10_000;
 
@@ -120,7 +120,7 @@ impl LogWriter {
 }
 
 /// logfmt value: bare if it only has safe characters, else quoted.
-fn push_value(line: &mut String, value: &str, limit: usize) {
+pub(crate) fn push_value(line: &mut String, value: &str, limit: usize) {
     let value: String = value.chars().take(limit).collect();
     let safe = !value.is_empty()
         && value

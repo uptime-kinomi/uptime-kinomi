@@ -470,7 +470,7 @@ fn parse_status(spec: &StatusSpec) -> Option<(u16, u16)> {
 }
 
 /// Resolve a redirect target and enforce the scheme rules.
-fn next_url(current: &str, location: &str) -> Result<String, String> {
+pub(crate) fn next_url(current: &str, location: &str) -> Result<String, String> {
     let next = if location.starts_with("https://") || location.starts_with("http://") {
         location.to_string()
     } else if let Some(rest) = location.strip_prefix("//") {

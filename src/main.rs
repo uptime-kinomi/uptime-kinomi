@@ -4,32 +4,7 @@
 
 #![forbid(unsafe_code)]
 
-/// Like `println!`, but a closed stdout (e.g. `uptime-kinomi ... | head`)
-/// is ignored instead of panicking with "Broken pipe".
-macro_rules! say {
-    ($($arg:tt)*) => {{
-        use std::io::Write as _;
-        let _ = writeln!(std::io::stdout(), $($arg)*);
-    }};
-}
-
-mod clock;
-mod config;
-mod encoding;
-mod heartbeat;
-mod history;
-mod monitors;
-mod notifiers;
-mod paths;
-mod render;
-mod run;
-mod scheduler;
-mod server;
-mod state;
-mod storage;
-#[cfg(test)]
-mod testutil;
-mod update;
+use uptime_kinomi::{config, encoding, paths, run, say, server, update};
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};

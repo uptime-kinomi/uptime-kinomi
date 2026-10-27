@@ -9,7 +9,7 @@ pub mod dns;
 pub mod http;
 pub mod push;
 pub mod tcp;
-mod tls;
+pub mod tls;
 
 use std::fs::Metadata;
 use std::path::Path;

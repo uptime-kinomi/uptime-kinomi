@@ -154,7 +154,7 @@ pub struct Request {
     pub authorization: Option<String>,
 }
 
-fn parse_request(head: &[u8]) -> Option<Request> {
+pub(crate) fn parse_request(head: &[u8]) -> Option<Request> {
     let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
     let mut req = httparse::Request::new(&mut headers);
     if !matches!(req.parse(head), Ok(httparse::Status::Complete(_))) {
