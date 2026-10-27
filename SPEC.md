@@ -210,6 +210,10 @@ tags = ["web", "family"]      # optional, usable for page groups; same rules as 
 | `MAINTENANCE` | Inside a maintenance window (§14.2) | excluded |
 | `UNKNOWN` | No data yet (after first start) | excluded |
 
+After a restart a monitor continues where it was: `DOWN` stays down
+(§5.1), and `PENDING` keeps counting the failures in a row from the
+heartbeat bar towards `DOWN`.
+
 A disabled monitor (`enabled = false`) is shown as `PAUSED` and counts in
 nothing. A **skipped** check (§6) is not a state. It is logged as `result=SKIPPED`,
 shown as a grey gap, and excluded from uptime percentages.

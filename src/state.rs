@@ -85,11 +85,13 @@ impl MonitorState {
     }
 
     /// Continue from a state restored from a state file or the log.
-    pub fn restore(retries: u32, state: State) -> Self {
+    /// `failures`: the FAIL results in a row at the end of the history.
+    pub fn restore(retries: u32, state: State, failures: u32) -> Self {
         let failures = match state {
             // The next failure keeps it DOWN instead of starting over.
             State::Down => retries.saturating_add(1),
-            State::Pending => 1,
+            // PENDING continues counting towards DOWN.
+            State::Pending => failures.clamp(1, retries.max(1)),
             _ => 0,
         };
         // MAINTENANCE is only shown; the state machine starts over.
@@ -138,6 +140,18 @@ impl MonitorState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pending_continues_counting_after_a_restart() {
+        // retries = 3: DOWN on the 4th failure. Two failures happened before
+        // the restart, so the 4th is two checks away, not four.
+        let mut m = MonitorState::restore(3, State::Pending, 2);
+        assert_eq!(m.apply(Status::Fail).0, LogResult::Fail);
+        assert_eq!(m.apply(Status::Fail).0, LogResult::Down);
+        // Unknown count (old history): at least the one failure PENDING means.
+        let mut m = MonitorState::restore(1, State::Pending, 0);
+        assert_eq!(m.apply(Status::Fail).0, LogResult::Down);
+    }
 
     #[test]
     fn retries_then_down() {

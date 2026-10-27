@@ -69,6 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   back (and then started) after an update. Now a stopped service stays
   stopped and uses the new version at its next start.
 
+- A monitor that was PENDING before a restart started counting failures
+  from 1 again, so with `retries` of 2 or more it went DOWN later than it
+  should. The count now continues from the heartbeat bar.
 - `check-config` also warns when the htpasswd file, `kinomi.toml` with a
   `[heartbeat]` URL, or a webhook file with an inline URL is readable by all
   users. Webhooks accept `url_file` instead of `url`.

@@ -368,7 +368,10 @@ impl Service {
         let monitors = Arc::new(config.monitors);
         let states = monitors
             .iter()
-            .map(|m| MonitorState::restore(m.retries, histories[&m.id].state))
+            .map(|m| {
+                let h = &histories[&m.id];
+                MonitorState::restore(m.retries, h.state, h.trailing_failures())
+            })
             .collect();
         let now = clock::unix_seconds(SystemTime::now());
         // A monitor that was already DOWN before the restart gets no new

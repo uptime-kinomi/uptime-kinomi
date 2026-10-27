@@ -274,6 +274,19 @@ impl History {
         self.covered_until = covered_until;
     }
 
+    /// FAIL results in a row at the end of the heartbeat bar (skipped and
+    /// maintenance entries do not interrupt the row).
+    pub fn trailing_failures(&self) -> u32 {
+        let n = self
+            .recent
+            .iter()
+            .rev()
+            .filter(|b| !matches!(b.beat, Beat::Skipped | Beat::Maint))
+            .take_while(|b| b.beat == Beat::Fail)
+            .count();
+        u32::try_from(n).unwrap_or(u32::MAX)
+    }
+
     pub fn recent_max(&self) -> usize {
         self.recent_max
     }
@@ -338,6 +351,19 @@ mod tests {
         assert_eq!(h.hourly.len(), 3);
         h.prune(T + 30 * 3600);
         assert_eq!(h.hourly.len(), 2);
+    }
+
+    #[test]
+    fn trailing_failures_skip_skips_and_maintenance() {
+        let mut h = History::new(10, 30);
+        h.record_check(T, LogResult::Up, Some(5), "ok", None);
+        h.record_check(T + 60, LogResult::Fail, None, "timeout", None);
+        h.record_skip(T + 120, 1);
+        h.record_check(T + 180, LogResult::Maint, None, "timeout", None);
+        h.record_check(T + 240, LogResult::Fail, None, "timeout", None);
+        assert_eq!(h.trailing_failures(), 2);
+        h.record_check(T + 300, LogResult::Up, Some(5), "ok", None);
+        assert_eq!(h.trailing_failures(), 0);
     }
 
     #[test]
