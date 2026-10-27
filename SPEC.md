@@ -550,8 +550,11 @@ kinomi self-status (version, uptime, queue length, skipped checks in the last
   `public/` at `/` and `private/` at `/private/` with no rewriting. All links
   are relative, so pages also work below a proxy prefix such as `/status/`.
 - Directories are created with mode `0750` and files `0640`, so a web server
-  group can read them. Page directories of removed pages are deleted at
-  startup (only directories that contain nothing but `index.html`).
+  group can read them. At startup, after the first complete write, kinomi
+  removes what it no longer generates: directories of removed pages (only
+  if they contain nothing but kinomi's own files), badges of monitors no
+  longer on a page, and `private/assets/` without private pages. Other
+  files are never touched.
 - Page IDs `assets`, `private`, `push`, `healthz` and `metrics` are reserved.
 - All files are written atomically (temp file + rename) and **only rewritten
   when their content changed**.

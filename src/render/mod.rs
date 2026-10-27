@@ -324,8 +324,9 @@ fn is_generated_page_dir(dir: &Path) -> bool {
     })
 }
 
-/// Remove directories of pages that no longer exist.
-/// Only directories that look exactly like ours are touched.
+/// Remove what removed pages and monitors left behind: directories of
+/// pages that no longer exist (only if they look exactly like ours), stale
+/// badges, and the private assets once there are no private pages.
 fn remove_stale(output_dir: &Path, site: &Site) -> io::Result<()> {
     for top in ["public", "private"] {
         let Ok(entries) = fs::read_dir(output_dir.join(top)) else {
@@ -339,15 +340,55 @@ fn remove_stale(output_dir: &Path, site: &Site) -> io::Result<()> {
             } else {
                 format!("/private/{id}/")
             };
-            if id == "assets" || !is_valid_id(id) || site.files.contains_key(&url) {
+            let dir = entry.path();
+            if id == "assets" {
+                // Assets of private pages, after the last one was removed.
+                remove_files_not_in(&dir, &format!("{}assets/", url_root(top)), site, |n| {
+                    n == "kinomi.css" || n == "favicon.svg"
+                })?;
                 continue;
             }
-            let dir = entry.path();
-            if is_generated_page_dir(&dir) {
+            if !is_valid_id(id) {
+                continue;
+            }
+            if site.files.contains_key(&url) {
+                // Badges of monitors no longer on the page (or show_badges off).
+                remove_files_not_in(&dir.join("badge"), &format!("{url}badge/"), site, |n| {
+                    n.ends_with(".svg")
+                })?;
+            } else if is_generated_page_dir(&dir) {
                 fs::remove_dir_all(&dir)?;
             }
         }
     }
+    Ok(())
+}
+
+fn url_root(top: &str) -> &'static str {
+    if top == "public" { "/" } else { "/private/" }
+}
+
+/// Remove the files of `dir` that kinomi writes (`ours`) but that are not
+/// part of `site` (at URL `url_prefix` + name), and then `dir` if it is empty.
+fn remove_files_not_in(
+    dir: &Path,
+    url_prefix: &str,
+    site: &Site,
+    ours: impl Fn(&str) -> bool,
+) -> io::Result<()> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let is_file = entry.file_type().is_ok_and(|t| t.is_file());
+        if is_file && ours(name) && !site.files.contains_key(&format!("{url_prefix}{name}")) {
+            fs::remove_file(entry.path())?;
+        }
+    }
+    // Only succeeds if nothing else is left in it.
+    let _ = fs::remove_dir(dir);
     Ok(())
 }
 
@@ -675,6 +716,10 @@ mod tests {
         fs::write(dir.path().join("public/old/index.html"), "x").unwrap();
         fs::create_dir_all(dir.path().join("public/keep")).unwrap();
         fs::write(dir.path().join("public/keep/notes.txt"), "not ours").unwrap();
+        // A badge of a monitor that is no longer on the page.
+        fs::create_dir_all(dir.path().join("public/home/badge")).unwrap();
+        fs::write(dir.path().join("public/home/badge/gone.svg"), "<svg/>").unwrap();
+        fs::write(dir.path().join("public/home/badge/notes.txt"), "not ours").unwrap();
 
         let first = r.build(&snapshot(1_792_678_991));
         write(dir.path(), &first, &Site::default(), true).unwrap();
@@ -682,6 +727,8 @@ mod tests {
         assert!(dir.path().join("private/all/index.html").is_file());
         assert!(!dir.path().join("public/old").exists());
         assert!(dir.path().join("public/keep/notes.txt").exists());
+        assert!(!dir.path().join("public/home/badge/gone.svg").exists());
+        assert!(dir.path().join("public/home/badge/notes.txt").exists());
         let mode = fs::metadata(dir.path().join("public/home/index.html"))
             .unwrap()
             .permissions()

@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Private pages and the private `status.json` show the last error (time
   and message of the last FAIL or DOWN), not only the last check's message.
   State files keep it (`last_error_time`, `last_error`).
+- Stale badges (monitor removed from a page, or `show_badges` turned off)
+  and the private assets without private pages are removed from
+  `output_dir` at startup. In mode B the proxy served them from disk.
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry
