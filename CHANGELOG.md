@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - After a failed write of the status pages (e.g. a full disk), files whose
   content did not change afterwards (style sheet, favicon, badges) were never
   written again. Now everything is written again after a failure.
+- `log_dir` and the fallback page directory follow a configured `data_dir`
+  (`<data_dir>/log`, `<data_dir>/www`); before, they stayed below
+  `~/.local/state/uptime-kinomi`.
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry

@@ -47,18 +47,19 @@ pub fn default_data_dir(env: EnvFn) -> Option<PathBuf> {
     app_state_dir(env)
 }
 
-/// Default `log_dir`: `<data_dir>/log`.
-pub fn default_log_dir(env: EnvFn) -> Option<PathBuf> {
-    app_state_dir(env).map(|d| d.join("log"))
+/// Default `log_dir`: `<data_dir>/log`, for the configured or default
+/// `data_dir`.
+pub fn default_log_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("log")
 }
 
 /// Default `output_dir`: `/run/user/<uid>/uptime-kinomi/www` (a tmpfs) if the
 /// user's runtime directory exists, else `<data_dir>/www`. `runtime` is the
 /// result of [`user_runtime_dir`].
-pub fn default_output_dir(env: EnvFn, runtime: Option<&Path>) -> Option<PathBuf> {
+pub fn default_output_dir(data_dir: &Path, runtime: Option<&Path>) -> PathBuf {
     match runtime {
-        Some(dir) => Some(dir.join(APP_DIR).join("www")),
-        None => app_state_dir(env).map(|d| d.join("www")),
+        Some(dir) => dir.join(APP_DIR).join("www"),
+        None => data_dir.join("www"),
     }
 }
 
@@ -197,17 +198,15 @@ mod tests {
         let shell = env_of(&[("HOME", "/home/u"), ("XDG_RUNTIME_DIR", "/run/user/1000")]);
         let runtime = Some(Path::new("/run/user/1000"));
         for env in [&service as EnvFn, &shell] {
+            let data = default_data_dir(env).unwrap();
+            assert_eq!(data, PathBuf::from("/home/u/.local/state/uptime-kinomi"));
             assert_eq!(
-                default_data_dir(env),
-                Some(PathBuf::from("/home/u/.local/state/uptime-kinomi"))
+                default_log_dir(&data),
+                PathBuf::from("/home/u/.local/state/uptime-kinomi/log")
             );
             assert_eq!(
-                default_log_dir(env),
-                Some(PathBuf::from("/home/u/.local/state/uptime-kinomi/log"))
-            );
-            assert_eq!(
-                default_output_dir(env, runtime),
-                Some(PathBuf::from("/run/user/1000/uptime-kinomi/www"))
+                default_output_dir(&data, runtime),
+                PathBuf::from("/run/user/1000/uptime-kinomi/www")
             );
         }
     }
@@ -219,14 +218,10 @@ mod tests {
             default_data_dir(&env),
             Some(PathBuf::from("/state/uptime-kinomi"))
         );
-        assert_eq!(
-            default_log_dir(&env),
-            Some(PathBuf::from("/state/uptime-kinomi/log"))
-        );
         // Without a runtime directory the pages go below the data directory.
         assert_eq!(
-            default_output_dir(&env, None),
-            Some(PathBuf::from("/state/uptime-kinomi/www"))
+            default_output_dir(Path::new("/state/uptime-kinomi"), None),
+            PathBuf::from("/state/uptime-kinomi/www")
         );
     }
 
@@ -242,7 +237,5 @@ mod tests {
     fn default_dirs_unknown_without_home() {
         let env = env_of(&[("STATE_DIRECTORY", "/var/lib/x")]);
         assert_eq!(default_data_dir(&env), None);
-        assert_eq!(default_log_dir(&env), None);
-        assert_eq!(default_output_dir(&env, None), None);
     }
 }

@@ -833,7 +833,7 @@ therefore use exactly the same directories and, from the same
 | Purpose | Default |
 |---|---|
 | `data_dir` | `$XDG_STATE_HOME/uptime-kinomi` (`~/.local/state/uptime-kinomi`) |
-| `log_dir` | `<data_dir>/log` |
+| `log_dir` | `<data_dir>/log` (also for a configured `data_dir`) |
 | `output_dir` | `/run/user/<uid>/uptime-kinomi/www` if `/run/user/<uid>` exists and belongs to the user (a tmpfs), else `<data_dir>/www` |
 
 `/run/user/<uid>` is created by systemd-logind. With lingering

@@ -243,7 +243,10 @@ pub fn parse(
                 })
         };
         let data_dir = dir(s.data_dir, paths::default_data_dir(env), "data_dir", &mut p);
-        let log_dir = dir(s.log_dir, paths::default_log_dir(env), "log_dir", &mut p);
+        // Both follow a configured data_dir (SPEC.md §10.6).
+        let default_log =
+            (!data_dir.as_os_str().is_empty()).then(|| paths::default_log_dir(&data_dir));
+        let log_dir = dir(s.log_dir, default_log, "log_dir", &mut p);
         let storage = Storage {
             data_dir,
             log_dir,
@@ -272,7 +275,10 @@ pub fn parse(
         let output_dir = s
             .output_dir
             .map(|d| resolve_path(config_dir, &d))
-            .or_else(|| paths::default_output_dir(env, runtime))
+            .or_else(|| {
+                (!storage.data_dir.as_os_str().is_empty())
+                    .then(|| paths::default_output_dir(&storage.data_dir, runtime))
+            })
             .unwrap_or_else(|| {
                 p.error("pages.output_dir cannot be determined (no $HOME); set it explicitly");
                 PathBuf::new()
@@ -490,6 +496,9 @@ notifications = ["ntfy-home"]
         assert!(!problems.has_errors(), "{problems:?}");
         let g = global.unwrap();
         assert_eq!(g.storage.data_dir, PathBuf::from("/cfg/data"));
+        // Log and page directories follow the configured data_dir.
+        assert_eq!(g.storage.log_dir, PathBuf::from("/cfg/data/log"));
+        assert_eq!(g.pages.output_dir, PathBuf::from("/cfg/data/www"));
         assert_eq!(g.defaults.notifications, vec!["ntfy-home".to_string()]);
         assert!(g.heartbeat.is_some());
     }
