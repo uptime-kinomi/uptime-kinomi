@@ -39,6 +39,7 @@ pub fn to_toml(monitor: &str, h: &History) -> String {
     let _ = writeln!(out, "monitor = {}", quote(monitor));
     if let Some(t) = h.covered_until {
         let _ = writeln!(out, "covered_until = {}", quote(&time(t)));
+        let _ = writeln!(out, "covered_events = {}", h.covered_events);
     }
     let _ = writeln!(out, "state = {}", quote(h.state.name()));
     for (key, value) in [
@@ -124,6 +125,8 @@ fn quote(text: &str) -> String {
 struct StateFile {
     monitor: String,
     covered_until: Option<String>,
+    /// Missing in files of 0.4.0 and older: all events of that second.
+    covered_events: Option<u32>,
     state: String,
     state_since: Option<String>,
     last_check: Option<String>,
@@ -231,6 +234,7 @@ pub fn from_toml(text: &str, monitor: &str, history: &mut History) -> Result<(),
         restored.cert_expires,
         restored.covered_until,
     );
+    history.covered_events = file.covered_events.unwrap_or(u32::MAX);
     history.recent = restored.recent;
     history.hourly = restored.hourly;
     history.daily = restored.daily;
@@ -335,6 +339,16 @@ mod tests {
         let mut restored = History::new(50, 400);
         from_toml(&text, "blog", &mut restored).unwrap();
         assert_eq!(restored, h);
+        // Files of 0.4.0 and older have no covered_events: the whole second
+        // of covered_until counts as included, as before.
+        let old: String = text
+            .lines()
+            .filter(|l| !l.starts_with("covered_events"))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        let mut restored = History::new(50, 400);
+        from_toml(&old, "blog", &mut restored).unwrap();
+        assert_eq!(restored.covered_events, u32::MAX);
     }
 
     #[test]

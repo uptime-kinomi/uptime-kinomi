@@ -106,6 +106,10 @@ pub struct History {
     pub cert_expires: Option<i64>,
     /// Time of the last event included (log replay continues after it).
     pub covered_until: Option<i64>,
+    /// How many events of the second `covered_until` are included. Log
+    /// times have second precision, so replay needs this to tell the events
+    /// of that second apart (SPEC.md §7.2).
+    pub covered_events: u32,
     pub recent: VecDeque<BeatRecord>,
     pub hourly: BTreeMap<i64, Bucket>,
     pub daily: BTreeMap<i64, Bucket>,
@@ -124,6 +128,7 @@ impl History {
             last_msg: String::new(),
             cert_expires: None,
             covered_until: None,
+            covered_events: 0,
             recent: VecDeque::new(),
             hourly: BTreeMap::new(),
             daily: BTreeMap::new(),
@@ -199,7 +204,14 @@ impl History {
     }
 
     fn add(&mut self, time: i64, bucket: &Bucket) {
-        self.covered_until = Some(self.covered_until.map_or(time, |c| c.max(time)));
+        match self.covered_until {
+            Some(c) if time == c => self.covered_events = self.covered_events.saturating_add(1),
+            Some(c) if time < c => {}
+            _ => {
+                self.covered_until = Some(time);
+                self.covered_events = 1;
+            }
+        }
         self.hourly
             .entry(time.div_euclid(3600))
             .or_default()

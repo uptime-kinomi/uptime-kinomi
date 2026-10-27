@@ -75,15 +75,27 @@ pub fn parse_line(line: &str) -> Option<Line> {
 
 /// Apply one log line to the matching history, if it is newer than what the
 /// history already covers.
-fn apply(line: &Line, histories: &mut HashMap<String, History>) {
+/// `covered` holds, per monitor, the `covered_until` of its state file and
+/// how many events of that second the file still includes.
+fn apply(
+    line: &Line,
+    histories: &mut HashMap<String, History>,
+    covered: &mut HashMap<String, (i64, u32)>,
+) {
     let Some(monitor) = line.get("monitor") else {
         return;
     };
     let Some(history) = histories.get_mut(monitor) else {
         return; // monitor no longer configured
     };
-    if history.covered_until.is_some_and(|c| line.time <= c) {
-        return;
+    if let Some((until, included)) = covered.get_mut(monitor) {
+        if line.time < *until {
+            return;
+        }
+        if line.time == *until && *included > 0 {
+            *included -= 1;
+            return;
+        }
     }
     let latency = line.get("latency_ms").and_then(|v| v.parse().ok());
     let msg = line.get("msg").unwrap_or("");
@@ -131,6 +143,10 @@ pub fn replay(log_dir: &Path, histories: &mut HashMap<String, History>) -> io::R
         Err(e) => return Err(e),
     };
     days.sort();
+    let mut covered: HashMap<String, (i64, u32)> = histories
+        .iter()
+        .filter_map(|(id, h)| h.covered_until.map(|c| (id.clone(), (c, h.covered_events))))
+        .collect();
     let mut applied = 0;
     for (_, path) in days {
         let reader = BufReader::new(fs::File::open(&path)?);
@@ -140,7 +156,7 @@ pub fn replay(log_dir: &Path, histories: &mut HashMap<String, History>) -> io::R
             let Some(parsed) = std::str::from_utf8(&line).ok().and_then(parse_line) else {
                 continue;
             };
-            apply(&parsed, histories);
+            apply(&parsed, histories, &mut covered);
             applied += 1;
         }
     }
@@ -216,6 +232,35 @@ mod tests {
     }
 
     #[test]
+    fn events_in_the_covered_second_are_told_apart() {
+        // The state was saved between two events of the same second: the
+        // first is in the state file, the second only in the log.
+        let dir = TestDir::new("replay-second");
+        write_log(
+            dir.path(),
+            "2026-10-22.log",
+            &[
+                "2026-10-22T10:00:05Z monitor=a result=SKIPPED count=1 msg=\"queue full\"",
+                "2026-10-22T10:00:05Z monitor=a result=DOWN msg=timeout",
+            ],
+        );
+        let mut a = History::new(50, 400);
+        let t = clock::parse_rfc3339("2026-10-22T10:00:05Z").unwrap();
+        a.record_skip(t, 1);
+        assert_eq!((a.covered_until, a.covered_events), (Some(t), 1));
+        let mut histories = HashMap::from([("a".to_string(), a)]);
+        replay(dir.path(), &mut histories).unwrap();
+        let a = &histories["a"];
+        assert_eq!(a.state, State::Down);
+        assert_eq!(
+            a.last_hours(t, 1).skipped,
+            1,
+            "the skip is not counted twice"
+        );
+        assert_eq!(a.covered_events, 2);
+    }
+
+    #[test]
     fn replay_after_covered_until() {
         let dir = TestDir::new("replay");
         write_log(
@@ -242,6 +287,7 @@ mod tests {
         let mut b = History::new(50, 400);
         // b already covers everything up to 10:00:02 (inclusive).
         b.covered_until = clock::parse_rfc3339("2026-10-22T10:00:02Z");
+        b.covered_events = 1;
         histories.insert("b".to_string(), b);
 
         replay(dir.path(), &mut histories).unwrap();

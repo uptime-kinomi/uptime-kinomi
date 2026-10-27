@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `dns` monitors accept names with `_`, such as `_dmarc.example.org`.
 - `check-config` with a broken `kinomi.toml` now still checks monitors and
   pages (with the built-in defaults), so it reports every problem at once.
+- Replay at startup dropped log events from the same second as the state
+  file's `covered_until` that were logged after the state was saved. State
+  files now also store `covered_events`, the number of events of that
+  second they include.
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry
