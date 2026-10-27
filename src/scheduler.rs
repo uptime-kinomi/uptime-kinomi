@@ -9,6 +9,7 @@
 //! therefore checked equally often, and runs + skips always add up to the
 //! elapsed intervals.
 
+use crate::health::Health;
 use std::collections::VecDeque;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -151,6 +152,7 @@ impl Scheduler {
         workers: usize,
         max_queue: usize,
         events: Sender<Event>,
+        health: Arc<Health>,
     ) -> Self {
         let now = Instant::now();
         let enabled: Vec<usize> = (0..monitors.len())
@@ -192,7 +194,7 @@ impl Scheduler {
             let shared = shared.clone();
             thread::Builder::new()
                 .name("dispatcher".into())
-                .spawn(move || dispatcher(&shared, &events))
+                .spawn(move || dispatcher(&shared, &events, &health))
                 .ok()
         };
         Scheduler { shared, dispatcher }
@@ -213,11 +215,12 @@ impl Scheduler {
     }
 }
 
-fn dispatcher(shared: &Shared, events: &Sender<Event>) {
+fn dispatcher(shared: &Shared, events: &Sender<Event>, health: &Health) {
     let mut inner = shared.lock();
     let mut last_round = Instant::now();
     let mut paused = false;
     while !inner.shutdown {
+        health.dispatcher_alive();
         let now = Instant::now();
         let gap = now.duration_since(last_round);
         last_round = now;
@@ -505,7 +508,7 @@ mod tests {
             monitor("c", true),
         ]);
         let (tx, rx) = mpsc::channel();
-        let scheduler = Scheduler::start(monitors, 2, 8, tx);
+        let scheduler = Scheduler::start(monitors, 2, 8, tx, Arc::new(Health::default()));
         let mut seen = Vec::new();
         let deadline = Instant::now() + Duration::from_secs(15);
         while seen.len() < 2 && Instant::now() < deadline {

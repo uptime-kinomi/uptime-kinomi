@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   file's `covered_until` that were logged after the state was saved. State
   files now also store `covered_events`, the number of events of that
   second they include.
+- `/healthz` answered `200 ok` even with a stuck scheduler. It now checks
+  that the dispatcher and the event loop ran within the last 10 s, and
+  answers `503` otherwise.
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry

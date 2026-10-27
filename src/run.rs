@@ -1,5 +1,6 @@
 //! `uptime-kinomi run`: the long-running service, and `rebuild-state`.
 
+use crate::health::Health;
 use std::collections::HashMap;
 use std::fs::{self, DirBuilder};
 use std::os::unix::fs::DirBuilderExt;
@@ -97,8 +98,10 @@ pub fn run(mut config: Config) -> Result<(), String> {
     let maintenance = Arc::new(std::mem::take(&mut config.maintenance));
     let incidents: Arc<Vec<Incident>> = Arc::new(std::mem::take(&mut config.incidents));
     let (tx, rx) = mpsc::channel();
+    let health = Arc::new(Health::default());
     let mut server_options = server_options(&config, &pages)?;
     if let Some(options) = server_options.as_mut() {
+        options.health = Some(health.clone());
         if config
             .monitors
             .iter()
@@ -165,7 +168,13 @@ pub fn run(mut config: Config) -> Result<(), String> {
         eprintln!("  server: http://{listen}/");
     }
 
-    let scheduler = Scheduler::start(service.monitors.clone(), workers, max_queue, tx);
+    let scheduler = Scheduler::start(
+        service.monitors.clone(),
+        workers,
+        max_queue,
+        tx,
+        health.clone(),
+    );
     let started = clock::unix_seconds(SystemTime::now());
     let mut next_render = Instant::now();
     let mut last_render: Option<(Vec<MonitorView>, Instant)> = None;
@@ -174,6 +183,7 @@ pub fn run(mut config: Config) -> Result<(), String> {
     let mut next_state_save = Instant::now() + state_interval;
 
     while !stop.load(Ordering::Relaxed) {
+        health.event_loop_alive();
         match rx.recv_timeout(Duration::from_millis(500)) {
             Ok(event) => service.handle(event),
             Err(RecvTimeoutError::Timeout) => {}
@@ -281,6 +291,7 @@ fn server_options(
         default_page,
         auth,
         push: None,
+        health: None,
     }))
 }
 

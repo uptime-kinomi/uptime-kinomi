@@ -17,6 +17,7 @@ macro_rules! say {
 pub mod clock;
 pub mod config;
 pub mod encoding;
+pub mod health;
 pub mod heartbeat;
 pub mod history;
 pub mod monitors;

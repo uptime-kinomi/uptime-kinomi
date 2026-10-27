@@ -668,7 +668,7 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 | `GET/HEAD /private/{page}/...` | Basic Auth | files from `private/` |
 | `GET/HEAD /assets/...` | – | CSS |
 | `GET/POST /push/{token}` | token | §4.6 |
-| `GET /healthz` | – | `200 ok` if scheduler alive |
+| `GET/HEAD /healthz` | – | `200 ok` while the dispatcher and the event loop run (each seen within 10 s), else `503` |
 | `GET /metrics` | Basic Auth | Prometheus text format (optional, `server.metrics = true`, §9.5) |
 
 ### 9.3 HTTP Basic Auth

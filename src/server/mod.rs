@@ -8,6 +8,7 @@
 pub mod auth;
 pub mod push;
 
+use crate::health::Health;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
@@ -37,6 +38,8 @@ pub struct Options {
     pub default_page: Option<String>,
     pub auth: Option<Auth>,
     pub push: Option<PushRegistry>,
+    /// Liveness for `/healthz`; `None` means always OK.
+    pub health: Option<Arc<Health>>,
 }
 
 pub struct Response {
@@ -205,7 +208,11 @@ pub fn route(req: &Request, options: &Options, site: &crate::render::Site) -> Re
         };
     }
     if path == "/healthz" {
-        return Response::text(200, "ok\n");
+        return if options.health.as_ref().is_none_or(|h| h.ok()) {
+            Response::text(200, "ok\n")
+        } else {
+            Response::text(503, "scheduler not running\n")
+        };
     }
     if let Some(token) = path.strip_prefix("/push/") {
         let query = req
@@ -391,6 +398,7 @@ mod tests {
             default_page: Some("/home/".into()),
             auth: Some(Auth::parse(&line).unwrap()),
             push: None,
+            health: None,
         }
     }
 

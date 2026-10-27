@@ -113,6 +113,7 @@ fn server() -> &'static (Options, Site) {
             default_page: Some("/home/".into()),
             auth: Auth::parse(&line).ok(),
             push: Some(PushRegistry::new(known_monitors(), tx)),
+            health: None,
         };
         let mut site = Site::default();
         for (path, private) in [
