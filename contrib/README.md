@@ -2,6 +2,7 @@
 
 | Path | What |
 |---|---|
+| `install.sh` | One-line installation for the current user (no root), see the README and SPEC.md §10.5. |
 | `examples/config/` | A complete example configuration directory (all file types). Checked by CI. |
 | `systemd/user/` | User service: runs as your user, no root needed. Plus a weekly self-update timer. |
 | `systemd/system/` | Hardened system service with a dedicated `kinomi` user. |

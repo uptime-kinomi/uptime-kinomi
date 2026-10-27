@@ -1,7 +1,7 @@
 name: Build
 
 # Reusable workflow: static binaries for all release targets, tested under
-# QEMU. Used by ci.yml (every push) and release.yml (tags).
+# QEMU. Used by ci.yml (pushes to main, PRs) and release.yml (tags).
 
 on:
   workflow_call:
