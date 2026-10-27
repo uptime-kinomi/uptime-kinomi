@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-27
+
+No action is needed for upgrading: state files of 0.4.0 are read as before
+(new keys are added on the next save).
+
 ### Security
 - Built-in server: the 5 s read timeout applied to each read, so four
   clients sending one byte every few seconds could block it. The whole
@@ -17,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `contrib/nginx/mode-b.conf`: private pages lost the CSP and the other
   security headers, because nginx does not inherit `add_header` into a
   location that sets its own. They are now repeated there.
+
+### Added
+- Failed logins are now logged, as promised by the spec: one line
+  `event=AUTH_FAIL count=N throttled=M` per log flush with failures.
+- Page states and the banner carry a symbol (✓ ⚠ … ✗ ⚙ ‖ ?) besides text
+  and colour, as the spec requires (never colour alone).
+- The private self status shows the average check time of the last 24 h
+  and the time of the last log flush; `/metrics` has them as
+  `kinomi_check_response_ms_24h` and `kinomi_last_log_flush_timestamp_seconds`.
+- Private pages and the private `status.json` show the last error (time
+  and message of the last FAIL or DOWN), not only the last check's message.
+  State files keep it (`last_error_time`, `last_error`).
+- `check-config` also warns when the htpasswd file, `kinomi.toml` with a
+  `[heartbeat]` URL, or a webhook file with an inline URL is readable by all
+  users. Webhooks accept `url_file` instead of `url`.
 
 ### Fixed
 - A restart during a maintenance window forgot the state from before the
@@ -44,20 +64,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `/healthz` answered `200 ok` even with a stuck scheduler. It now checks
   that the dispatcher and the event loop ran within the last 10 s, and
   answers `503` otherwise.
-- Failed logins are now logged, as promised by the spec: one line
-  `event=AUTH_FAIL count=N throttled=M` per log flush with failures.
-- Page states and the banner carry a symbol (✓ ⚠ … ✗ ⚙ ‖ ?) besides text
-  and colour, as the spec requires (never colour alone).
-- The private self status shows the average check time of the last 24 h
-  and the time of the last log flush; `/metrics` has them as
-  `kinomi_check_response_ms_24h` and `kinomi_last_log_flush_timestamp_seconds`.
-- Private pages and the private `status.json` show the last error (time
-  and message of the last FAIL or DOWN), not only the last check's message.
-  State files keep it (`last_error_time`, `last_error`).
 - Stale badges (monitor removed from a page, or `show_badges` turned off)
   and the private assets without private pages are removed from
   `output_dir` at startup. In mode B the proxy served them from disk.
-
 - Ansible roles: a renamed or removed configuration file stayed on the
   target (in the staging and the live configuration directory), so e.g. a
   renamed push monitor existed twice and `check-config` reported a
@@ -68,17 +77,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Weekly update timer: a service that was enabled but stopped was rolled
   back (and then started) after an update. Now a stopped service stays
   stopped and uses the new version at its next start.
-
 - A monitor that was PENDING before a restart started counting failures
   from 1 again, so with `retries` of 2 or more it went DOWN later than it
   should. The count now continues from the heartbeat bar.
-- `check-config` also warns when the htpasswd file, `kinomi.toml` with a
-  `[heartbeat]` URL, or a webhook file with an inline URL is readable by all
-  users. Webhooks accept `url_file` instead of `url`.
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry
   is correspondingly larger.
+- `/metrics` leaves disabled monitors out of every per-monitor metric.
+- `check-config` warns about `timeout` in a push monitor (it has no effect).
+- SPEC.md and AGENTS.md describe the code as it is: all defaults and limits,
+  the state file and log formats, notification texts, server limits.
 
 ## [0.4.0] - 2026-10-27
 
@@ -249,7 +258,8 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.1...v0.2.0
