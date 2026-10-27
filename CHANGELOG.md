@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Security
+- Built-in server: the 5 s read timeout applied to each read, so four
+  clients sending one byte every few seconds could block it. The whole
+  request head now has one 5 s deadline, and the 8 KiB head limit is exact.
 - The `http` monitor no longer sends `basic_auth_*` credentials and custom
   `headers` to redirect targets on another origin (scheme, host, port).
 - `HEAD /push/<token>` no longer counts as a push (link previews and probes

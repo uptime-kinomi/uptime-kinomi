@@ -766,8 +766,9 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 ### 9.4 Hardening
 - Request parsing with `httparse`; request head max 8 KiB (`431` beyond),
   max 32 headers; request bodies are never parsed.
-- `Connection: close` (no keep-alive), read timeout 5 s per read, write
-  timeout 10 s. 4 connections are served at a time and 12 more wait; any
+- `Connection: close` (no keep-alive); the whole request head must arrive
+  within 5 s (one deadline, not per read, so slow clients cannot hold a
+  handler), write timeout 10 s. 4 connections are served at a time and 12 more wait; any
   further connection is closed at once.
 - Only `GET`, `HEAD`, and `POST` for `/push/` → otherwise `405`.
 - `Host` header must match `hostnames` → otherwise `421`.

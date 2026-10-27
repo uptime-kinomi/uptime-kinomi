@@ -14,7 +14,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::render::Published;
 use auth::{Auth, Verdict};
@@ -114,7 +114,7 @@ pub fn start(options: Options, published: Published) -> Result<(), String> {
 fn serve(mut stream: TcpStream, options: &Options, published: &Published) -> io::Result<()> {
     stream.set_read_timeout(Some(READ_TIMEOUT))?;
     stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
-    let (response, head_only) = match read_head(&mut stream)? {
+    let (response, head_only) = match read_head(&mut stream, READ_TIMEOUT)? {
         Some(head) => match parse_request(&head) {
             Some(req) => {
                 let site = published.read().map(|s| s.clone()).unwrap_or_default();
@@ -131,12 +131,22 @@ fn serve(mut stream: TcpStream, options: &Options, published: &Published) -> io:
     write_response(&mut stream, &response, head_only)
 }
 
-/// Read until the end of the request head. `None` if it is too large.
-fn read_head(stream: &mut TcpStream) -> io::Result<Option<Vec<u8>>> {
+/// Read until the end of the request head. `None` if it is too large. The
+/// whole head must arrive within `timeout`, so a client that sends one byte
+/// at a time cannot hold a handler (there are only `HANDLERS`).
+fn read_head(stream: &mut TcpStream, timeout: Duration) -> io::Result<Option<Vec<u8>>> {
+    let deadline = Instant::now() + timeout;
     let mut head = Vec::with_capacity(1024);
     let mut buf = [0u8; 1024];
     loop {
-        let n = stream.read(&mut buf)?;
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::ErrorKind::TimedOut.into());
+        }
+        stream.set_read_timeout(Some(left))?;
+        // Never more than MAX_HEAD_BYTES in total.
+        let room = (MAX_HEAD_BYTES - head.len()).min(buf.len());
+        let n = stream.read(&mut buf[..room])?;
         if n == 0 {
             return Err(io::ErrorKind::UnexpectedEof.into());
         }
@@ -523,5 +533,46 @@ mod tests {
         assert!(head.contains("Content-Length: 11\r\n") && !head.contains("public page"));
         let garbage = request("garbage\r\n\r\n");
         assert!(garbage.starts_with("HTTP/1.1 400"), "{garbage}");
+    }
+
+    #[test]
+    fn slow_clients_get_one_deadline_for_the_whole_head() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            // One byte every 300 ms: each read is quick, the head never ends.
+            let mut s = TcpStream::connect(addr).unwrap();
+            for _ in 0..20 {
+                if s.write_all(b"G").is_err() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(300));
+            }
+        });
+        let (mut stream, _) = listener.accept().unwrap();
+        let start = Instant::now();
+        let r = read_head(&mut stream, Duration::from_secs(1));
+        assert!(r.is_err());
+        assert!(
+            start.elapsed() < Duration::from_millis(1600),
+            "{:?}",
+            start.elapsed()
+        );
+    }
+
+    #[test]
+    fn head_limit_is_exact() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let mut s = TcpStream::connect(addr).unwrap();
+            let _ = s.write_all(&vec![b'a'; MAX_HEAD_BYTES + 600]);
+        });
+        let (mut stream, _) = listener.accept().unwrap();
+        assert!(
+            read_head(&mut stream, Duration::from_secs(2))
+                .unwrap()
+                .is_none()
+        );
     }
 }
