@@ -265,7 +265,7 @@ fn build_target(
         None
     };
     match (kind, webhook, ntfy, gotify, telegram) {
-        (Type::Webhook, Some(f), ..) => boxed(webhook::build(f, p)),
+        (Type::Webhook, Some(f), ..) => boxed(webhook::build(f, ctx, p)),
         (Type::Ntfy, _, Some(f), ..) => boxed(ntfy::build(f, ctx, p)),
         (Type::Gotify, _, _, Some(f), _) => boxed(gotify::build(f, ctx, p)),
         (Type::Telegram, .., Some(f)) => boxed(telegram::build(f, ctx, p)),

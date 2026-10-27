@@ -69,6 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   back (and then started) after an update. Now a stopped service stays
   stopped and uses the new version at its next start.
 
+- `check-config` also warns when the htpasswd file, `kinomi.toml` with a
+  `[heartbeat]` URL, or a webhook file with an inline URL is readable by all
+  users. Webhooks accept `url_file` instead of `url`.
+
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry
   is correspondingly larger.

@@ -159,7 +159,13 @@ pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Co
     let mut problems = Problems::default();
     let global_file = dir.join("kinomi.toml");
     let global = match read_config_file(&global_file) {
-        Ok((text, _)) => global::parse(&text, &global_file, dir, env, runtime, &mut problems),
+        Ok((text, meta)) => {
+            let g = global::parse(&text, &global_file, dir, env, runtime, &mut problems);
+            if let Some(g) = &g {
+                check_global_secrets(g, &meta, &global_file, &mut problems);
+            }
+            g
+        }
         Err(e) => {
             problems.error(&global_file, e);
             None
@@ -298,6 +304,22 @@ pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Co
         _ => None,
     };
     (config, problems)
+}
+
+/// Files with secrets that are not `*_file` secrets: the heartbeat URL
+/// (usually another kinomi's push token) and the htpasswd file.
+fn check_global_secrets(g: &Global, meta: &fs::Metadata, file: &Path, problems: &mut Problems) {
+    if g.heartbeat.is_some() && secret::is_world_readable(meta) {
+        problems.warning(
+            file,
+            "contains heartbeat.url (often a push token) but is readable by all users (chmod o-r)",
+        );
+    }
+    if let Some(htpasswd) = &g.server.htpasswd_file {
+        if fs::metadata(htpasswd).is_ok_and(|m| secret::is_world_readable(&m)) {
+            problems.warning(htpasswd, "is readable by all users (chmod o-r)");
+        }
+    }
 }
 
 /// Push tokens must be unique, and pushes need the built-in server.
@@ -500,6 +522,58 @@ mod tests {
         assert!(all.contains("kinomi.toml"), "{all}");
         assert!(all.contains("monitors/bad.toml"), "{all}");
         assert!(all.contains("pages/home.toml"), "{all}");
+    }
+
+    #[test]
+    fn readable_secrets_outside_secret_files_warn() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TestDir::new("config-readable");
+        let global = dir.write(
+            "kinomi.toml",
+            "config_version = 1\n[server]\nhtpasswd_file = \"htpasswd\"\n\
+             [heartbeat]\nurl = \"https://other.example.org/push/abc\"\n",
+        );
+        let htpasswd = dir.write("htpasswd", "# none\n");
+        dir.write(
+            "notifications/hook.toml",
+            "config_version = 1\ntype = \"webhook\"\n[webhook]\nurl = \"https://chat.example.org/hooks/secret\"\n",
+        );
+        for f in [
+            &global,
+            &htpasswd,
+            &dir.path().join("notifications/hook.toml"),
+        ] {
+            fs::set_permissions(f, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        let (_, problems) = load(dir.path(), &env, None);
+        let warnings: Vec<String> = problems.warnings().map(|w| w.to_string()).collect();
+        let has = |text: &str| warnings.iter().any(|w| w.contains(text));
+        assert!(has("heartbeat.url"), "{warnings:?}");
+        assert!(has("htpasswd: is readable by all users"), "{warnings:?}");
+        assert!(has("contains webhook.url"), "{warnings:?}");
+
+        // Private files, and a webhook URL from url_file: no warnings.
+        let url = dir.write("secrets/hook.url", "https://chat.example.org/hooks/other\n");
+        dir.write(
+            "notifications/hook2.toml",
+            "config_version = 1\ntype = \"webhook\"\n[webhook]\nurl_file = \"secrets/hook.url\"\n",
+        );
+        for f in [
+            &global,
+            &htpasswd,
+            &url,
+            &dir.path().join("notifications/hook.toml"),
+            &dir.path().join("notifications/hook2.toml"),
+        ] {
+            fs::set_permissions(f, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let (config, problems) = load(dir.path(), &env, None);
+        assert!(
+            !problems
+                .warnings()
+                .any(|w| w.to_string().contains("readable by all"))
+        );
+        assert_eq!(config.map(|c| c.notifiers.len()), Some(2), "{problems:?}");
     }
 
     #[test]

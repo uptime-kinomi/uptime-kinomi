@@ -1,9 +1,11 @@
 //! `webhook`: HTTP POST with a JSON body (SPEC.md §5.3). Formats: kinomi's
 //! own JSON, Discord (`content`) and Slack/Mattermost/Rocket.Chat (`text`).
 
+use std::path::PathBuf;
+
 use serde::Deserialize;
 
-use super::{Json, Message, Target, check_url, json, post_json};
+use super::{Context, Json, Message, Target, check_url, json, post_json};
 use crate::config::FileProblems;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -18,7 +20,10 @@ enum Format {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebhookFile {
-    url: String,
+    /// Often the secret itself (Discord, Slack): `url_file` keeps it out of
+    /// the configuration file.
+    url: Option<String>,
+    url_file: Option<PathBuf>,
     #[serde(default)]
     format: Format,
 }
@@ -28,10 +33,22 @@ pub struct Webhook {
     format: Format,
 }
 
-pub fn build(file: WebhookFile, p: &mut FileProblems) -> Option<Webhook> {
-    check_url("webhook.url", &file.url, p);
+pub fn build(file: WebhookFile, ctx: &Context, p: &mut FileProblems) -> Option<Webhook> {
+    let Some(url) = ctx.secret(
+        "webhook.url",
+        file.url.as_deref(),
+        file.url_file.as_deref(),
+        p,
+    ) else {
+        if file.url.is_none() && file.url_file.is_none() {
+            p.error("webhook needs url or url_file");
+        }
+        return None;
+    };
+    let url = url.expose().to_string();
+    check_url("webhook.url", &url, p);
     Some(Webhook {
-        url: file.url,
+        url,
         format: file.format,
     })
 }

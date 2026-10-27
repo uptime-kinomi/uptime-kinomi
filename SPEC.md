@@ -123,7 +123,9 @@ installation uses `/etc/uptime-kinomi`. The directory structure is the same:
   users unchanged.
 - Secrets (tokens, passwords) MAY be given inline or via a `*_file` key that
   points to a file whose content (trimmed) is the secret. kinomi warns at startup
-  and in `check-config` if a file containing secrets is world-readable.
+  and in `check-config` if a file containing secrets is world-readable: secret
+  files, config files with inline secrets, `kinomi.toml` with a
+  `[heartbeat]` URL, and the htpasswd file.
 - Config is read **once at startup**. To apply changes, restart the service
   (`systemctl restart uptime-kinomi`). Startup is designed to be fast.
 - `uptime-kinomi check-config [--config-dir DIR]` validates the whole
@@ -382,14 +384,15 @@ certificate expired`, ...), never with the server's response.
 config_version = 1
 type = "webhook"
 [webhook]
-url = "https://chat.example.org/hooks/abc"
+url = "https://chat.example.org/hooks/abc"   # or url_file = "secrets/hook.url"
 format = "json"        # json (default) | discord | slack (also Mattermost, Rocket.Chat)
 ```
 `format = "json"` sends
 `{"event","monitor","name","detail","time","down_for_s","text"}`
 (`time` in UTC RFC 3339, `down_for_s` only for `up` and `reminder`);
 `discord` sends `{"content"}`, `slack` sends `{"text"}`. The webhook URL is
-often the secret itself (Discord, Slack): keep the file private.
+often the secret itself (Discord, Slack): keep the file private, or use
+`url_file`.
 
 ```toml
 # notifications/phone.toml: ntfy (JSON publishing API, so any title works)
