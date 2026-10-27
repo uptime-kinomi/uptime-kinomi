@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `/healthz` answered `200 ok` even with a stuck scheduler. It now checks
   that the dispatcher and the event loop ran within the last 10 s, and
   answers `503` otherwise.
+- Failed logins are now logged, as promised by the spec: one line
+  `event=AUTH_FAIL count=N throttled=M` per log flush with failures.
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry

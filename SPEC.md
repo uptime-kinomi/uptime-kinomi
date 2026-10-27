@@ -682,8 +682,11 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 - Successful verifications are cached in memory for 10 minutes (key: SHA-256 of
   the `Authorization` header, compared in constant time). A Pi 1 needs about
   0.5 s per bcrypt check, and the cache avoids paying that on every request.
-- Failed attempts: global exponential back-off (max 1 verification per second
-  after 5 failures), logged with `event=AUTH_FAIL`.
+- Failed attempts: after 5 failures in a row, at most 1 verification per
+  second (global; other attempts get `429`), until a login succeeds. They
+  are logged in sums at every log flush, so an attack cannot flood the log:
+  `event=AUTH_FAIL count=N throttled=M` (requests without credentials, such
+  as a browser's first request, do not count).
 - If `listen` is not a loopback address and private pages exist, kinomi warns
   at startup that passwords would travel unencrypted without a TLS proxy.
 

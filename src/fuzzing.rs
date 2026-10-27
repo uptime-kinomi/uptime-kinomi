@@ -111,7 +111,7 @@ fn server() -> &'static (Options, Site) {
             listen: std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
             hostnames: vec!["status.example.org".into()],
             default_page: Some("/home/".into()),
-            auth: Auth::parse(&line).ok(),
+            auth: Auth::parse(&line).ok().map(std::sync::Arc::new),
             push: Some(PushRegistry::new(known_monitors(), tx)),
             health: None,
         };

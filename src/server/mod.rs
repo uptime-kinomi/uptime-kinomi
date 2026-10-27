@@ -36,7 +36,7 @@ pub struct Options {
     pub hostnames: Vec<String>,
     /// URL path of the page served at "/", e.g. "/home/".
     pub default_page: Option<String>,
-    pub auth: Option<Auth>,
+    pub auth: Option<Arc<Auth>>,
     pub push: Option<PushRegistry>,
     /// Liveness for `/healthz`; `None` means always OK.
     pub health: Option<Arc<Health>>,
@@ -396,7 +396,7 @@ mod tests {
             listen: "127.0.0.1:0".parse().unwrap(),
             hostnames: vec!["status.example.org".into()],
             default_page: Some("/home/".into()),
-            auth: Some(Auth::parse(&line).unwrap()),
+            auth: Some(Arc::new(Auth::parse(&line).unwrap())),
             push: None,
             health: None,
         }

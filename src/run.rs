@@ -48,6 +48,8 @@ struct Service {
     /// Push monitors: when the monitor fails if no push arrives.
     push_deadline: Vec<Option<Instant>>,
     maintenance: Arc<Vec<Maintenance>>,
+    /// The server's Basic Auth, for `event=AUTH_FAIL` (SPEC.md §9.3).
+    auth: Option<Arc<Auth>>,
 }
 
 #[derive(Debug, Default)]
@@ -116,6 +118,7 @@ pub fn run(mut config: Config) -> Result<(), String> {
         notifier_list.clone(),
         maintenance.clone(),
     )?;
+    service.auth = server_options.as_ref().and_then(|o| o.auth.clone());
     if !notifier_list.is_empty() {
         let (job_tx, job_rx) = mpsc::channel();
         notifiers::spawn(notifier_list, job_rx, tx.clone());
@@ -270,7 +273,12 @@ fn server_options(
     if !s.enabled {
         return Ok(None);
     }
-    let auth = s.htpasswd_file.as_deref().map(Auth::load).transpose()?;
+    let auth = s
+        .htpasswd_file
+        .as_deref()
+        .map(Auth::load)
+        .transpose()?
+        .map(Arc::new);
     let default_page = config
         .global
         .pages
@@ -393,6 +401,7 @@ impl Service {
             notify,
             push_deadline,
             maintenance,
+            auth: None,
         })
     }
 
@@ -661,6 +670,21 @@ impl Service {
     }
 
     fn flush(&mut self) {
+        if let Some((failed, throttled)) = self
+            .auth
+            .as_ref()
+            .map(|a| a.take_failures())
+            .filter(|&(f, t)| f > 0 || t > 0)
+        {
+            self.log.record(
+                SystemTime::now(),
+                &[
+                    ("event", "AUTH_FAIL"),
+                    ("count", &failed.to_string()),
+                    ("throttled", &throttled.to_string()),
+                ],
+            );
+        }
         if let Err(e) = self.log.flush(SystemTime::now()) {
             eprintln!("error: cannot write the check log: {e}");
         }

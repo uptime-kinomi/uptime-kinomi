@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::encoding::{base64_decode, bcrypt_decode, bcrypt_encode, constant_time_eq};
@@ -41,6 +42,10 @@ pub struct Auth {
     users: Vec<(String, Hash)>,
     cache: Mutex<HashMap<[u8; 32], Instant>>,
     limiter: Mutex<Limiter>,
+    /// Failed and throttled logins since the last [`Auth::take_failures`],
+    /// for `event=AUTH_FAIL` (logged in sums, so attacks cannot flood the log).
+    failed: AtomicU32,
+    throttled: AtomicU32,
 }
 
 impl Auth {
@@ -85,6 +90,8 @@ impl Auth {
                 failures: 0,
                 last: None,
             }),
+            failed: AtomicU32::new(0),
+            throttled: AtomicU32::new(0),
         })
     }
 
@@ -111,6 +118,7 @@ impl Auth {
                     .last
                     .is_some_and(|t| now.duration_since(t) < Duration::from_secs(1))
             {
+                self.throttled.fetch_add(1, Ordering::Relaxed);
                 return Verdict::Throttled;
             }
             limiter.last = Some(now);
@@ -130,8 +138,17 @@ impl Auth {
             Verdict::Allowed
         } else {
             limiter.failures = limiter.failures.saturating_add(1);
+            self.failed.fetch_add(1, Ordering::Relaxed);
             Verdict::Denied
         }
+    }
+
+    /// (failed, throttled) logins since the last call.
+    pub fn take_failures(&self) -> (u32, u32) {
+        (
+            self.failed.swap(0, Ordering::Relaxed),
+            self.throttled.swap(0, Ordering::Relaxed),
+        )
     }
 
     fn verify(&self, user: &str, password: &[u8]) -> bool {
@@ -286,6 +303,11 @@ mod tests {
             auth.check(Some(&header("alice", "secret"))),
             Verdict::Throttled
         );
+        // Counted for event=AUTH_FAIL; no header at all (a browser's first
+        // request) is not a failure.
+        assert_eq!(auth.check(None), Verdict::Denied);
+        assert_eq!(auth.take_failures(), (FREE_FAILURES, 1));
+        assert_eq!(auth.take_failures(), (0, 0));
     }
 
     #[test]
