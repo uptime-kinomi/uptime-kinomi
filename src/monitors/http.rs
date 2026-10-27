@@ -372,7 +372,10 @@ impl HttpCheck {
         let mut url = self.url.clone();
         let mut hops = 0;
         loop {
-            let mut response = match self.request(&url) {
+            // Credentials and custom headers only go to the configured
+            // origin, never to a redirect target elsewhere.
+            let same_origin = origin(&url).eq_ignore_ascii_case(origin(&self.url));
+            let mut response = match self.request(&url, same_origin) {
                 Ok(r) => r,
                 Err(e) => return CheckResult::fail(Some(start.elapsed()), error_message(&e)),
             };
@@ -440,18 +443,24 @@ impl HttpCheck {
         }
     }
 
-    fn request(&self, url: &str) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
+    fn request(
+        &self,
+        url: &str,
+        same_origin: bool,
+    ) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
         let mut request = match self.method {
             Method::Get => self.agent.get(url),
             Method::Head => self.agent.head(url),
         }
         // Never ask for compressed bodies (no decompression bombs).
         .header("Accept-Encoding", "identity");
-        for (name, value) in &self.headers {
-            request = request.header(name, value);
-        }
-        if let Some(auth) = &self.authorization {
-            request = request.header("Authorization", auth);
+        if same_origin {
+            for (name, value) in &self.headers {
+                request = request.header(name, value);
+            }
+            if let Some(auth) = &self.authorization {
+                request = request.header("Authorization", auth);
+            }
         }
         request.call()
     }
@@ -596,6 +605,7 @@ mod tests {
     use crate::testutil::TestDir;
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
+    use std::sync::mpsc;
     use std::thread;
 
     /// Build an HttpCheck from the body of an `[http]` table.
@@ -721,6 +731,51 @@ mod tests {
         // Not followed by default: 302 is not in 200-299.
         let not_followed = run(&format!("url = \"{base}/\""));
         assert_eq!(not_followed.msg, "HTTP 302");
+    }
+
+    /// Like `server`, but also hands out the request heads it received.
+    fn recording_server(responses: Vec<String>) -> (String, mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            for (stream, response) in listener.incoming().zip(responses) {
+                let mut stream = stream.unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut head = String::new();
+                let mut line = String::new();
+                while reader.read_line(&mut line).unwrap_or(0) > 0 && line != "\r\n" {
+                    head.push_str(&line.to_ascii_lowercase());
+                    line.clear();
+                }
+                let _ = tx.send(head);
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        (format!("http://{addr}"), rx)
+    }
+
+    #[test]
+    fn credentials_stay_with_the_origin() {
+        // Another port is another origin.
+        let (elsewhere, elsewhere_heads) = recording_server(vec![response("200 OK", "", "")]);
+        let (base, base_heads) = recording_server(vec![
+            response("302 Found", "Location: /same\r\n", ""),
+            response("302 Found", &format!("Location: {elsewhere}/x\r\n"), ""),
+        ]);
+        let r = run(&format!(
+            "url = \"{base}/\"\nmax_redirects = 2\nbasic_auth_user = \"u\"\n\
+             basic_auth_password = \"secret\"\nheaders = {{ \"X-Api-Key\" = \"k\" }}"
+        ));
+        assert_eq!(r.status, Status::Up, "{r:?}");
+        for _ in 0..2 {
+            let head = base_heads.recv().unwrap();
+            assert!(head.contains("authorization: basic"), "{head}");
+            assert!(head.contains("x-api-key: k"), "{head}");
+        }
+        let head = elsewhere_heads.recv().unwrap();
+        assert!(!head.contains("authorization"), "{head}");
+        assert!(!head.contains("x-api-key"), "{head}");
     }
 
     #[test]

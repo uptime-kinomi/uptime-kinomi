@@ -235,6 +235,9 @@ Security requirements:
   no HTML parsing, no decompression bombs: `Accept-Encoding: identity`).
 - Only the *fact* of a keyword match is recorded, never body content.
 - Redirect targets must be `http(s)://`. A redirect from `https` to `http` fails the check.
+- Credentials (`basic_auth_*`) and custom `headers` are only sent to the
+  origin (scheme, host, port) of `url`. A redirect to another origin gets
+  neither.
 - The certificate expiry (`tls_expiry_warn`, `tls_expiry_down`) is read in a
   separate TLS handshake with the URL's host, at most every 6 hours (every
   10 minutes after a failure), so a Pi 1 does not pay for two handshakes per
@@ -288,6 +291,7 @@ token_file = "secrets/backup-job.token"   # relative to the config dir; or token
 ```
 
 - URL: `GET` or `POST` `{base_url}/push/{token}`. Compatible with uptime-kuma push URLs.
+  `HEAD` gets `405`, so link previews and probes never count as a push.
 - Tokens MUST be ≥ 32 characters from `[A-Za-z0-9_-]` and unique across monitors.
   `uptime-kinomi gen-token` prints a new random token.
 - Query parameters: `status=up|down` (default `up`). `msg` and `ping` are

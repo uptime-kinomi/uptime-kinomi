@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- The `http` monitor no longer sends `basic_auth_*` credentials and custom
+  `headers` to redirect targets on another origin (scheme, host, port).
+- `HEAD /push/<token>` no longer counts as a push (link previews and probes
+  kept push monitors up); it gets `405` with `Allow: GET, POST`.
+- `contrib/nginx/mode-b.conf`: private pages lost the CSP and the other
+  security headers, because nginx does not inherit `add_header` into a
+  location that sets its own. They are now repeated there.
+
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry
   is correspondingly larger.
