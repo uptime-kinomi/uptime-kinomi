@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-27
+
+**Upgrading:** with the default `output_dir`, pages of the user service move
+from `~/.local/state/uptime-kinomi/www` to the tmpfs
+`/run/user/<uid>/uptime-kinomi/www` (if lingering is enabled or you are
+logged in). If a web server reads the files directly (mode B), point it to
+the new path or set `output_dir` in `kinomi.toml`. Data and logs stay where
+they were.
+
 ### Added
 - `contrib/install.sh`: one-line installation for the current user (no
   root): picks the binary for the CPU, verifies the release signature with
@@ -20,13 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   lingering, so the service starts at boot without a login, and download and
   verify the latest release only if no binary is installed; an installed one
   is never replaced.
-
 - Weekly self-update: `contrib/systemd/user/uptime-kinomi-update.timer` and
   `.service` run `self-update`, check the configuration with the new version,
   restart the service and roll back if the check fails or the service does
   not stay up. Enabled by `install.sh` (`--no-auto-update` to skip) and the
   Ansible roles (`kinomi_auto_update`).
-
 - Fuzzing: nine cargo-fuzz targets in `fuzz/` for every parser of network
   data (HTTP requests and routing, Basic Auth, push, redirect targets, DNS,
   certificates, release metadata) and of configuration, log and state files,
@@ -49,8 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `run` prints the config, data, log and page directories and the server
   address at startup.
 - SPEC.md §1 lists resource measurements from a Raspberry Pi 1; §10.2
-  explains why pages belong on the tmpfs that systemd creates for the
-  service.
+  explains why pages belong on a tmpfs.
 
 ### Fixed
 - An htpasswd line with a multi-byte character in the hash crashed
@@ -169,7 +175,8 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.1.0...v0.1.1
