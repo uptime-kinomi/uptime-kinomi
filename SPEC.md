@@ -435,7 +435,10 @@ Planned later: `smtp` (email), `matrix`, `pushover`, `signal` (via signal-cli RE
   fire at once after startup.
 - A dispatcher thread moves due checks into a bounded queue (`max_queue`).
   `workers` threads take checks from the queue. Checks use blocking I/O with
-  timeouts on connect, TLS handshake, read and total duration.
+  timeouts on name lookup, connect, TLS handshake, read and total duration:
+  a check never takes longer than its `timeout`. For `http`, the separate
+  certificate handshake (§4.3) only gets the time left after the request;
+  with less than 1 s left it waits for the next check.
 - **Overload and fairness:** a due check that does not fit into the queue
   waits. When room becomes free, the waiting check that was **started least
   recently** goes first (round-robin; completion time and due time do not

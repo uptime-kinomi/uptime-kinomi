@@ -2,7 +2,7 @@
 //! (SPEC.md §4.4).
 
 use std::io::{self, Read};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -58,11 +58,9 @@ impl Check for TcpCheck {
         let start = Instant::now();
         let remaining = || self.timeout.saturating_sub(start.elapsed());
 
-        // Note: name resolution uses the system resolver, whose timeout is
-        // configured in /etc/resolv.conf, not by us.
-        let addrs = match (self.host.as_str(), self.port).to_socket_addrs() {
-            Ok(addrs) => addrs.collect::<Vec<_>>(),
-            Err(_) => return CheckResult::fail(None, "host not found"),
+        let addrs = match super::resolve(&self.host, self.port, remaining()) {
+            Ok(addrs) => addrs,
+            Err(msg) => return CheckResult::fail(Some(start.elapsed()), msg),
         };
         let mut last_error = None;
         let mut stream = None;

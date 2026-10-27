@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   file's `covered_until` that were logged after the state was saved. State
   files now also store `covered_events`, the number of events of that
   second they include.
+- A check could take longer than its `timeout`: the certificate handshake
+  of `http` got a full `timeout` of its own after the request, and the
+  name lookups of `tcp` and of the certificate check waited for the system
+  resolver as long as it took. Now the whole check stays within `timeout`.
 - `/healthz` answered `200 ok` even with a stuck scheduler. It now checks
   that the dispatcher and the event loop ran within the last 10 s, and
   answers `503` otherwise.

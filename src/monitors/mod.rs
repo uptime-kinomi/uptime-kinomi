@@ -12,7 +12,10 @@ pub mod tcp;
 pub mod tls;
 
 use std::fs::Metadata;
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::path::Path;
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -357,6 +360,31 @@ pub fn test_monitor(id: &str) -> Monitor {
 }
 
 /// Host name (RFC 1123) or IP address literal.
+/// Name lookup with the system resolver, but waiting at most `timeout`:
+/// the resolver's own timeout (/etc/resolv.conf) can be much longer than a
+/// check's. On a timeout the lookup thread finishes in the background.
+pub fn resolve(host: &str, port: u16, timeout: Duration) -> Result<Vec<SocketAddr>, &'static str> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Ok(vec![SocketAddr::new(ip, port)]);
+    }
+    let (tx, rx) = mpsc::channel();
+    let name = host.to_string();
+    thread::Builder::new()
+        .name("resolve".into())
+        .spawn(move || {
+            let result = (name.as_str(), port)
+                .to_socket_addrs()
+                .map(|a| a.collect::<Vec<_>>());
+            let _ = tx.send(result);
+        })
+        .map_err(|_| "host not found")?;
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(addrs)) if !addrs.is_empty() => Ok(addrs),
+        Ok(_) => Err("host not found"),
+        Err(_) => Err("timeout"),
+    }
+}
+
 pub fn is_valid_host(host: &str) -> bool {
     host.parse::<std::net::IpAddr>().is_ok()
         || (!host.is_empty()
@@ -380,6 +408,21 @@ pub fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_is_bounded_and_skips_literals() {
+        // Literal addresses need no lookup, even without time left.
+        assert_eq!(
+            resolve("127.0.0.1", 80, std::time::Duration::ZERO).unwrap(),
+            vec!["127.0.0.1:80".parse().unwrap()]
+        );
+        assert!(resolve("::1", 80, std::time::Duration::ZERO).is_ok());
+        assert!(
+            !resolve("localhost", 80, std::time::Duration::from_secs(5))
+                .unwrap()
+                .is_empty()
+        );
+    }
     use crate::config::Problems;
     use crate::testutil::TestDir;
 

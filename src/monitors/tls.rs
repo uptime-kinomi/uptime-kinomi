@@ -6,7 +6,7 @@
 //! nothing else from the certificate is used or reported.
 
 use std::io;
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -33,9 +33,7 @@ pub fn not_after(
     let config = Arc::new(client_config(verify).map_err(|_| "TLS setup failed")?);
     let mut conn = ClientConnection::new(config, server_name).map_err(|_| "TLS setup failed")?;
 
-    let addrs = (host, port)
-        .to_socket_addrs()
-        .map_err(|_| "host not found")?;
+    let addrs = super::resolve(host, port, remaining())?;
     let mut sock = None;
     for addr in addrs {
         if remaining().is_zero() {

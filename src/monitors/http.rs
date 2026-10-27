@@ -29,6 +29,8 @@ const MAX_REDIRECTS: u32 = 10;
 const CERT_CACHE: Duration = Duration::from_secs(6 * 3600);
 /// A failed certificate check is retried after this time.
 const CERT_RETRY: Duration = Duration::from_secs(600);
+/// Less time than this left after the request: the handshake waits.
+const MIN_CERT_BUDGET: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -269,9 +271,14 @@ pub fn build(
 
 impl Check for HttpCheck {
     fn check(&self) -> CheckResult {
+        let start = Instant::now();
         let result = self.http_check();
         match &self.cert {
-            Some(cert) if result.status != Status::Fail => cert.apply(result),
+            // The certificate handshake only gets what is left of `timeout`,
+            // so the whole check stays within it.
+            Some(cert) if result.status != Status::Fail => {
+                cert.apply(result, cert.timeout.saturating_sub(start.elapsed()))
+            }
             _ => result,
         }
     }
@@ -282,7 +289,9 @@ impl Check for HttpCheck {
 }
 
 impl CertCheck {
-    fn not_after(&self) -> Result<i64, &'static str> {
+    /// The certificate's expiry, from the cache or a new handshake within
+    /// `budget`. `None`: not known and no time left to look now.
+    fn not_after(&self, budget: Duration) -> Option<Result<i64, &'static str>> {
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((checked, result)) = *cache {
             let max_age = if result.is_ok() {
@@ -290,20 +299,27 @@ impl CertCheck {
             } else {
                 CERT_RETRY
             };
-            if checked.elapsed() < max_age {
-                return result;
+            // Too little time left: keep the last result, try next time.
+            if checked.elapsed() < max_age || budget < MIN_CERT_BUDGET {
+                return Some(result);
             }
         }
-        let result = tls::not_after(&self.host, self.port, self.verify, self.timeout);
+        if budget < MIN_CERT_BUDGET {
+            return None;
+        }
+        let result = tls::not_after(&self.host, self.port, self.verify, budget);
         *cache = Some((Instant::now(), result));
-        result
+        Some(result)
     }
 
     /// Turn a successful HTTP result into WARN or FAIL if the certificate
     /// expires soon.
-    fn apply(&self, result: CheckResult) -> CheckResult {
+    fn apply(&self, result: CheckResult, budget: Duration) -> CheckResult {
         let now = clock::unix_seconds(SystemTime::now());
-        rate_expiry(result, self.not_after(), now, self.warn, self.down)
+        match self.not_after(budget) {
+            Some(not_after) => rate_expiry(result, not_after, now, self.warn, self.down),
+            None => result,
+        }
     }
 }
 
@@ -776,6 +792,24 @@ mod tests {
         let head = elsewhere_heads.recv().unwrap();
         assert!(!head.contains("authorization"), "{head}");
         assert!(!head.contains("x-api-key"), "{head}");
+    }
+
+    #[test]
+    fn certificate_check_waits_when_no_time_is_left() {
+        let cert = CertCheck {
+            host: "127.0.0.1".into(),
+            port: 1,
+            verify: true,
+            warn: Duration::from_secs(14 * 86400),
+            down: Duration::ZERO,
+            timeout: Duration::from_secs(10),
+            cache: Mutex::new(None),
+        };
+        let up = CheckResult::up(Duration::from_millis(5), "HTTP 200");
+        // No time left after the request: no handshake, no false WARN.
+        let r = cert.apply(up, Duration::from_millis(200));
+        assert_eq!((r.status, r.msg.as_str()), (Status::Up, "HTTP 200"));
+        assert!(cert.cache.lock().unwrap().is_none());
     }
 
     #[test]
