@@ -109,6 +109,7 @@ pub fn metrics(monitors: &[Monitor], snap: &Snapshot) -> String {
     let response = monitors
         .iter()
         .zip(&snap.monitors)
+        .filter(|(m, _)| m.enabled)
         .filter_map(|(m, v)| {
             v.avg_ms_24h
                 .map(|ms| format!("{{monitor=\"{}\"}} {ms}", label(&m.id)))
@@ -123,6 +124,7 @@ pub fn metrics(monitors: &[Monitor], snap: &Snapshot) -> String {
     let certs = monitors
         .iter()
         .zip(&snap.monitors)
+        .filter(|(m, _)| m.enabled)
         .filter_map(|(m, v)| {
             v.cert_expires
                 .map(|t| format!("{{monitor=\"{}\"}} {t}", label(&m.id)))

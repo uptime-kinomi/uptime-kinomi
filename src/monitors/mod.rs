@@ -203,6 +203,9 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
         p.error(format!("interval must be at least {MIN_INTERVAL}"));
     }
     // Push monitors have no timeout: nothing is polled.
+    if raw.kind == Kind::Push && raw.timeout.is_some() {
+        p.warning("timeout has no effect on push monitors (use grace)");
+    }
     if raw.kind != Kind::Push && (timeout.is_zero() || timeout >= interval) {
         p.error(format!(
             "timeout ({timeout}) must be greater than 0 and less than interval ({interval})"
