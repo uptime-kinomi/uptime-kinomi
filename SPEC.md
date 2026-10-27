@@ -43,6 +43,9 @@ Keywords in this document: **MUST**, **SHOULD**, **MAY** as in RFC 2119.
 - No JavaScript, no charts that require JavaScript.
 - Not a metrics/observability platform (use Prometheus for that; kinomi
   MAY expose a minimal `/metrics`, §9.5).
+- **Linux only.** No Windows or macOS: kinomi relies on Unix permissions,
+  `/proc`, `/run/user/<uid>` and systemd (§10). Other Unix systems are
+  neither built nor tested.
 
 ### Resource targets (Raspberry Pi 1, 50 monitors, 60 s interval)
 
@@ -724,6 +727,8 @@ data are left out as well.
 ---
 
 ## 10. Platform and operations
+
+kinomi runs on Linux only (§1), with the static musl binaries of §12.
 
 ### 10.1 Time
 - Storage and logs: UTC. Display: `pages.timezone`, using the system tz database
