@@ -8,9 +8,9 @@ static status page generator written in Rust, built to run on a
 **JavaScript-free HTML + CSS status pages**.
 
 > ⚠️ **Status: pre-1.0.** All features described here are implemented
-> (milestones M0 to M4 in [SPEC.md](SPEC.md)). Before 1.0: testing on real
-> Raspberry Pi 1 hardware, fuzzing of the parsers, and polishing. Expect
-> configuration details to change until then.
+> (milestones M0 to M4 in [SPEC.md](SPEC.md)), tested on a real Raspberry
+> Pi 1 and with all parsers fuzzed ([fuzz/](fuzz/)). Before 1.0: polishing.
+> Expect configuration details to change until then.
 
 ---
 
