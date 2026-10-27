@@ -259,7 +259,7 @@ expect_banner = "SSH-"    # optional: bytes the server sends first must start wi
 ```toml
 type = "dns"
 [dns]
-name = "example.org"
+name = "example.org"         # may contain _ (e.g. "_dmarc.example.org")
 record_type = "A"           # A | AAAA | CNAME | MX | TXT | NS
 server = "1.1.1.1:53"       # optional (IPv4 or IPv6, port 53 if omitted);
                             # default: first nameserver in /etc/resolv.conf

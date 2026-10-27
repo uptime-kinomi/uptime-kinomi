@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `log_dir` and the fallback page directory follow a configured `data_dir`
   (`<data_dir>/log`, `<data_dir>/www`); before, they stayed below
   `~/.local/state/uptime-kinomi`.
+- `dns` monitors accept names with `_`, such as `_dmarc.example.org`.
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry

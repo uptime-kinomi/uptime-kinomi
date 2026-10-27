@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-use super::{Check, CheckResult, is_valid_host};
+use super::{Check, CheckResult};
 use crate::config::FileProblems;
 
 const MAX_RESPONSE: usize = 1232;
@@ -76,7 +76,7 @@ pub struct DnsCheck {
 
 pub fn build(file: DnsFile, timeout: Duration, p: &mut FileProblems) -> Option<DnsCheck> {
     let name = file.name.trim_end_matches('.').to_ascii_lowercase();
-    if !is_valid_host(&name) || name.parse::<IpAddr>().is_ok() {
+    if !is_valid_name(&name) {
         p.error(format!("dns.name '{}' is not a domain name", file.name));
     }
     let server = match &file.server {
@@ -108,6 +108,23 @@ pub fn build(file: DnsFile, timeout: Duration, p: &mut FileProblems) -> Option<D
         expected,
         timeout,
     })
+}
+
+/// A domain name to query. Unlike a host name it may contain `_` (e.g.
+/// `_dmarc.example.org`, `_acme-challenge...`, SRV-style labels).
+fn is_valid_name(name: &str) -> bool {
+    name.parse::<IpAddr>().is_err()
+        && !name.is_empty()
+        && name.len() <= 253
+        && name.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
 }
 
 fn parse_server(text: &str) -> Option<SocketAddr> {
@@ -573,6 +590,31 @@ mod tests {
                 }
             }
             corrupted[i] = original;
+        }
+    }
+
+    #[test]
+    fn names() {
+        for good in [
+            "example.org",
+            "_dmarc.example.org",
+            "_acme-challenge.www.example.org",
+            "localhost",
+        ] {
+            assert!(is_valid_name(good), "{good}");
+        }
+        for bad in [
+            "",
+            "1.2.3.4",
+            "::1",
+            "a..b",
+            "-a.org",
+            "a-.org",
+            "a b.org",
+            "\u{e4}.org",
+            &"a".repeat(64),
+        ] {
+            assert!(!is_valid_name(bad), "{bad}");
         }
     }
 
