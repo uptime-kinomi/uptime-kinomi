@@ -93,6 +93,10 @@ pub struct SelfStatus {
     pub workers: u32,
     pub skipped_24h: u32,
     pub last_render_ms: u64,
+    /// Average response time of all successful checks in the last 24 h.
+    pub avg_check_ms_24h: Option<u32>,
+    /// Last successful flush of the check log (Unix seconds).
+    pub last_flush: Option<i64>,
 }
 
 /// Input of one render. `monitors` is index-aligned with the configuration.
@@ -479,6 +483,8 @@ mod tests {
                 workers: 1,
                 skipped_24h: 0,
                 last_render_ms: 0,
+                avg_check_ms_24h: Some(42),
+                last_flush: Some(now),
             },
         }
     }
@@ -609,6 +615,11 @@ mod tests {
         let site = r.build(&busy_snapshot(1_792_678_991));
         let m = text(&site, "/metrics");
         assert!(site.files["/metrics"].private);
+        assert!(m.contains("kinomi_check_response_ms_24h 42\n"), "{m}");
+        assert!(
+            m.contains("kinomi_last_log_flush_timestamp_seconds 1792678991\n"),
+            "{m}"
+        );
         assert!(
             m.contains("kinomi_monitor_up{monitor=\"web\",type=\"tcp\"} 1\n"),
             "{m}"

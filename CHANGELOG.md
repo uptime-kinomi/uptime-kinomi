@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `event=AUTH_FAIL count=N throttled=M` per log flush with failures.
 - Page states and the banner carry a symbol (✓ ⚠ … ✗ ⚙ ‖ ?) besides text
   and colour, as the spec requires (never colour alone).
+- The private self status shows the average check time of the last 24 h
+  and the time of the last log flush; `/metrics` has them as
+  `kinomi_check_response_ms_24h` and `kinomi_last_log_flush_timestamp_seconds`.
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry

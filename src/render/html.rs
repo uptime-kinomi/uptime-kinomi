@@ -424,7 +424,17 @@ fn self_status(out: &mut String, tz: &TimeZone, s: &SelfStatus, now: i64) {
             format!("{} (workers: {})", s.queue_len, s.workers),
         ),
         ("Skipped checks (24 h)", s.skipped_24h.to_string()),
+        (
+            "Average check time (24 h)",
+            s.avg_check_ms_24h
+                .map_or_else(|| "–".to_string(), |ms| format!("{ms} ms")),
+        ),
         ("Last page render", format!("{} ms", s.last_render_ms)),
+        (
+            "Last log flush",
+            s.last_flush
+                .map_or_else(|| "–".to_string(), |t| time(tz, t)),
+        ),
     ];
     for (name, value) in rows {
         let _ = writeln!(
@@ -512,6 +522,8 @@ mod tests {
                 workers: 4,
                 skipped_24h: 1,
                 last_render_ms: 3,
+                avg_check_ms_24h: Some(42),
+                last_flush: Some(T - 10),
             },
         };
         page(&ctx, &pages[0], &snap)
@@ -559,6 +571,8 @@ mod tests {
         );
         assert!(private.contains("noindex"));
         assert!(private.contains("Running since"));
+        assert!(private.contains("42 ms"));
+        assert!(private.contains("Last log flush"));
     }
 
     #[test]

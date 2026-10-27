@@ -47,6 +47,20 @@ pub fn metrics(monitors: &[Monitor], snap: &Snapshot) -> String {
         "Checks skipped in the last 24 hours.",
         vec![format!(" {}", s.skipped_24h)],
     );
+    if let Some(ms) = s.avg_check_ms_24h {
+        metric(
+            "kinomi_check_response_ms_24h",
+            "Average response time of all successful checks in the last 24 hours.",
+            vec![format!(" {ms}")],
+        );
+    }
+    if let Some(t) = s.last_flush {
+        metric(
+            "kinomi_last_log_flush_timestamp_seconds",
+            "Last successful write of the check log (Unix seconds).",
+            vec![format!(" {t}")],
+        );
+    }
 
     let measured: Vec<(&Monitor, &super::MonitorView)> = monitors
         .iter()

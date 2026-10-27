@@ -50,6 +50,8 @@ struct Service {
     maintenance: Arc<Vec<Maintenance>>,
     /// The server's Basic Auth, for `event=AUTH_FAIL` (SPEC.md §9.3).
     auth: Option<Arc<Auth>>,
+    /// Last successful log flush (Unix seconds), for the self status.
+    last_flush: Option<i64>,
 }
 
 #[derive(Debug, Default)]
@@ -223,6 +225,8 @@ pub fn run(mut config: Config) -> Result<(), String> {
                     workers: workers as u32,
                     skipped_24h: snap.monitors.iter().map(|v| v.skipped_24h).sum(),
                     last_render_ms: render_ms.load(Ordering::Relaxed),
+                    avg_check_ms_24h: service.avg_check_ms_24h(snap.now),
+                    last_flush: service.last_flush,
                 };
                 last_render = Some((snap.monitors.clone(), now));
                 let _ = snapshot_tx.send(snap);
@@ -402,6 +406,7 @@ impl Service {
             push_deadline,
             maintenance,
             auth: None,
+            last_flush: None,
         })
     }
 
@@ -665,6 +670,8 @@ impl Service {
                 workers: 0,
                 skipped_24h: 0,
                 last_render_ms: 0,
+                avg_check_ms_24h: None,
+                last_flush: None,
             },
         }
     }
@@ -685,9 +692,19 @@ impl Service {
                 ],
             );
         }
-        if let Err(e) = self.log.flush(SystemTime::now()) {
-            eprintln!("error: cannot write the check log: {e}");
+        match self.log.flush(SystemTime::now()) {
+            Ok(()) => self.last_flush = Some(clock::unix_seconds(SystemTime::now())),
+            Err(e) => eprintln!("error: cannot write the check log: {e}"),
         }
+    }
+
+    /// Average response time of all successful checks of the last 24 h.
+    fn avg_check_ms_24h(&self, now: i64) -> Option<u32> {
+        let mut total = crate::history::Bucket::default();
+        for h in self.histories.values() {
+            total.add(&h.last_hours(now, 24));
+        }
+        total.avg_ms()
     }
 
     /// Flush the log first: a state file must never cover events the log

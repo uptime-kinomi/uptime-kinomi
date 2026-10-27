@@ -82,7 +82,7 @@ pub struct Bucket {
 }
 
 impl Bucket {
-    fn add(&mut self, other: &Bucket) {
+    pub fn add(&mut self, other: &Bucket) {
         self.up += other.up;
         self.down += other.down;
         self.skipped += other.skipped;

@@ -531,7 +531,7 @@ update (in the configured time zone).
 
 Private pages additionally show: monitor type and target, last error message,
 kinomi self-status (version, uptime, queue length, skipped checks in the last
-24 h, render duration, last log flush).
+24 h, average check time over 24 h, render duration, last log flush).
 
 ### 8.3 Generated files
 ```
@@ -720,6 +720,8 @@ kinomi_build_info{version="0.3.0"} 1
 kinomi_start_time_seconds 1792678991
 kinomi_queue_length 0
 kinomi_skipped_checks_24h 3
+kinomi_check_response_ms_24h 95
+kinomi_last_log_flush_timestamp_seconds 1792679021
 kinomi_monitor_up{monitor="blog",type="http"} 1
 kinomi_monitor_uptime_ratio{monitor="blog",window="24h"} 0.9998
 kinomi_monitor_uptime_ratio{monitor="blog",window="30d"} 0.9995
