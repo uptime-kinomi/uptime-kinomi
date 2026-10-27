@@ -165,9 +165,15 @@ impl Maintenance {
 
     /// Is `now` inside a window?
     pub fn active(&self, tz: &TimeZone, now: i64) -> bool {
+        self.current(tz, now).is_some()
+    }
+
+    /// Start of the window `now` is in, if any.
+    pub fn current(&self, tz: &TimeZone, now: i64) -> Option<i64> {
         self.starts(tz, now, now + 1)
-            .iter()
-            .any(|&s| s <= now && now < s + self.duration_s)
+            .into_iter()
+            .filter(|&s| s <= now && now < s + self.duration_s)
+            .min()
     }
 
     /// The next window starting in `[now, now + horizon)`, as (start, end).
@@ -228,6 +234,12 @@ mod tests {
         assert!(!w.active(&tz, at("2026-10-21T00:31:00", &tz)));
         // Not before the first date.
         assert!(!w.active(&tz, at("2026-09-30T23:45:00", &tz)));
+        // The start of the occurrence, also after midnight.
+        assert_eq!(
+            w.current(&tz, at("2026-10-21T00:15:00", &tz)),
+            Some(at("2026-10-20T23:30:00", &tz))
+        );
+        assert_eq!(w.current(&tz, at("2026-10-21T00:31:00", &tz)), None);
     }
 
     #[test]

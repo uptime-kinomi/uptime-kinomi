@@ -520,9 +520,16 @@ impl Service {
     }
 
     fn in_maintenance(&self, monitor: usize, t: i64) -> bool {
+        self.maintenance_start(monitor, t).is_some()
+    }
+
+    /// Start of the earliest maintenance window `monitor` is in at `t`.
+    fn maintenance_start(&self, monitor: usize, t: i64) -> Option<i64> {
         self.maintenance
             .iter()
-            .any(|w| w.monitors.contains(&monitor) && w.active(&self.tz, t))
+            .filter(|w| w.monitors.contains(&monitor))
+            .filter_map(|w| w.current(&self.tz, t))
+            .min()
     }
 
     /// Inside a maintenance window: log and count the result as MAINT, but
@@ -540,9 +547,6 @@ impl Service {
         fields.push(("msg", &result.msg));
         self.log.record(time, &fields);
         if let Some(h) = self.histories.get_mut(&m.id) {
-            if h.state != State::Maintenance {
-                eprintln!("{} ({}): maintenance window started", m.name, m.id);
-            }
             let t = clock::unix_seconds(time);
             h.record_check(
                 t,
@@ -626,7 +630,11 @@ impl Service {
         let monitors = self
             .monitors
             .iter()
-            .map(|m| MonitorView::new(self.histories.get(&m.id).unwrap_or(&empty), now))
+            .enumerate()
+            .map(|(i, m)| {
+                let h = self.histories.get(&m.id).unwrap_or(&empty);
+                MonitorView::new(h, now, self.maintenance_start(i, now))
+            })
             .collect();
         Snapshot {
             now,

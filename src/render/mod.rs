@@ -63,11 +63,16 @@ pub struct MonitorView {
 }
 
 impl MonitorView {
-    pub fn new(h: &History, now: i64) -> Self {
+    /// `maintenance`: start of the maintenance window the monitor is in now.
+    pub fn new(h: &History, now: i64, maintenance: Option<i64>) -> Self {
         let day = h.last_hours(now, 24);
+        let (state, since) = match maintenance {
+            Some(start) => (State::Maintenance, Some(start)),
+            None => (h.state, h.state_since),
+        };
         MonitorView {
-            state: h.state,
-            since: h.state_since,
+            state,
+            since,
             last_check: h.last_check,
             last_msg: h.last_msg.clone(),
             cert_expires: h.cert_expires,
@@ -386,6 +391,21 @@ pub fn spawn(
 mod tests {
     use super::*;
     use crate::config::pages::Group;
+    use crate::state::LogResult;
+
+    #[test]
+    fn maintenance_is_shown_from_the_windows() {
+        let t = 1_792_678_991;
+        let mut h = History::new(10, 30);
+        h.record_check(t - 600, LogResult::Down, None, "timeout", None);
+        // In a window that started before any check in it: MAINTENANCE, since
+        // the window start.
+        let v = MonitorView::new(&h, t, Some(t - 60));
+        assert_eq!((v.state, v.since), (State::Maintenance, Some(t - 60)));
+        // After it: the state from before the window.
+        let v = MonitorView::new(&h, t, None);
+        assert_eq!((v.state, v.since), (State::Down, Some(t - 600)));
+    }
     use crate::monitors::test_monitor;
     use crate::testutil::TestDir;
 
@@ -421,7 +441,7 @@ mod tests {
         let h = History::new(10, 30);
         Snapshot {
             now,
-            monitors: vec![MonitorView::new(&h, now)],
+            monitors: vec![MonitorView::new(&h, now, None)],
             status: SelfStatus {
                 started: now,
                 queue_len: 0,
@@ -452,7 +472,7 @@ mod tests {
         );
         h.record_check(now - 60, LogResult::Up, Some(90), "HTTP 200", None);
         let mut snap = snapshot(now);
-        snap.monitors = vec![MonitorView::new(&h, now)];
+        snap.monitors = vec![MonitorView::new(&h, now, None)];
         snap
     }
 

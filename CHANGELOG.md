@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   security headers, because nginx does not inherit `add_header` into a
   location that sets its own. They are now repeated there.
 
+### Fixed
+- A restart during a maintenance window forgot the state from before the
+  window: a monitor that was DOWN started over and sent a second DOWN
+  notification. MAINTENANCE is now derived from the windows when pages are
+  built, so it is also shown from the start of a window (not only after the
+  first check in it) and ends with the window.
+
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry
   is correspondingly larger.

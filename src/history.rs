@@ -141,12 +141,16 @@ impl History {
         msg: &str,
         cert_expires: Option<i64>,
     ) {
+        // A result inside a maintenance window is counted and shown in the
+        // bar, but leaves the state alone: MAINTENANCE is derived from the
+        // windows when a page is built, so a restart during a window still
+        // knows the state from before it (SPEC.md §14.2).
         let state = match result {
             LogResult::Up => State::Up,
             LogResult::Warn => State::Warn,
             LogResult::Fail => State::Pending,
             LogResult::Down => State::Down,
-            LogResult::Maint => State::Maintenance,
+            LogResult::Maint => self.state,
         };
         if state != self.state {
             self.state = state;
@@ -316,6 +320,22 @@ mod tests {
         assert_eq!(h.hourly.len(), 3);
         h.prune(T + 30 * 3600);
         assert_eq!(h.hourly.len(), 2);
+    }
+
+    #[test]
+    fn maintenance_results_keep_the_state() {
+        // DOWN before a window stays DOWN through MAINT results, so a restart
+        // during the window does not start over (no second DOWN notice).
+        let mut h = History::new(10, 30);
+        h.record_check(T, LogResult::Down, None, "timeout", None);
+        h.record_check(T + 60, LogResult::Maint, Some(12), "HTTP 200", None);
+        h.record_check(T + 120, LogResult::Maint, None, "timeout", None);
+        assert_eq!(h.state, State::Down);
+        assert_eq!(h.state_since, Some(T));
+        assert_eq!(h.changes.len(), 1);
+        assert_eq!(h.last_check, Some(T + 120));
+        assert_eq!(h.last_hours(T + 120, 1).maint, 2);
+        assert_eq!(h.recent.back().map(|b| b.beat), Some(Beat::Maint));
     }
 
     #[test]
