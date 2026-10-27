@@ -17,9 +17,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 INK = "#1a0826"
 SHADES = ["#3b1457", "#5a2183", "#7433a6", "#4a1a6e", "#8a4cc0", "#62268f"]
-C, RI = 64, 53                 # centre, radius of the dark screen
-HEIGHT = 0.9 * 2 * RI          # the berry fills 90 % of the screen height
-PULSE = "M10,64H36L41,56L46,64H51L58,38L66,90L72,56L77,64H118"
+C = 64                         # centre
+# Outer radius of the sticker and width of the white pulse; the white ring
+# around the screen is as wide as the pulse.
+LOGO = (60, 2.3)
+FAVICON = (62, 4.6)
+PULSE = "M0,64H36L41,56L46,64H51L58,38L66,90L72,56L77,64H128"
 PHI = (1 + 5 ** 0.5) / 2
 TITLE = "uptime-kinomi logo: a blackberry with a pulse line"
 
@@ -66,12 +69,12 @@ def to_front(pts, v):
     return [rot(p) for p in pts]
 
 
-def berry():
+def berry(ri):
     pts, front = face_centres()
     pts = to_front(pts, front)
     # all neighbours are equally far apart: bumps just touch
     a = min(math.acos(max(-1, min(1, sum(x * y for x, y in zip(pts[0], q))))) for q in pts[1:]) / 2 * 1.02
-    R = (HEIGHT / 2) / (1 + math.sin(a))
+    R = 0.9 * ri / (1 + math.sin(a))   # the berry fills 90 % of the screen height
     rb = R * math.sin(a)       # radius of a half-sphere
     g = [f'<circle cx="{C}" cy="{C}" r="{R:.1f}" fill="{INK}"/>']
     for i in sorted(range(len(pts)), key=lambda i: pts[i][2]):   # back to front
@@ -96,21 +99,23 @@ def pulse(width):
 
 
 def svg(favicon):
+    outer, width = FAVICON if favicon else LOGO
+    ri = outer - width             # radius of the dark screen
     parts = ['<defs>']
     if not favicon:
         parts.append('<filter id="s" x="-20%" y="-20%" width="140%" height="140%">'
                      '<feGaussianBlur stdDeviation="1.8"/></filter>')
-    parts.append(f'<clipPath id="c"><circle cx="{C}" cy="{C}" r="{RI}"/></clipPath></defs>')
+    parts.append(f'<clipPath id="c"><circle cx="{C}" cy="{C}" r="{ri:.1f}"/></clipPath></defs>')
     if not favicon:
-        parts.append(f'<circle cx="{C + 1.5}" cy="{C + 3}" r="60" fill="#000" opacity=".3" filter="url(#s)"/>')
-    parts.append(f'<circle cx="{C}" cy="{C}" r="{62 if favicon else 60}" fill="#fff"/>'
-                 f'<circle cx="{C}" cy="{C}" r="{RI}" fill="#1d1230"/>')
+        parts.append(f'<circle cx="{C + 1.5}" cy="{C + 3}" r="{outer}" fill="#000" opacity=".3" filter="url(#s)"/>')
+    parts.append(f'<circle cx="{C}" cy="{C}" r="{outer}" fill="#fff"/>'
+                 f'<circle cx="{C}" cy="{C}" r="{ri:.1f}" fill="#1d1230"/>')
     if not favicon:
         parts.append('<g clip-path="url(#c)" stroke="#3a2a55" stroke-width=".7">'
-                     + "".join(f'<path d="M{x},0V128"/>' for x in range(16, 120, 8))
-                     + "".join(f'<path d="M0,{y}H128"/>' for y in range(16, 120, 8)) + '</g>')
-    parts.append(berry())
-    parts.append(f'<g clip-path="url(#c)">{pulse(4.6 if favicon else 2.3)}</g>')
+                     + "".join(f'<path d="M{x},0V128"/>' for x in range(8, 128, 8))
+                     + "".join(f'<path d="M0,{y}H128"/>' for y in range(8, 128, 8)) + '</g>')
+    parts.append(berry(ri))
+    parts.append(f'<g clip-path="url(#c)">{pulse(width)}</g>')
     size = 'width="128" height="128" ' if not favicon else ""
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" {size}role="img" '
             f'aria-label="{TITLE}"><title>{TITLE}</title>{"".join(parts)}</svg>\n')

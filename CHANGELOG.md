@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Logo and favicon: the white ring is as wide as the pulse line; the berry
+  is correspondingly larger.
+
 ## [0.4.0] - 2026-10-27
 
 **Upgrading:** with the default `output_dir`, pages of the user service move
