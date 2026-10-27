@@ -181,8 +181,17 @@ pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Co
         }
     }
 
+    // Without a usable kinomi.toml, the other files are still checked (with
+    // the built-in defaults), so check-config reports everything at once.
+    let fallback_defaults = global::Defaults {
+        interval: duration::Dur::secs(60),
+        timeout: duration::Dur::secs(10),
+        retries: 1,
+        notifications: Vec::new(),
+    };
+    let defaults = global.as_ref().map_or(&fallback_defaults, |g| &g.defaults);
     let mut monitor_list = Vec::new();
-    if let Some(g) = &global {
+    {
         for (id, path) in list_toml_files(&dir.join("monitors"), &mut problems) {
             let (text, meta) = match read_config_file(&path) {
                 Ok(read) => read,
@@ -193,7 +202,7 @@ pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Co
             };
             let ctx = monitors::Context {
                 config_dir: dir,
-                defaults: &g.defaults,
+                defaults,
                 notifiers: &notifiers,
                 file_meta: &meta,
             };
@@ -204,7 +213,9 @@ pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Co
         if monitor_list.is_empty() && !problems.has_errors() {
             problems.warning(&dir.join("monitors"), "no monitors configured");
         }
-        check_push(g, &monitor_list, &dir.join("monitors"), &mut problems);
+        if let Some(g) = &global {
+            check_push(g, &monitor_list, &dir.join("monitors"), &mut problems);
+        }
     }
 
     let mut notifier_list = Vec::new();
@@ -225,7 +236,7 @@ pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Co
     }
 
     let mut page_list = Vec::new();
-    if global.is_some() {
+    {
         for (id, path) in list_toml_files(&dir.join("pages"), &mut problems) {
             match read_config_file(&path) {
                 Ok((text, _)) => {
@@ -474,6 +485,20 @@ mod tests {
         assert!(all.contains("defaults.notifications"), "{all}");
         assert!(all.contains("bad.toml"), "{all}");
         assert!(all.contains("file name must match"), "{all}");
+        assert!(all.contains("pages/home.toml"), "{all}");
+    }
+
+    #[test]
+    fn broken_global_file_still_checks_the_rest() {
+        let dir = TestDir::new("config-broken-global");
+        dir.write("kinomi.toml", "config_version = 1\n[server\n");
+        dir.write("monitors/bad.toml", "config_version = 1\ntype = \"tcp\"\n");
+        dir.write("pages/home.toml", "anything");
+        let (config, problems) = load(dir.path(), &env, None);
+        assert!(config.is_none());
+        let all = format!("{problems:?}");
+        assert!(all.contains("kinomi.toml"), "{all}");
+        assert!(all.contains("monitors/bad.toml"), "{all}");
         assert!(all.contains("pages/home.toml"), "{all}");
     }
 

@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (`<data_dir>/log`, `<data_dir>/www`); before, they stayed below
   `~/.local/state/uptime-kinomi`.
 - `dns` monitors accept names with `_`, such as `_dmarc.example.org`.
+- `check-config` with a broken `kinomi.toml` now still checks monitors and
+  pages (with the built-in defaults), so it reports every problem at once.
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry
