@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The private self status shows the average check time of the last 24 h
   and the time of the last log flush; `/metrics` has them as
   `kinomi_check_response_ms_24h` and `kinomi_last_log_flush_timestamp_seconds`.
+- Private pages and the private `status.json` show the last error (time
+  and message of the last FAIL or DOWN), not only the last check's message.
+  State files keep it (`last_error_time`, `last_error`).
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry

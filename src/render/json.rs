@@ -79,7 +79,7 @@ pub fn status_json(ctx: &Context, page: &Page, snap: &Snapshot) -> String {
             if !page.public {
                 let _ = write!(
                     out,
-                    ", \"type\": {}, \"target\": {}, \"last_check\": {}, \"last_msg\": {}",
+                    ", \"type\": {}, \"target\": {}, \"last_check\": {}, \"last_msg\": {}, \"last_error_time\": {}, \"last_error\": {}",
                     q(m.kind.name()),
                     q(&m.check.target()),
                     time(v.last_check),
@@ -87,7 +87,11 @@ pub fn status_json(ctx: &Context, page: &Page, snap: &Snapshot) -> String {
                         q(&v.last_msg)
                     } else {
                         "null".into()
-                    }
+                    },
+                    time(v.last_error.as_ref().map(|(t, _)| *t)),
+                    v.last_error
+                        .as_ref()
+                        .map_or("null".into(), |(_, msg)| q(msg)),
                 );
             }
             out.push('}');

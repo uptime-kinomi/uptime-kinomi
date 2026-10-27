@@ -52,6 +52,10 @@ pub fn to_toml(monitor: &str, h: &History) -> String {
         }
     }
     let _ = writeln!(out, "last_msg = {}", quote(&h.last_msg));
+    if let Some((t, msg)) = &h.last_error {
+        let _ = writeln!(out, "last_error_time = {}", quote(&time(*t)));
+        let _ = writeln!(out, "last_error = {}", quote(msg));
+    }
     let _ = writeln!(out, "# heartbeat bar: time, result, latency in ms");
     let _ = writeln!(out, "recent = [");
     for b in &h.recent {
@@ -133,6 +137,8 @@ struct StateFile {
     cert_expires: Option<String>,
     #[serde(default)]
     last_msg: String,
+    last_error_time: Option<String>,
+    last_error: Option<String>,
     #[serde(default)]
     recent: Vec<String>,
     #[serde(default)]
@@ -235,6 +241,14 @@ pub fn from_toml(text: &str, monitor: &str, history: &mut History) -> Result<(),
         restored.covered_until,
     );
     history.covered_events = file.covered_events.unwrap_or(u32::MAX);
+    history.last_error = match (
+        time("last_error_time", &file.last_error_time)?,
+        file.last_error,
+    ) {
+        (Some(t), Some(msg)) => Some((t, msg)),
+        (None, None) => None,
+        _ => return Err("last_error and last_error_time go together".into()),
+    };
     history.recent = restored.recent;
     history.hourly = restored.hourly;
     history.daily = restored.daily;

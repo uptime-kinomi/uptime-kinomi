@@ -103,6 +103,8 @@ pub struct History {
     pub state_since: Option<i64>,
     pub last_check: Option<i64>,
     pub last_msg: String,
+    /// Time and message of the last failed check (FAIL or DOWN).
+    pub last_error: Option<(i64, String)>,
     pub cert_expires: Option<i64>,
     /// Time of the last event included (log replay continues after it).
     pub covered_until: Option<i64>,
@@ -126,6 +128,7 @@ impl History {
             state_since: None,
             last_check: None,
             last_msg: String::new(),
+            last_error: None,
             cert_expires: None,
             covered_until: None,
             covered_events: 0,
@@ -167,6 +170,9 @@ impl History {
         }
         self.last_check = Some(time);
         self.last_msg = msg.to_string();
+        if matches!(result, LogResult::Fail | LogResult::Down) {
+            self.last_error = Some((time, msg.to_string()));
+        }
         if cert_expires.is_some() {
             self.cert_expires = cert_expires;
         }

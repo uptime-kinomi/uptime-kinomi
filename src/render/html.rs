@@ -393,6 +393,9 @@ fn monitor(out: &mut String, ctx: &Context, m: &Monitor, v: &MonitorView, public
                 esc(&v.last_msg)
             );
         }
+        if let Some((t, msg)) = &v.last_error {
+            let _ = write!(out, " · last error {}: {}", esc(&time(tz, *t)), esc(msg));
+        }
         if v.skipped_24h > 0 {
             let _ = write!(out, " · {} skipped (24 h)", v.skipped_24h);
         }
@@ -461,6 +464,7 @@ mod tests {
             since: Some(T - 7200),
             last_check: Some(T - 30),
             last_msg: "HTTP 200".into(),
+            last_error: Some((T - 3600, "timeout".into())),
             cert_expires: Some(T + 40 * 86400),
             beats: vec![
                 BeatRecord {
@@ -562,6 +566,7 @@ mod tests {
         assert!(public.contains("title=\"2026-10-22 14:22 UTC: UP, 120 ms\""));
         // Private details are not on public pages.
         assert!(!public.contains("last check"));
+        assert!(!public.contains("last error"));
         assert!(!public.contains("noindex"));
         assert!(!public.contains("Running since"));
 
@@ -572,6 +577,10 @@ mod tests {
         assert!(private.contains("noindex"));
         assert!(private.contains("Running since"));
         assert!(private.contains("42 ms"));
+        assert!(
+            private.contains("last error 2026-10-22 13:23 UTC: timeout"),
+            "{private}"
+        );
         assert!(private.contains("Last log flush"));
     }
 

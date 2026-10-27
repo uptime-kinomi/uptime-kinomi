@@ -611,7 +611,9 @@ page.
       "type": "http",
       "target": "https://blog.example.org/",
       "last_check": "2026-10-23T08:14:58Z",
-      "last_msg": "HTTP 200"
+      "last_msg": "HTTP 200",
+      "last_error_time": "2026-10-22T18:47:11Z",
+      "last_error": "timeout"
     }
   ]
 }
@@ -626,8 +628,9 @@ page.
 - Times are UTC (RFC 3339); `cert_expires` is a date. Values that are not
   known (no data yet, no certificate check) are `null`.
 - A monitor in several groups of the page appears once per group.
-- `type`, `target`, `last_check` and `last_msg` are **only present in the
-  private variant** (§8.5).
+- `type`, `target`, `last_check`, `last_msg`, `last_error_time` and
+  `last_error` (the last FAIL or DOWN) are **only present in the private
+  variant** (§8.5).
 
 ### 8.7 Atom feed `feed.atom`
 
