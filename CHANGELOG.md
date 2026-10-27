@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   notification. MAINTENANCE is now derived from the windows when pages are
   built, so it is also shown from the start of a window (not only after the
   first check in it) and ends with the window.
+- After a failed write of the status pages (e.g. a full disk), files whose
+  content did not change afterwards (style sheet, favicon, badges) were never
+  written again. Now everything is written again after a failure.
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry

@@ -345,6 +345,40 @@ fn remove_stale(output_dir: &Path, site: &Site) -> io::Result<()> {
     Ok(())
 }
 
+/// What is on disk, so that only changed files are written.
+struct Written {
+    site: Arc<Site>,
+    /// Nothing written successfully yet: stale pages are still to be removed.
+    first: bool,
+}
+
+impl Default for Written {
+    fn default() -> Self {
+        Written {
+            site: Arc::new(Site::default()),
+            first: true,
+        }
+    }
+}
+
+impl Written {
+    fn update(&mut self, output_dir: &Path, site: &Arc<Site>) -> io::Result<()> {
+        match write(output_dir, site, &self.site, self.first) {
+            Ok(()) => {
+                self.site = site.clone();
+                self.first = false;
+                Ok(())
+            }
+            Err(e) => {
+                // Not known what made it to disk: write everything again next
+                // time, and clean up after the first complete write.
+                self.site = Arc::new(Site::default());
+                Err(e)
+            }
+        }
+    }
+}
+
 /// Render every snapshot received, write the files and publish the site.
 pub fn spawn(
     renderer: Renderer,
@@ -360,22 +394,19 @@ pub fn spawn(
                 .mode(0o750)
                 .create(&renderer.output_dir);
             let _ = fs::set_permissions(&renderer.output_dir, fs::Permissions::from_mode(0o750));
-            let mut previous = Arc::new(Site::default());
-            let mut first = true;
+            let mut written = Written::default();
             for snap in snapshots {
                 let start = Instant::now();
                 let site = Arc::new(renderer.build(&snap));
-                if let Err(e) = write(&renderer.output_dir, &site, &previous, first) {
+                if let Err(e) = written.update(&renderer.output_dir, &site) {
                     eprintln!(
                         "error: cannot write status pages to {}: {e}",
                         renderer.output_dir.display()
                     );
                 }
-                first = false;
                 if let Ok(mut current) = published.write() {
-                    *current = site.clone();
+                    *current = site;
                 }
-                previous = site;
                 render_ms.store(
                     u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                     Ordering::Relaxed,
@@ -650,6 +681,25 @@ mod tests {
         let second = r.build(&snapshot(1_792_679_051));
         write(dir.path(), &second, &first, false).unwrap();
         assert_eq!(fs::read_to_string(&css).unwrap(), "marker");
+    }
+
+    #[test]
+    fn failed_write_is_retried_completely() {
+        let dir = TestDir::new("render-retry");
+        let r = renderer(dir.path());
+        let site = Arc::new(r.build(&snapshot(1_792_678_991)));
+        // A file where the assets directory belongs: the write fails.
+        fs::create_dir_all(dir.path().join("public")).unwrap();
+        fs::write(dir.path().join("public/assets"), "in the way").unwrap();
+        let mut written = Written::default();
+        assert!(written.update(dir.path(), &site).is_err());
+        // Fixed; the same, unchanged site must now be written completely.
+        fs::remove_file(dir.path().join("public/assets")).unwrap();
+        written.update(dir.path(), &site).unwrap();
+        assert!(dir.path().join("public/assets/kinomi.css").is_file());
+        assert!(dir.path().join("public/assets/favicon.svg").is_file());
+        assert!(dir.path().join("public/home/index.html").is_file());
+        assert!(!written.first);
     }
 
     #[test]
