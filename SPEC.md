@@ -817,10 +817,14 @@ Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error,
   including `/push/` and `/metrics` in mode B.
 - `ansible-role-user/` and `ansible-role-root/`: Ansible roles. Both enable
   lingering, deploy the configuration and the user units, and check the
-  configuration in a staging directory with `check-config` before it goes
-  live. If no binary is installed, they download the latest release for the
-  CPU and verify its minisign signature and checksum; an installed binary is
-  never touched (updates: `self-update`, §12.2).
+  configuration in an emptied staging directory with `check-config` before
+  it goes live. The configuration directory on the target then has exactly
+  the files of the source: removed or renamed files are deleted there too.
+  If no binary is installed, they download the latest release for the CPU
+  and verify it like `install.sh` (minisign signature by a release key,
+  trusted comment `uptime-kinomi X.Y.Z`, checksum, and a test run that
+  reports X.Y.Z); an installed binary is never touched (updates:
+  `self-update`, §12.2).
   - `ansible-role-user`: kinomi runs as the login user; no become at all.
     `minisign` must be installed.
   - `ansible-role-root`: Ansible logs in as root, installs `curl`, `wget`
@@ -1034,9 +1038,10 @@ boot). The service:
 1. runs `self-update`; if the version did not change, it stops (exit 0);
 2. runs `check-config` with the new version; if that fails, it runs
    `self-update --rollback` and fails;
-3. restarts `uptime-kinomi.service` if it is running (`try-restart`) and
-   checks 15 s later that it is still active; if not, it rolls back,
-   restarts the service with the previous version and fails.
+3. if `uptime-kinomi.service` is running, restarts it and checks 15 s
+   later that it is still active; if not, it rolls back, restarts the
+   service with the previous version and fails. A stopped service stays
+   stopped and starts with the new version next time.
 
 A failed run is visible in `systemctl --user --failed`, its output in the
 journal of `uptime-kinomi-update.service`. `install.sh` and the Ansible roles

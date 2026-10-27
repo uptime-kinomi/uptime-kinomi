@@ -51,6 +51,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   and the private assets without private pages are removed from
   `output_dir` at startup. In mode B the proxy served them from disk.
 
+- Ansible roles: a renamed or removed configuration file stayed on the
+  target (in the staging and the live configuration directory), so e.g. a
+  renamed push monitor existed twice and `check-config` reported a
+  duplicate token. The staging directory is now emptied before each check,
+  and files no longer in the source are removed from the live directory.
+- Ansible roles: the first installation now also checks the trusted
+  comment and test-runs the binary, like `install.sh`.
+- Weekly update timer: a service that was enabled but stopped was rolled
+  back (and then started) after an update. Now a stopped service stays
+  stopped and uses the new version at its next start.
+
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry
   is correspondingly larger.

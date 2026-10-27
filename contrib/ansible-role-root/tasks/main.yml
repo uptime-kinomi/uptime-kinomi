@@ -75,11 +75,23 @@
         - "{{ kinomi_asset }}"
 
     - name: Verify signature and checksum
+      # As contrib/install.sh: a signature by one of the release keys, a
+      # trusted comment "uptime-kinomi X.Y.Z", the checksum, and a test run
+      # that reports exactly X.Y.Z (wrong CPU, old binary).
       ansible.builtin.shell:
-        cmd: >-
-          {% for key in kinomi_release_keys %}minisign -Vq -P {{ key }} -m SHA256SUMS ||
-          {% endfor %}exit 1;
+        cmd: |
+          set -eu
+          ok=
+          for key in {{ kinomi_release_keys | join(' ') }}; do
+              if out=$(minisign -V -P "$key" -m SHA256SUMS 2>/dev/null); then ok=1; break; fi
+          done
+          [ -n "$ok" ] || { echo "SHA256SUMS is not signed by a release key" >&2; exit 1; }
+          version=$(printf '%s\n' "$out" | sed -n 's/^Trusted comment: uptime-kinomi \([0-9]*\.[0-9]*\.[0-9]*\)$/\1/p')
+          [ -n "$version" ] || { echo "unexpected trusted comment" >&2; exit 1; }
           sha256sum --check --ignore-missing --strict SHA256SUMS
+          chmod 755 {{ kinomi_asset }}
+          ./{{ kinomi_asset }} version | grep -q "^uptime-kinomi $version (" ||
+              { echo "the binary does not report version $version" >&2; exit 1; }
         chdir: "{{ kinomi_download.path }}"
       changed_when: false
 
@@ -100,8 +112,17 @@
         state: absent
       when: kinomi_download.path is defined
 
-# Validate the whole directory before it goes live: copy it to a staging
-# directory, run check-config there, and only then replace the real one.
+# Validate the whole directory before it goes live: copy it to an empty
+# staging directory, run check-config there, and only then update the real
+# one. Both end up with exactly the files of kinomi_config: files that were
+# removed or renamed there are removed on the target too (copy alone keeps
+# them, and e.g. a renamed push monitor would then exist twice).
+- name: Configuration (empty staging directory)
+  ansible.builtin.file:
+    path: "{{ kinomi_staging_dir }}"
+    state: absent
+  changed_when: false
+
 - name: Configuration (staging)
   ansible.builtin.copy:
     src: "{{ kinomi_config }}"
@@ -109,6 +130,7 @@
     owner: "{{ KINOMI_USER }}"
     group: "{{ kinomi_account.group }}"
     mode: "u=rwX,g=,o="
+  changed_when: false
 
 - name: Check the configuration
   become: true
@@ -124,6 +146,36 @@
     owner: "{{ KINOMI_USER }}"
     group: "{{ kinomi_account.group }}"
     mode: "u=rwX,g=,o="
+  notify: Restart uptime-kinomi
+
+- name: Configuration (files in the source)
+  delegate_to: localhost
+  become: false
+  ansible.builtin.find:
+    paths: "{{ kinomi_config | regex_replace('/+$', '') }}"
+    recurse: true
+    hidden: true
+    file_type: any
+  register: kinomi_config_source
+
+- name: Configuration (files on the target)
+  ansible.builtin.find:
+    paths: "{{ kinomi_config_dir }}"
+    recurse: true
+    hidden: true
+    file_type: any
+  register: kinomi_config_target
+
+- name: Configuration (remove what is no longer in the source)
+  ansible.builtin.file:
+    path: "{{ kinomi_config_dir }}/{{ item }}"
+    state: absent
+  loop: "{{ target | difference(source) | sort }}"
+  vars:
+    source: "{{ kinomi_config_source.files | map(attribute='path')
+                | map('regex_replace', '^' ~ (kinomi_config | regex_replace('/+$', '') | regex_escape) ~ '/', '') | list }}"
+    target: "{{ kinomi_config_target.files | map(attribute='path')
+                | map('regex_replace', '^' ~ (kinomi_config_dir | regex_escape) ~ '/', '') | list }}"
   notify: Restart uptime-kinomi
 
 # The units shipped in contrib/systemd/user/, next to this role.

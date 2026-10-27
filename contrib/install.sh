@@ -296,10 +296,10 @@ ExecStart=/bin/sh -euc '\
     echo "the configuration does not work with the new version, rolling back" >&2; \
     "$$bin" self-update --rollback; exit 1; \
   fi; \
-  systemctl --user try-restart uptime-kinomi.service; \
+  systemctl --user is-active --quiet uptime-kinomi.service || exit 0; \
+  systemctl --user restart uptime-kinomi.service; \
   sleep 15; \
-  if systemctl --user is-enabled --quiet uptime-kinomi.service \
-     && ! systemctl --user is-active --quiet uptime-kinomi.service; then \
+  if ! systemctl --user is-active --quiet uptime-kinomi.service; then \
     echo "the service did not stay up with the new version, rolling back" >&2; \
     "$$bin" self-update --rollback; \
     systemctl --user restart uptime-kinomi.service; exit 1; \
