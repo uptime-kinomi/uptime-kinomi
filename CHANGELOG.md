@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   answers `503` otherwise.
 - Failed logins are now logged, as promised by the spec: one line
   `event=AUTH_FAIL count=N throttled=M` per log flush with failures.
+- Page states and the banner carry a symbol (✓ ⚠ … ✗ ⚙ ‖ ?) besides text
+  and colour, as the spec requires (never colour alone).
 
 ### Changed
 - Logo and favicon: the white ring is as wide as the pulse line; the berry

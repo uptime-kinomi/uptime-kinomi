@@ -93,6 +93,21 @@ fn state_label(m: &Monitor, v: &MonitorView) -> (&'static str, &'static str) {
     }
 }
 
+/// A symbol per state or banner class, so the state never depends on colour
+/// alone (SPEC.md §8.2). Characters with wide font coverage, also shown by
+/// text browsers.
+fn symbol(class: &str) -> &'static str {
+    match class {
+        "up" => "\u{2713}",               // ✓
+        "warn" | "partial" => "\u{26a0}", // ⚠
+        "pending" => "\u{2026}",          // …
+        "down" => "\u{2717}",             // ✗
+        "maint" => "\u{2699}",            // ⚙
+        "paused" => "\u{2016}",           // ‖
+        _ => "?",
+    }
+}
+
 /// Overall banner: (css class, text).
 pub fn banner(views: &[&MonitorView]) -> (&'static str, &'static str) {
     let measured: Vec<_> = views
@@ -190,7 +205,8 @@ pub fn page(ctx: &Context, page: &Page, snap: &Snapshot) -> String {
     let (class, text) = banner(&on_page);
     let _ = writeln!(
         out,
-        "<p class=\"banner banner-{class}\" role=\"status\">{text}</p>\n<main>"
+        "<p class=\"banner banner-{class}\" role=\"status\"><span aria-hidden=\"true\">{} </span>{text}</p>\n<main>",
+        symbol(class)
     );
     incidents(&mut out, ctx, page);
     upcoming_maintenance(&mut out, ctx, page);
@@ -319,7 +335,8 @@ fn monitor(out: &mut String, ctx: &Context, m: &Monitor, v: &MonitorView, public
     );
     let _ = writeln!(
         out,
-        "<span class=\"state state-{class}\">{label}</span>\n</div>"
+        "<span class=\"state state-{class}\"><span aria-hidden=\"true\">{} </span>{label}</span>\n</div>",
+        symbol(class)
     );
 
     let _ = write!(
@@ -523,7 +540,9 @@ mod tests {
         assert!(public.contains("<meta http-equiv=\"refresh\" content=\"60\">"));
         assert!(public.contains("All systems operational"));
         assert!(public.contains("99.50 % (24 h) · 100 % (30 d)"));
-        assert!(public.contains("<span class=\"state state-up\">UP</span>"));
+        assert!(public.contains(
+            "<span class=\"state state-up\"><span aria-hidden=\"true\">\u{2713} </span>UP</span>"
+        ));
         assert!(public.contains("certificate valid until 2026-12-01"));
         assert!(public.contains("UP for 2 h"));
         // 5 slots: 3 empty, then the 2 beats.
