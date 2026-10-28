@@ -127,7 +127,11 @@ installation uses `/etc/uptime-kinomi`. The directory structure is the same:
   points to a file whose content (trimmed) is the secret. kinomi warns at startup
   and in `check-config` if a file containing secrets is world-readable: secret
   files, config files with inline secrets, `kinomi.toml` with a
-  `[heartbeat]` URL, and the htpasswd file.
+  `[heartbeat]` URL, the htpasswd file, and monitor files with an
+  `Authorization`, `Cookie` or other credential header in `headers`.
+- `check-config` warns if `data_dir`, `log_dir` or `output_dir` is inside
+  the configuration directory: tools that deploy the configuration by
+  replacing the directory (like the Ansible roles) would delete them.
 - Config is read **once at startup**. To apply changes, restart the service
   (`systemctl restart uptime-kinomi`). Startup is designed to be fast.
 - `uptime-kinomi check-config [--config-dir DIR]` validates the whole
@@ -195,7 +199,7 @@ type = "http"                 # http | tcp | dns | push
 name = "My blog"              # display name, 1-100 characters (HTML-escaped on output)
 description = "..."           # optional, max 1000 characters, shown on private pages only
 interval = "60s"              # min "10s"
-timeout = "10s"               # must be < interval (not for push: warns)
+timeout = "10s"               # must be < interval, also when inherited from [defaults] (not for push: warns)
 retries = 1                   # 0-10; failures tolerated: DOWN after retries + 1 in a row (PENDING before)
 notifications = ["phone", "telegram"]   # notifier IDs
 resend_interval = "0s"        # repeat DOWN notification while down; 0 = never
@@ -218,10 +222,14 @@ tags = ["web", "family"]      # optional, usable for page groups; same rules as 
 After a restart a monitor continues where it was: `DOWN` stays down
 (§5.1), and `PENDING` keeps counting the FAIL results in a row at the end
 of the heartbeat bar (SKIPPED and MAINT entries do not interrupt the row;
-at least 1, at most `retries`; a bar shorter than the row counts less).
+at least 1, at most `retries`; a bar shorter than the row counts less). If
+`retries` was lowered below the restored count, the next FAIL makes it
+`DOWN`.
 
-A disabled monitor (`enabled = false`) is shown as `PAUSED` and counts in
-nothing. A **skipped** check (§6) is not a state. It is logged as `result=SKIPPED`,
+A disabled monitor (`enabled = false`) is shown as `PAUSED` (also inside a
+maintenance window) and counts in nothing. This is unrelated to
+`event=PAUSED` and `msg="paused"` (§10.2), which mean that the kinomi
+process itself did not run. A **skipped** check (§6) is not a state. It is logged as `result=SKIPPED`,
 shown as a grey gap, and excluded from uptime percentages.
 
 ### 4.3 `http` — HTTP(S)
@@ -229,7 +237,7 @@ shown as a grey gap, and excluded from uptime percentages.
 ```toml
 type = "http"
 [http]
-url = "https://blog.example.org/"     # http:// or https:// only, max 2048 characters
+url = "https://blog.example.org/"     # http:// or https:// only, max 2048 characters, no user:password@
 method = "GET"                        # GET | HEAD (keyword needs GET)
 expected_status = [200]               # list; ranges allowed as "200-299"; default ["200-299"]
 keyword = "Welcome"                   # optional, 1-256 bytes; must appear in body (case-sensitive)
@@ -241,7 +249,7 @@ basic_auth_user = "..."               # optional (not together with an Authoriza
 basic_auth_password_file = "..."      # or basic_auth_password = "..."
 tls_verify = true                     # false warns; tls_* keys only with https://
 tls_expiry_warn = "14d"               # WARN when certificate expires within this time; "0s" off
-tls_expiry_down = "0s"                # DOWN when certificate expires within this time; "0s" off
+tls_expiry_down = "0s"                # the check fails (DOWN after retries) when the certificate expires within this time; "0s" off
 slow_warn = "0s"                      # WARN if response slower than this (< timeout); "0s" off
 ```
 
@@ -360,7 +368,7 @@ token_file = "secrets/backup-job.token"   # relative to the config dir; or token
 |---|---|
 | `down` | Monitor enters `DOWN` |
 | `up` | Monitor leaves `DOWN` (recovery), includes downtime duration |
-| `warn` | Monitor enters `WARN` (e.g. certificate expiry), at most once per 24 h (not kept across restarts) |
+| `warn` | Monitor enters `WARN` (e.g. certificate expiry), at most once per 24 h per monitor (not kept across restarts). From `DOWN` straight to `WARN`: `up`, then `warn` |
 | `reminder` | Still `DOWN` after `resend_interval`, checked continuously, not only with results (a push monitor has one result per `interval`) |
 
 No notifications during `MAINTENANCE` (§14.2), except `up` from a push (§4.6). Notifications are never
@@ -646,7 +654,7 @@ duration, last log flush).
 ├── public/{page}/status.json          /{page}/status.json         (§8.6)
 ├── public/{page}/feed.atom            /{page}/feed.atom           (§8.7)
 ├── public/{page}/badge/{monitor}.svg  /{page}/badge/{monitor}.svg (§8.8, if show_badges)
-├── public/{page}/badge/uptime/{monitor}.svg                       (§8.8, if show_badges)
+├── public/{page}/badge/uptime/{monitor}.svg  /{page}/badge/uptime/{monitor}.svg
 ├── private/assets/kinomi.css          /private/assets/kinomi.css   (if there are private pages)
 ├── private/assets/favicon.svg         /private/assets/favicon.svg
 └── private/{page}/...                 /private/{page}/...        (public = false)
@@ -659,8 +667,9 @@ duration, last log flush).
   group can read them. At startup, after the first complete write, kinomi
   removes what it no longer generates: directories of removed pages (only
   if they contain nothing but kinomi's own files), badges of monitors no
-  longer on a page, and `private/assets/` without private pages. Other
-  files are never touched.
+  longer on a page (also the `badge/{monitor}-uptime.svg` files of 0.5.0),
+  and `private/assets/` without private pages. Other files are never
+  touched.
 - Page IDs `assets`, `private`, `push`, `healthz` and `metrics` are reserved.
 - All files are written atomically (temp file + rename) and **only rewritten
   when their content changed**.
@@ -781,7 +790,7 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 ### 9.2 Routes
 | Route | Auth | Content |
 |---|---|---|
-| `GET/HEAD /` | – | redirect to `default_page` (default: the first public page; none: `404`) |
+| `GET/HEAD /` | – | redirect to `default_page` (default: the public page with the alphabetically first ID; none: `404`) |
 | `GET/HEAD /{page}/...` | public pages | files from `public/` |
 | `GET/HEAD /private/{page}/...` | Basic Auth | files from `private/` |
 | `GET/HEAD /assets/...` | – | style sheet and favicon (also below `/private/`) |
@@ -825,9 +834,12 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 - Response headers: `Content-Security-Policy: default-src 'none'; style-src 'self';
   img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
-  `X-Frame-Options: DENY`. `Cache-Control`: `no-cache` for public pages and
-  their files, `public, max-age=300` for `/assets/`, `private, no-store` for
-  everything below `/private/`.
+  `X-Frame-Options: DENY`. Every response has `Cache-Control`:
+  `public, max-age=300` for `/assets/`; `private, no-store` for `/private`,
+  everything below `/private/` and `/metrics` (also `401` and redirects
+  there); `no-cache` for everything else (public pages and their files,
+  `/push/`, `/healthz`, errors, redirects). In mode B the proxy sets it for
+  the files it serves (see `contrib/nginx/`, `contrib/apache/`).
 - `X-Forwarded-*` headers are ignored (not needed: rate limits are per push token
   and global for auth).
 
@@ -882,7 +894,7 @@ kinomi runs on Linux only (§1), with the static musl binaries of §12.
   metal), the wall-clock jump is logged as `event=CLOCK_JUMP` instead.
 
 ### 10.2 SD card friendliness
-- Buffered log writes (§7.1), state files every 10 min (§7.2), pages only
+- Buffered log writes (§7.1), state files every `state_interval` (default 10 min, §7.2), pages only
   rewritten on change (§8.3) and without fsync (they are regenerated anyway).
 - Pages change at almost every render (heartbeat bars, durations). Measured
   on a Raspberry Pi 1 with 50 monitors every 60 s: about 370 KB of page
@@ -936,8 +948,9 @@ Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error,
   installs the user units, enables the update timer and tries to enable
   lingering (else it prints the `sudo loginctl` command). Options:
   `--version X.Y.Z`, `--listen ADDR`, `--no-service`, `--no-auto-update`,
-  `--uninstall`. `KINOMI_ALLOW_UNSIGNED=1` skips the signature check (for
-  test builds only).
+  `--uninstall`. Without minisign and OpenSSL 3, the signature cannot be
+  checked and the installation stops, unless `KINOMI_ALLOW_UNSIGNED=1`
+  (then only HTTPS and the checksum protect the download).
 - `examples/config/`: a complete configuration directory with every file
   type (one notifier, ntfy); CI runs `check-config` on it.
 - `systemd/user/uptime-kinomi.service`: **user unit** for `systemctl --user`
@@ -1007,8 +1020,9 @@ message of `run` print all directories.
   `/var/lib/uptime-kinomi`, `/var/log/uptime-kinomi` and
   `/run/uptime-kinomi` (kept when the service stops,
   `RuntimeDirectoryPreserve=yes`), because the `kinomi` user cannot create
-  them. The same paths are set in `/etc/uptime-kinomi/kinomi.toml`, so a
-  manual run as `kinomi` uses them too.
+  them. The administrator MUST set the same paths (`data_dir`, `log_dir`,
+  `output_dir`) in `/etc/uptime-kinomi/kinomi.toml` (see the comment in the
+  unit), so a manual run as `kinomi` uses them too.
 
 **Starting automatically without root:**
 - `systemctl --user enable --now uptime-kinomi`. To keep it running while
@@ -1183,7 +1197,8 @@ boot). The service:
 2. runs `check-config` with the new version; if that fails, it runs
    `self-update --rollback` and fails;
 3. if `uptime-kinomi.service` is running, restarts it and checks 15 s
-   later that it is still active; if not, it rolls back, restarts the
+   later that it is still active with the same main process (a crash that
+   systemd restarted counts as a failure); if not, it rolls back, restarts the
    service with the previous version and fails. A stopped service stays
    stopped and starts with the new version next time.
 

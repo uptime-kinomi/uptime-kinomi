@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   replacing it, as the Ansible roles do).
 
 ### Fixed
+- install.sh: `--listen` accepts IPv6 addresses (`[::1]:8080`); `--uninstall`
+  no longer names a fixed data path.
+- The mode-B proxy examples send `Cache-Control: no-cache` for public files,
+  as kinomi's own server does.
 - Log cleanup: a file that cannot be deleted no longer stops the deletion of
   the other expired files, and the warning comes once a day, not at every
   flush.
@@ -102,7 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   emptied staging directory (by `KINOMI_USER` in the root role), checked,
   and replaces the live directory only if something differs. The roles stop
   if `data_dir`, `log_dir` or `output_dir` is inside the configuration
-  directory. A complete run takes about 4.5 minutes on an idle Raspberry
+  directory (relative, or an absolute path into the live directory). A complete run takes about 4.5 minutes on an idle Raspberry
   Pi 1.
 
 ## [0.5.0] - 2026-10-27

@@ -346,7 +346,7 @@ uninstall() {
     fi
     rm -f "$BIN_DIR/uptime-kinomi" "$BIN_DIR/uptime-kinomi.old"
     say "Removed the binary and the service."
-    say "Kept: $CONFIG_DIR (configuration) and ~/.local/state/uptime-kinomi (data, logs)."
+    say "Kept: $CONFIG_DIR (configuration) and the data and log directories (default ${XDG_STATE_HOME:-$HOME/.local/state}/uptime-kinomi)."
 }
 
 main() {
@@ -383,7 +383,8 @@ main() {
     if [ -n "$version" ]; then
         printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || die "--version must look like 0.3.0"
     fi
-    printf '%s' "$listen" | grep -Eq '^[0-9.]+:[0-9]+$' || die "--listen must look like 127.0.0.1:8080"
+    printf '%s' "$listen" | grep -Eq '^([0-9.]+|\[[0-9A-Fa-f:]+\]):[0-9]+$' ||
+        die "--listen must look like 127.0.0.1:8080 or [::1]:8080"
 
     if [ "$(id -u)" = 0 ]; then
         die "do not run this as root: log in as the user who should run uptime-kinomi (it needs no root)"
