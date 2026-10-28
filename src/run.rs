@@ -47,11 +47,24 @@ struct Service {
     notify: Vec<NotifyState>,
     /// Push monitors: when the monitor fails if no push arrives.
     push_deadline: Vec<Option<Instant>>,
+    /// Push monitors whose deadline still comes from the state file (until
+    /// the first push or missed deadline): recomputed after a clock jump.
+    push_restored: Vec<Option<RestoredPush>>,
+    started: Instant,
     maintenance: Arc<Vec<Maintenance>>,
     /// The server's Basic Auth, for `event=AUTH_FAIL` (SPEC.md §9.3).
     auth: Option<Arc<Auth>>,
     /// Last successful log flush (Unix seconds), for the self status.
     last_flush: Option<i64>,
+}
+
+/// What the first deadline of a push monitor after a start is based on.
+#[derive(Debug, Clone, Copy)]
+struct RestoredPush {
+    /// Last push or check before the start (Unix seconds).
+    last: Option<i64>,
+    /// That was a missed push (`no push received`).
+    missed: bool,
 }
 
 #[derive(Debug, Default)]
@@ -196,12 +209,14 @@ pub fn run(mut config: Config) -> Result<(), String> {
         }
         let now = Instant::now();
         service.check_push_deadlines(now);
+        service.send_due_reminders(clock::unix_seconds(SystemTime::now()));
         if now >= next_flush {
             if let Some(jump) = jumps.check(SystemTime::now(), now) {
                 service.log.record(
                     SystemTime::now(),
                     &[("event", "CLOCK_JUMP"), ("delta_s", &jump.to_string())],
                 );
+                service.correct_push_deadlines();
             }
             service.flush();
             next_flush = now + flush_interval;
@@ -365,6 +380,20 @@ impl Service {
         if let Err(e) = replay::replay(&storage.log_dir, &mut histories) {
             eprintln!("warning: cannot replay the log: {e}");
         }
+        // Pushes to a disabled monitor are not recorded: after it is enabled
+        // again, its last check says nothing about the client.
+        let push_restored: Vec<Option<RestoredPush>> = config
+            .monitors
+            .iter()
+            .map(|m| {
+                let h = histories.get_mut(&m.id)?;
+                let was_paused = std::mem::replace(&mut h.paused, !m.enabled);
+                (m.enabled && m.kind == Kind::Push).then(|| RestoredPush {
+                    last: if was_paused { None } else { h.last_check },
+                    missed: h.last_msg == NO_PUSH,
+                })
+            })
+            .collect();
         let data_dir = storage.data_dir.clone();
         let monitors = Arc::new(config.monitors);
         let states = monitors
@@ -392,15 +421,11 @@ impl Service {
                 }
             })
             .collect();
-        let start = Instant::now();
+        let started = Instant::now();
         let push_deadline = monitors
             .iter()
-            .map(|m| {
-                (m.enabled && m.kind == Kind::Push).then(|| {
-                    let last = histories[&m.id].last_check;
-                    start + first_push_wait(now, last, m.interval, m.grace)
-                })
-            })
+            .zip(&push_restored)
+            .map(|(m, r)| r.map(|r| started + first_push_wait(now, r, m.interval, m.grace)))
             .collect();
         Ok(Service {
             monitors,
@@ -413,6 +438,8 @@ impl Service {
             notify_tx: None,
             notify,
             push_deadline,
+            push_restored,
+            started,
             maintenance,
             auth: None,
             last_flush: None,
@@ -433,17 +460,20 @@ impl Service {
             } => {
                 let m = &self.monitors[monitor];
                 self.push_deadline[monitor] = Some(Instant::now() + m.interval + m.grace);
-                let result = if down {
-                    CheckResult::fail(None, "push: status=down")
+                self.push_restored[monitor] = None;
+                if down {
+                    self.process(monitor, &CheckResult::fail(None, "push: status=down"), time);
                 } else {
-                    CheckResult {
+                    // A push is a report from the client, not a check: it
+                    // counts also inside a maintenance window (SPEC.md §14.2).
+                    let result = CheckResult {
                         status: crate::monitors::Status::Up,
                         latency: None,
                         msg: "push".into(),
                         cert_expires: None,
-                    }
-                };
-                self.process(monitor, &result, time);
+                    };
+                    self.apply(monitor, &result, time);
+                }
             }
             Event::Notified {
                 monitor_id,
@@ -513,8 +543,14 @@ impl Service {
         let t = clock::unix_seconds(time);
         if self.in_maintenance(monitor, t) {
             self.process_maintenance(monitor, result, time);
-            return;
+        } else {
+            self.apply(monitor, result, time);
         }
+    }
+
+    /// Apply a result outside of maintenance: state, log, history,
+    /// notifications.
+    fn apply(&mut self, monitor: usize, result: &CheckResult, time: SystemTime) {
         let m = &self.monitors[monitor];
         let before = self.states[monitor].state;
         let (logged, previous) = self.states[monitor].apply(result.status);
@@ -638,9 +674,42 @@ impl Service {
         for i in 0..self.monitors.len() {
             if self.push_deadline[i].is_some_and(|d| now >= d) {
                 self.push_deadline[i] = Some(now + self.monitors[i].interval);
-                let result = CheckResult::fail(None, "no push received");
+                self.push_restored[i] = None;
+                let result = CheckResult::fail(None, NO_PUSH);
                 self.process(i, &result, SystemTime::now());
             }
+        }
+    }
+
+    /// The first push deadlines were computed with the wall clock at the
+    /// start. If it was wrong then (e.g. fake-hwclock before NTP), compute
+    /// them again with the corrected clock.
+    fn correct_push_deadlines(&mut self) {
+        let elapsed = i64::try_from(self.started.elapsed().as_secs()).unwrap_or(i64::MAX);
+        let start = clock::unix_seconds(SystemTime::now()).saturating_sub(elapsed);
+        for (i, m) in self.monitors.iter().enumerate() {
+            if let Some(r) = self.push_restored[i] {
+                self.push_deadline[i] =
+                    Some(self.started + first_push_wait(start, r, m.interval, m.grace));
+            }
+        }
+    }
+
+    /// Reminders are due by time, not only when a result comes in: a push
+    /// monitor has one result per `interval`, which may be longer than
+    /// `resend_interval`.
+    fn send_due_reminders(&mut self, t: i64) {
+        for i in 0..self.monitors.len() {
+            let m = &self.monitors[i];
+            if !m.enabled || self.states[i].state != State::Down || self.in_maintenance(i, t) {
+                continue;
+            }
+            let detail = self
+                .histories
+                .get(&m.id)
+                .map(|h| h.last_msg.clone())
+                .unwrap_or_default();
+            self.notify(i, State::Down, State::Down, &detail, t);
         }
     }
 
@@ -754,17 +823,22 @@ fn running_as_root() -> bool {
         .unwrap_or(false)
 }
 
-/// How long after a start a push monitor waits before it fails
-/// (SPEC.md §4.6): `interval + grace` from the last push or check before
-/// the restart, so restarts do not postpone it, but at least `grace`, for
-/// a push that was sent while kinomi was down. `interval + grace` from the
-/// start if the monitor has never had a result.
-fn first_push_wait(now: i64, last: Option<i64>, interval: Duration, grace: Duration) -> Duration {
-    let Some(last) = last else {
+/// The result message of a missed push.
+const NO_PUSH: &str = "no push received";
+
+/// How long after a start (at `now`) a push monitor waits before it fails
+/// (SPEC.md §4.6): as if kinomi had kept running, i.e. `interval + grace`
+/// after the last push, `interval` after the last missed push, so restarts
+/// do not postpone it; but at least `grace`, for a push that was sent while
+/// kinomi was down. `interval + grace` from the start if the monitor has no
+/// result yet or was disabled.
+fn first_push_wait(now: i64, r: RestoredPush, interval: Duration, grace: Duration) -> Duration {
+    let Some(last) = r.last else {
         return interval + grace;
     };
+    let due = if r.missed { interval } else { interval + grace };
     let since = Duration::from_secs(u64::try_from(now.saturating_sub(last)).unwrap_or(0));
-    (interval + grace).saturating_sub(since).max(grace)
+    due.saturating_sub(since).max(grace)
 }
 
 /// The notifications a state change is worth (SPEC.md §5.1), updating
@@ -816,31 +890,29 @@ fn notify_events(
 mod tests {
     use super::*;
     use crate::notifiers::Kind;
+    use crate::testutil::TestDir;
 
     #[test]
     fn first_push_wait_counts_from_the_last_push() {
         let h = |n: u64| Duration::from_secs(n * 3600);
         let (day, grace) = (h(24), h(2));
         let now = 1_000_000_000;
-        // Never pushed: interval + grace from the start.
-        assert_eq!(first_push_wait(now, None, day, grace), day + grace);
+        let wait = |last: Option<i64>, missed| {
+            first_push_wait(now, RestoredPush { last, missed }, day, grace)
+        };
+        // Never pushed, or disabled before: interval + grace from the start.
+        assert_eq!(wait(None, false), day + grace);
         // Pushed 10 h before the restart: 16 h left, restarts do not reset it.
-        assert_eq!(first_push_wait(now, Some(now - 36_000), day, grace), h(16));
+        assert_eq!(wait(Some(now - 36_000), false), h(16));
         // Overdue (last push 2 days ago): fail after grace.
-        assert_eq!(
-            first_push_wait(now, Some(now - 2 * 86_400), day, grace),
-            grace
-        );
+        assert_eq!(wait(Some(now - 2 * 86_400), false), grace);
         // Less than grace left: still grace.
-        assert_eq!(
-            first_push_wait(now, Some(now - 25 * 3600), day, grace),
-            grace
-        );
+        assert_eq!(wait(Some(now - 25 * 3600), false), grace);
         // Clock went back: never longer than interval + grace.
-        assert_eq!(
-            first_push_wait(now, Some(now + 3600), day, grace),
-            day + grace
-        );
+        assert_eq!(wait(Some(now + 3600), false), day + grace);
+        // Missed 10 h before the restart: the next failure 14 h later, as
+        // without the restart (interval, no grace).
+        assert_eq!(wait(Some(now - 36_000), true), h(14));
     }
 
     fn kinds(events: &[(Kind, Option<i64>)]) -> Vec<Kind> {
@@ -883,5 +955,108 @@ mod tests {
             )),
             [Kind::Up]
         );
+    }
+
+    const TOKEN: &str = "abcdefghijklmnopqrstuvwxyz012345";
+
+    /// A service with one push monitor `b` (and `extra` in its file).
+    fn push_service(dir: &TestDir, extra: &str) -> Service {
+        dir.write(
+            "kinomi.toml",
+            &format!(
+                "config_version = 1\n[storage]\ndata_dir = \"{}/data\"\n\
+                 [pages]\ntimezone = \"UTC\"\n",
+                dir.path().display()
+            ),
+        );
+        dir.write(
+            "monitors/b.toml",
+            &format!(
+                "config_version = 1\nname = \"Backup\"\ntype = \"push\"\ninterval = \"1d\"\ngrace = \"2h\"\n\
+                 retries = 0\n{extra}\n[push]\ntoken = \"{TOKEN}\"\n"
+            ),
+        );
+        let env = |_: &str| None;
+        let (config, problems) = crate::config::load(dir.path(), &env, None);
+        let mut config = config.unwrap_or_else(|| panic!("{problems:?}"));
+        let maintenance = Arc::new(std::mem::take(&mut config.maintenance));
+        Service::open(config, timezone("UTC"), Arc::new(Vec::new()), maintenance).unwrap()
+    }
+
+    #[test]
+    fn re_enabled_push_monitor_waits_a_full_interval() {
+        let dir = TestDir::new("run-push-paused");
+        let week_ago = clock::unix_seconds(SystemTime::now()) - 7 * 86_400;
+        let mut service = push_service(&dir, "enabled = false");
+        assert_eq!(service.push_deadline[0], None);
+        let h = service.histories.get_mut("b").unwrap();
+        assert!(h.paused);
+        (h.last_check, h.last_msg) = (Some(week_ago), "push".into());
+        service.save_states();
+        drop(service);
+        let service = push_service(&dir, "");
+        let r = service.push_restored[0].unwrap();
+        assert_eq!(r.last, None, "the old push says nothing after a pause");
+        assert!(!service.histories["b"].paused);
+        let wait = service.push_deadline[0].unwrap() - service.started;
+        assert_eq!(wait, Duration::from_secs(26 * 3600));
+        // Without the pause, the same old push is overdue: grace.
+        let mut service = service;
+        service.save_states();
+        drop(service);
+        let service = push_service(&dir, "");
+        assert_eq!(service.push_restored[0].unwrap().last, Some(week_ago));
+        let wait = service.push_deadline[0].unwrap() - service.started;
+        assert_eq!(wait, Duration::from_secs(2 * 3600));
+    }
+
+    #[test]
+    fn push_inside_a_maintenance_window_counts() {
+        let dir = TestDir::new("run-push-maint");
+        let mut service = push_service(&dir, "");
+        let now = SystemTime::now();
+        service.apply(0, &CheckResult::fail(None, NO_PUSH), now);
+        assert_eq!(service.states[0].state, State::Down);
+        service.save_states();
+        drop(service);
+        let start = clock::format_rfc3339(now - Duration::from_secs(3600));
+        dir.write(
+            "maintenance/w.toml",
+            &format!(
+                "config_version = 1\ntitle = \"w\"\nmonitors = [\"b\"]\n\
+                 schedule = \"once\"\nstart = \"{}\"\nduration = \"2h\"\n",
+                start.trim_end_matches('Z')
+            ),
+        );
+        let mut service = push_service(&dir, "");
+        let t = clock::unix_seconds(now);
+        assert!(service.in_maintenance(0, t));
+        assert_eq!(service.states[0].state, State::Down);
+        // status=down inside the window: MAINT, the state stays.
+        let push = |down| Event::Push {
+            monitor: 0,
+            down,
+            time: now,
+        };
+        service.handle(push(true));
+        assert_eq!(service.states[0].state, State::Down);
+        // A push is a report from the client: UP even inside the window.
+        service.handle(push(false));
+        assert_eq!(service.states[0].state, State::Up);
+    }
+
+    #[test]
+    fn reminders_are_due_by_time() {
+        let dir = TestDir::new("run-reminder");
+        let mut service = push_service(&dir, "resend_interval = \"1h\"");
+        let now = SystemTime::now();
+        let t = clock::unix_seconds(now);
+        service.apply(0, &CheckResult::fail(None, NO_PUSH), now);
+        assert_eq!(service.notify[0].last_down_notice, Some(t));
+        service.send_due_reminders(t + 1800);
+        assert_eq!(service.notify[0].last_down_notice, Some(t));
+        // No result for a day, but a reminder every hour.
+        service.send_due_reminders(t + 3600);
+        assert_eq!(service.notify[0].last_down_notice, Some(t + 3600));
     }
 }

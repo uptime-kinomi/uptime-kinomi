@@ -328,14 +328,20 @@ token_file = "secrets/backup-job.token"   # relative to the config dir; or token
   second for this token), `400` (malformed `status`). Response bodies are empty.
 - A missing push after `interval + grace` counts as a failed check
   (`msg="no push received"`), and again after every further `interval`
-  without a push. `retries` applies as usual. `grace` defaults to `1m`,
-  max `1d`.
-- `?status=down` counts as a failed check (`msg="push: status=down"`).
-- After a restart, the deadline is `interval + grace` after the last push
-  or check before the restart (`last_check` in the state file), so restarts do
-  not postpone it; but at least `grace` after the start, for a push sent
-  while kinomi was down. A push monitor without any result yet waits
-  `interval + grace` from the start.
+  without a push. `retries` applies as usual, also `[defaults] retries`:
+  with daily pushes, `retries = 0` makes the monitor DOWN at the first missed
+  push instead of a day later. `grace` defaults to `1m`, max `1d`.
+- `?status=down` counts as a failed check (`msg="push: status=down"`). Every
+  push (also `status=down`) starts a new `interval + grace`.
+- After a restart, the deadline is where it would be without the restart:
+  `interval + grace` after the last push, `interval` after the last missed
+  push (`last_check` and `last_msg` in the state file), so restarts do not
+  postpone it; but at least `grace` after the start, for a push sent while
+  kinomi was down. A push monitor without any result yet, or one that was
+  disabled (`paused` in the state file), waits `interval + grace` from the
+  start. If the wall clock jumps after the start (e.g. NTP correcting a
+  fake-hwclock time), these first deadlines are computed again.
+- A disabled push monitor answers `404` like an unknown token.
 - Push monitors are not polled, so they have no `timeout` (a `timeout` in
   the push monitor's file warns; `[defaults] timeout` does not apply) and do
   not use the queue. `grace` is a top-level key of push monitors only. They need the built-in server (`check-config` warns otherwise).
@@ -355,9 +361,9 @@ token_file = "secrets/backup-job.token"   # relative to the config dir; or token
 | `down` | Monitor enters `DOWN` |
 | `up` | Monitor leaves `DOWN` (recovery), includes downtime duration |
 | `warn` | Monitor enters `WARN` (e.g. certificate expiry), at most once per 24 h (not kept across restarts) |
-| `reminder` | Still `DOWN` after `resend_interval` |
+| `reminder` | Still `DOWN` after `resend_interval`, checked continuously, not only with results (a push monitor has one result per `interval`) |
 
-No notifications during `MAINTENANCE` (§14.2). Notifications are never
+No notifications during `MAINTENANCE` (§14.2), except `up` from a push (§4.6). Notifications are never
 skipped by the queue (§6). They are sent one after the other by a dedicated
 thread, each request with a 15 s timeout, with up to 3 attempts (retries
 after 5 s and 30 s). Every result is logged:
@@ -533,6 +539,7 @@ state_since = "2026-10-20T08:00:00Z"
 last_check = "2026-10-22T14:10:00Z"
 cert_expires = "2026-12-01T00:00:00Z"
 last_msg = "HTTP 200"
+# paused = true                          # only while the monitor is disabled
 last_error_time = "2026-10-19T23:12:00Z"  # last FAIL or DOWN
 last_error = "timeout"
 # heartbeat bar: time, result, latency in ms
@@ -1251,7 +1258,10 @@ duration = "2h"                   # 1m to 7d; daily at most 1d
   - no notifications are sent, and the monitor's state machine (retries,
     DOWN) is left untouched: after the window, the next check continues
     from the state before it;
-  - a push monitor whose push is overdue does not fail during the window.
+  - a push monitor whose push is overdue does not fail during the window,
+    and `status=down` pushes are logged as `MAINT`. A push with
+    `status=up` is a report from the client, not a check: it is processed as
+    outside the window (logged `UP`, may change the state and send `up`).
 - Pages list the maintenance windows of their monitors that are active now
   ("now") or start within the next 7 days, each window file with its next
   occurrence only.

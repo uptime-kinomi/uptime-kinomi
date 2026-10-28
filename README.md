@@ -174,6 +174,7 @@ type = "push"
 name = "Nightly backup"
 interval = "1d"
 grace = "2h"
+retries = 0                 # DOWN at the first missed push, not a day later
 notifications = ["phone"]
 
 [push]

@@ -30,7 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `interval + grace` (deploys, updates, reboots): every start set a new
   deadline `interval + grace` from the start. Now the deadline counts from
   the last push before the restart, and an overdue monitor fails `grace`
-  after the start.
+  after the start. A missed push before the restart counts too (next
+  failure `interval` later), a monitor that was disabled waits a full
+  `interval + grace`, and a wrong clock at the start (fake-hwclock before
+  NTP) is corrected when the clock jumps.
+- Reminders (`resend_interval`) only came with a result, so a daily push
+  monitor reminded at most once a day. They are now sent on time.
+- A push monitor that was DOWN stayed DOWN after a maintenance window even
+  if pushes came in during it. A push (`status=up`) now counts inside a
+  window too.
+- The push examples set `retries = 0`: with `[defaults] retries = 1`, a
+  missed daily push only made the monitor DOWN a day later.
 - A state file with an incomplete `last_error` pair was half loaded before
   being rejected; the following replay then skipped the data it had not
   loaded (heartbeat bar, totals, changes). Now a broken file leaves nothing

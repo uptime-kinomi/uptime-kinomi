@@ -5,6 +5,7 @@ type = "push"
 name = "Nightly backup"
 interval = "1d"
 grace = "2h"
+retries = 0                 # [defaults] retries = 1 would mean DOWN a day later
 resend_interval = "12h"
 
 [push]

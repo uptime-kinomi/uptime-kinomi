@@ -117,6 +117,9 @@ pub struct History {
     pub daily: BTreeMap<i64, Bucket>,
     /// The last state changes (time, new state), for the feed.
     pub changes: VecDeque<(i64, State)>,
+    /// The monitor was disabled (`enabled = false`) when the state was
+    /// saved: its `last_check` says nothing about pushes since then.
+    pub paused: bool,
     recent_max: usize,
     history_days: i64,
 }
@@ -136,6 +139,7 @@ impl History {
             hourly: BTreeMap::new(),
             daily: BTreeMap::new(),
             changes: VecDeque::new(),
+            paused: false,
             recent_max: recent_max.max(1),
             history_days,
         }

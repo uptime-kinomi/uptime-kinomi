@@ -52,6 +52,9 @@ pub fn to_toml(monitor: &str, h: &History) -> String {
         }
     }
     let _ = writeln!(out, "last_msg = {}", quote(&h.last_msg));
+    if h.paused {
+        let _ = writeln!(out, "paused = true");
+    }
     if let Some((t, msg)) = &h.last_error {
         let _ = writeln!(out, "last_error_time = {}", quote(&time(*t)));
         let _ = writeln!(out, "last_error = {}", quote(msg));
@@ -137,6 +140,8 @@ struct StateFile {
     cert_expires: Option<String>,
     #[serde(default)]
     last_msg: String,
+    #[serde(default)]
+    paused: bool,
     last_error_time: Option<String>,
     last_error: Option<String>,
     #[serde(default)]
@@ -257,6 +262,7 @@ pub fn from_toml(text: &str, monitor: &str, history: &mut History) -> Result<(),
     );
     history.covered_events = file.covered_events.unwrap_or(u32::MAX);
     history.last_error = last_error;
+    history.paused = file.paused;
     history.recent = restored.recent;
     history.hourly = restored.hourly;
     history.daily = restored.daily;
