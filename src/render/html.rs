@@ -131,7 +131,7 @@ pub fn banner(views: &[&MonitorView]) -> (&'static str, &'static str) {
 fn beat_title(tz: &TimeZone, b: &BeatRecord) -> String {
     let when = time(tz, b.time);
     match (b.beat, b.latency_ms) {
-        (Beat::Skipped, _) => format!("{when}: skipped (queue full)"),
+        (Beat::Skipped, _) => format!("{when}: skipped (queue full or paused)"),
         (beat, Some(ms)) => format!("{when}: {}, {ms} ms", beat.name()),
         (beat, None) => format!("{when}: {}", beat.name()),
     }

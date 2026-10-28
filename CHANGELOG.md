@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   replacing it, as the Ansible roles do).
 
 ### Fixed
+- Log cleanup: a file that cannot be deleted no longer stops the deletion of
+  the other expired files, and the warning comes once a day, not at every
+  flush.
+- `400` and `431` responses and `/private` (without slash) now get the same
+  `Cache-Control` as everything else.
+- State files with more than 100 state changes are trimmed when loaded.
 - A push monitor never failed if kinomi restarted more often than
   `interval + grace` (deploys, updates, reboots): every start set a new
   deadline `interval + grace` from the start. Now the deadline counts from

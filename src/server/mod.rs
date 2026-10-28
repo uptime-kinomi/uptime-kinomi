@@ -129,14 +129,20 @@ fn serve(mut stream: TcpStream, options: &Options, published: &Published) -> io:
                 let head_only = req.method == "HEAD";
                 (route(&req, options, &site), head_only)
             }
-            None => (Response::text(400, "Bad Request\n"), false),
+            None => (no_cache(Response::text(400, "Bad Request\n")), false),
         },
         None => (
-            Response::text(431, "Request Header Fields Too Large\n"),
+            no_cache(Response::text(431, "Request Header Fields Too Large\n")),
             false,
         ),
     };
     write_response(&mut stream, &response, head_only)
+}
+
+/// Errors before routing get the Cache-Control `route` would give them.
+fn no_cache(mut r: Response) -> Response {
+    r.headers.push(("Cache-Control", "no-cache".into()));
+    r
 }
 
 /// Read until the end of the request head. `None` if it is too large. The
@@ -196,6 +202,11 @@ pub(crate) fn parse_request(head: &[u8]) -> Option<Request> {
     })
 }
 
+/// Paths that need a login (SPEC.md §9.3).
+fn is_private(path: &str) -> bool {
+    path == "/private" || path.starts_with("/private/") || path == "/metrics"
+}
+
 /// Decide the response. Pure function of the request and the current site.
 /// Every response has a Cache-Control header (SPEC.md §9.4): files set
 /// their own; everything else (errors, redirects, 401) gets one by path.
@@ -203,8 +214,7 @@ pub fn route(req: &Request, options: &Options, site: &crate::render::Site) -> Re
     let mut r = route_inner(req, options, site);
     if !r.headers.iter().any(|(name, _)| *name == "Cache-Control") {
         let path = clean_path(&req.path).unwrap_or_default();
-        let private = path.starts_with("/private/") || path == "/metrics";
-        let value = if private {
+        let value = if is_private(&path) {
             "private, no-store"
         } else {
             "no-cache"
@@ -265,8 +275,7 @@ fn route_inner(req: &Request, options: &Options, site: &crate::render::Site) -> 
 
     // Everything below /private/ needs a login, even if it does not exist,
     // so the names of private pages are not revealed.
-    let private = path == "/private" || path.starts_with("/private/") || path == "/metrics";
-    if private {
+    if is_private(&path) {
         let verdict = options
             .auth
             .as_ref()
@@ -549,7 +558,12 @@ mod tests {
     fn every_response_has_cache_control() {
         let cc = |r: &Response| header(r, "Cache-Control").map(str::to_string);
         // Login needed, redirect to the slash URL, missing private file.
-        for path in ["/private/all/", "/private/all", "/%70rivate/nope/"] {
+        for path in [
+            "/private",
+            "/private/all/",
+            "/private/all",
+            "/%70rivate/nope/",
+        ] {
             assert_eq!(
                 cc(&get(path, None)).as_deref(),
                 Some("private, no-store"),
@@ -596,6 +610,7 @@ mod tests {
         assert!(head.contains("Content-Length: 11\r\n") && !head.contains("public page"));
         let garbage = request("garbage\r\n\r\n");
         assert!(garbage.starts_with("HTTP/1.1 400"), "{garbage}");
+        assert!(garbage.contains("Cache-Control: no-cache\r\n"), "{garbage}");
     }
 
     #[test]

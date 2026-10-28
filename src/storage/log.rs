@@ -89,21 +89,23 @@ impl LogWriter {
         }
 
         // Cleanup errors are not write errors: the lines are written. They
-        // are reported and the cleanup is tried again at the next flush.
+        // are reported, and the cleanup is tried again the next day.
         let today = clock::days_since_epoch(now);
         if self.last_cleanup_day != Some(today) && clock::is_plausible(now) {
-            match self.delete_expired(today) {
-                Ok(()) => self.last_cleanup_day = Some(today),
-                Err(e) => eprintln!(
+            self.last_cleanup_day = Some(today);
+            if let Err(e) = self.delete_expired(today) {
+                eprintln!(
                     "warning: cannot delete expired log files in {}: {e}",
                     self.dir.display()
-                ),
+                );
             }
         }
         Ok(())
     }
 
+    /// Delete what can be deleted; the first error is returned.
     fn delete_expired(&self, today: i64) -> io::Result<()> {
+        let mut first_error = None;
         for entry in fs::read_dir(&self.dir)?.flatten() {
             let name = entry.file_name();
             let Some(day) = name
@@ -114,10 +116,12 @@ impl LogWriter {
                 continue; // not one of our files
             };
             if day < today - self.retention_days {
-                fs::remove_file(entry.path())?;
+                if let Err(e) = fs::remove_file(entry.path()) {
+                    first_error.get_or_insert(e);
+                }
             }
         }
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
 
     #[cfg(test)]
@@ -234,8 +238,10 @@ mod tests {
     #[test]
     fn cleanup_errors_are_not_write_errors() {
         let dir = TestDir::new("log-cleanup-error");
-        // An "expired log file" that cannot be removed with remove_file.
+        // An "expired log file" that cannot be removed with remove_file,
+        // and one that can.
         fs::create_dir_all(dir.path().join("2026-07-01.log")).unwrap();
+        fs::write(dir.path().join("2026-07-02.log"), "x").unwrap();
         let mut log = LogWriter::open(dir.path(), 90).unwrap();
         log.record(t(0), &[("event", "START")]);
         log.flush(t(0)).unwrap();
@@ -244,8 +250,10 @@ mod tests {
                 .unwrap()
                 .contains("event=START")
         );
-        // Tried again at the next flush.
-        assert_eq!(log.last_cleanup_day, None);
+        // The error does not stop the other deletions.
+        assert!(!dir.path().join("2026-07-02.log").exists());
+        // Tried again the next day, not at every flush.
+        assert!(log.last_cleanup_day.is_some());
     }
 
     #[test]

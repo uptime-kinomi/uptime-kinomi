@@ -267,6 +267,7 @@ pub fn from_toml(text: &str, monitor: &str, history: &mut History) -> Result<(),
     history.hourly = restored.hourly;
     history.daily = restored.daily;
     history.changes = changes;
+    history.trim_changes();
     Ok(())
 }
 

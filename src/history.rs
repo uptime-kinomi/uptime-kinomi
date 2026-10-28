@@ -145,6 +145,13 @@ impl History {
         }
     }
 
+    /// Keep the last `MAX_CHANGES` state changes.
+    pub fn trim_changes(&mut self) {
+        while self.changes.len() > MAX_CHANGES {
+            self.changes.pop_front();
+        }
+    }
+
     pub fn record_check(
         &mut self,
         time: i64,
@@ -168,9 +175,7 @@ impl History {
             self.state = state;
             self.state_since = Some(time);
             self.changes.push_back((time, state));
-            while self.changes.len() > MAX_CHANGES {
-                self.changes.pop_front();
-            }
+            self.trim_changes();
         }
         self.last_check = Some(time);
         self.last_msg = msg.to_string();
