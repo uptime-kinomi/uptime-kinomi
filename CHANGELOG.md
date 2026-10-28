@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- `HEAD` on a percent-encoded push URL (`/%70ush/<token>`) still counted
+  as a push: the method check used the raw path. Now every decision uses
+  the decoded path.
+- Built-in server: every response has `Cache-Control` (before, `401`,
+  `429` and redirects below `/private/` had none, and a `301` is cacheable
+  by default); the 10 s write timeout covers the whole response; the
+  accept loop pauses after an error (e.g. out of file descriptors) instead
+  of spinning.
+- `http.url` with a user name or password (`https://user:pw@...`) is
+  rejected (it was shown on private pages); `check-config` warns about
+  credential headers (`Authorization`, API keys, ...) in monitor files that
+  are readable by all users.
+
+### Added
+- `check-config` warns when `data_dir`, `log_dir` or `output_dir` is inside
+  the configuration directory (deleted when the directory is deployed by
+  replacing it, as the Ansible roles do).
+
 ### Fixed
 - A state file with an incomplete `last_error` pair was half loaded before
   being rejected; the following replay then skipped the data it had not
@@ -13,9 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   behind (regression in 0.5.0).
 - Replay counted `event=NOTIFY` lines against `covered_events`, so a result
   of the same second could be counted twice (regression in 0.5.0).
-- `HEAD` on a percent-encoded push URL (`/%70ush/<token>`) still counted
-  as a push: the method check used the raw path. Now every decision uses
-  the decoded path.
 - If removing stale pages at startup kept failing, every render rewrote
   all files (SD card wear). The cleanup is now tried once and its error
   reported; the pages count as written.
@@ -47,39 +63,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Ansible root role: installs `sudo` (needed for commands as
   `KINOMI_USER`), and test-runs a downloaded binary as `KINOMI_USER`, not
   as root.
-- Built-in server: every response has `Cache-Control` (before, `401`,
-  `429` and redirects below `/private/` had none, and a `301` is cacheable
-  by default); the 10 s write timeout covers the whole response; the
-  accept loop pauses after an error (e.g. out of file descriptors) instead
-  of spinning.
 - The Atom feed was invalid without `server.base_url`: entries without a
   link need content. Every entry now has content (its title if there is no
   text).
 - A monitor that came back from DOWN straight into WARN (e.g. with an
   expiring certificate) sent only `up`; now also `warn` (at most once per
   24 h as before).
-- `http.url` with a user name or password (`https://user:pw@...`) is
-  rejected (it was shown on private pages); `check-config` warns about
-  credential headers (`Authorization`, API keys, ...) in monitor files that
-  are readable by all users.
 
 ### Changed
 - The uptime badge moved from `badge/{monitor}-uptime.svg` to
   `badge/uptime/{monitor}.svg`: monitor `web-uptime`'s state badge and
   monitor `web`'s uptime badge had the same name, and one overwrote the
   other.
-
-### Added
-- `check-config` warns when `data_dir`, `log_dir` or `output_dir` is inside
-  the configuration directory (deleted when the directory is deployed by
-  replacing it, as the Ansible roles do).
-
-### Changed
-- Ansible roles: the configuration is sent as one archive and unpacked on
-  the target, instead of one transfer per file (twice: staging and live).
-  On a Raspberry Pi 1 under load a run went from about 20 to 13 minutes;
-  the gain grows with the number of files. The live directory is replaced
-  only if something differs.
+- Ansible roles: the configuration is sent as one archive instead of one
+  transfer per file (twice). Ansible Vault files are decrypted and symlinks
+  followed on the controller; on the target the archive is unpacked into an
+  emptied staging directory (by `KINOMI_USER` in the root role), checked,
+  and replaces the live directory only if something differs. The roles stop
+  if `data_dir`, `log_dir` or `output_dir` is inside the configuration
+  directory. A complete run takes about 4.5 minutes on an idle Raspberry
+  Pi 1.
 
 ## [0.5.0] - 2026-10-27
 
