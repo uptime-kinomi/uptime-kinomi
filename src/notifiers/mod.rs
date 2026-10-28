@@ -337,6 +337,10 @@ pub fn post_json(
         request = request.header(*name, *value);
     }
     match request.send(body) {
+        // Redirects are not followed, so a 3xx means nothing was delivered.
+        Ok(response) if !response.status().is_success() => {
+            Err(format!("HTTP {}", response.status().as_u16()))
+        }
         Ok(_) => Ok(()),
         Err(ureq::Error::StatusCode(code)) => Err(format!("HTTP {code}")),
         Err(e) => Err(crate::monitors::http::error_message(&e)),
@@ -349,15 +353,20 @@ pub struct Job {
     pub message: Arc<Message>,
 }
 
-/// Send queued notifications one after the other, with retries, and report
-/// each result back to the event loop.
-pub fn spawn(notifiers: Arc<Vec<Notifier>>, jobs: Receiver<Job>, events: Sender<Event>) {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+/// The HTTP client for all notifiers: no redirects (SPEC.md §5.3).
+fn new_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
         .timeout_global(Some(REQUEST_TIMEOUT))
         .max_redirects(0)
         .user_agent(format!("uptime-kinomi/{}", env!("CARGO_PKG_VERSION")))
         .build()
-        .new_agent();
+        .new_agent()
+}
+
+/// Send queued notifications one after the other, with retries, and report
+/// each result back to the event loop.
+pub fn spawn(notifiers: Arc<Vec<Notifier>>, jobs: Receiver<Job>, events: Sender<Event>) {
+    let agent = new_agent();
     let spawned = thread::Builder::new()
         .name("notifier".into())
         .spawn(move || {
@@ -457,11 +466,9 @@ pub mod tests {
         (format!("http://{addr}"), rx)
     }
 
+    /// The same client as in production.
     pub fn agent() -> ureq::Agent {
-        ureq::Agent::config_builder()
-            .timeout_global(Some(Duration::from_secs(5)))
-            .build()
-            .new_agent()
+        new_agent()
     }
 
     #[test]

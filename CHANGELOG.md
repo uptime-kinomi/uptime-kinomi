@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - If removing stale pages at startup kept failing, every render rewrote
   all files (SD card wear). The cleanup is now tried once and its error
   reported; the pages count as written.
+- A notification endpoint that answered with a redirect (e.g. an `http://`
+  ntfy URL redirecting to https) was logged as delivered (`ok=true`) without
+  delivering anything. Any non-2xx answer is now an error (`HTTP 301`) and
+  retried.
 
 ### Added
 - `check-config` warns when `data_dir`, `log_dir` or `output_dir` is inside

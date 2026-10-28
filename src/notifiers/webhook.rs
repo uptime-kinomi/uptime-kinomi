@@ -127,5 +127,17 @@ mod tests {
             hook.send(&agent(), &message(Kind::Up)),
             Err("HTTP 500".into())
         );
+
+        // A redirect is not followed, so nothing was delivered.
+        let (url, _rx) =
+            capture_server("301 Moved Permanently\r\nLocation: https://elsewhere.example/");
+        let hook = Webhook {
+            url,
+            format: Format::Json,
+        };
+        assert_eq!(
+            hook.send(&agent(), &message(Kind::Up)),
+            Err("HTTP 301".into())
+        );
     }
 }
