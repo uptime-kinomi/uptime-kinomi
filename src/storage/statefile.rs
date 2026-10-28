@@ -232,6 +232,16 @@ pub fn from_toml(text: &str, monitor: &str, history: &mut History) -> Result<(),
         let day = clock::parse_date(key).ok_or("invalid daily key")?;
         restored.daily.insert(day, b.bucket());
     }
+    // Everything is parsed: only now change `history`, so a broken file
+    // leaves it untouched (and the log replay fills it completely).
+    let last_error = match (
+        time("last_error_time", &file.last_error_time)?,
+        file.last_error,
+    ) {
+        (Some(t), Some(msg)) => Some((t, msg)),
+        (None, None) => None,
+        _ => return Err("last_error and last_error_time go together".into()),
+    };
     history.restore(
         restored.state,
         restored.state_since,
@@ -241,14 +251,7 @@ pub fn from_toml(text: &str, monitor: &str, history: &mut History) -> Result<(),
         restored.covered_until,
     );
     history.covered_events = file.covered_events.unwrap_or(u32::MAX);
-    history.last_error = match (
-        time("last_error_time", &file.last_error_time)?,
-        file.last_error,
-    ) {
-        (Some(t), Some(msg)) => Some((t, msg)),
-        (None, None) => None,
-        _ => return Err("last_error and last_error_time go together".into()),
-    };
+    history.last_error = last_error;
     history.recent = restored.recent;
     history.hourly = restored.hourly;
     history.daily = restored.daily;
@@ -385,6 +388,11 @@ mod tests {
             good.replace("DOWN -", "DOWN"),
             good.replace("2026-10-22T13\"", "2026-10-22T25\""),
             good.replace("timed = 1 }", "timed = 1, extra = 2 }"),
+            good.lines()
+                .filter(|l| !l.starts_with("last_error = "))
+                .map(|l| format!("{l}\n"))
+                .collect(),
+            good.replace("last_error_time = \"", "last_error_time = \"x"),
             "garbage".to_string(),
         ] {
             let mut h = History::new(50, 400);

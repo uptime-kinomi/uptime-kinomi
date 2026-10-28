@@ -88,6 +88,11 @@ fn apply(
     let Some(history) = histories.get_mut(monitor) else {
         return; // monitor no longer configured
     };
+    // Only results (incl. SKIPPED) are in a history and in covered_events;
+    // other lines of the monitor (event=NOTIFY) must not use up the count.
+    if line.get("result").is_none() {
+        return;
+    }
     if let Some((until, included)) = covered.get_mut(monitor) {
         if line.time < *until {
             return;
@@ -240,6 +245,7 @@ mod tests {
             dir.path(),
             "2026-10-22.log",
             &[
+                "2026-10-22T10:00:05Z event=NOTIFY monitor=a notifier=phone kind=down ok=true",
                 "2026-10-22T10:00:05Z monitor=a result=SKIPPED count=1 msg=\"queue full\"",
                 "2026-10-22T10:00:05Z monitor=a result=DOWN msg=timeout",
             ],

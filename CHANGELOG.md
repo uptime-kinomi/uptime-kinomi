@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- A state file with an incomplete `last_error` pair was half loaded before
+  being rejected; the following replay then skipped the data it had not
+  loaded (heartbeat bar, totals, changes). Now a broken file leaves nothing
+  behind (regression in 0.5.0).
+- Replay counted `event=NOTIFY` lines against `covered_events`, so a result
+  of the same second could be counted twice (regression in 0.5.0).
+
 ### Changed
 - Ansible roles: the configuration is sent as one archive and unpacked on
   the target, instead of one transfer per file (twice: staging and live).
