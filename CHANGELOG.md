@@ -52,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   by default); the 10 s write timeout covers the whole response; the
   accept loop pauses after an error (e.g. out of file descriptors) instead
   of spinning.
+- The Atom feed was invalid without `server.base_url`: entries without a
+  link need content. Every entry now has content (its title if there is no
+  text).
 
 ### Changed
 - The uptime badge moved from `badge/{monitor}-uptime.svg` to

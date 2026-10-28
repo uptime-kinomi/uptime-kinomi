@@ -120,9 +120,14 @@ pub fn feed(ctx: &Context, page: &Page, snap: &Snapshot, base_url: Option<&str>)
         if let Some(url) = &page_url {
             let _ = writeln!(out, "<link href=\"{}\"/>", esc(url));
         }
-        if !e.content.is_empty() {
-            let _ = writeln!(out, "<content type=\"text\">{}</content>", esc(&e.content));
-        }
+        // RFC 4287 §4.1.1: an entry without a link (no base_url) must have
+        // content; without text of its own, the title is the content.
+        let content = if e.content.is_empty() {
+            &e.title
+        } else {
+            &e.content
+        };
+        let _ = writeln!(out, "<content type=\"text\">{}</content>", esc(content));
         let _ = writeln!(out, "</entry>");
     }
     let _ = writeln!(out, "</feed>");

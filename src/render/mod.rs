@@ -656,6 +656,12 @@ mod tests {
         assert!(feed.contains("<title>DOWN: web</title>"), "{feed}");
         // UNKNOWN -> UP at the start is not an entry.
         assert_eq!(feed.matches("<entry>").count(), 2, "{feed}");
+        // Every entry has content (needed without a link, RFC 4287).
+        assert_eq!(feed.matches("<content type=\"text\">").count(), 2, "{feed}");
+        assert!(
+            feed.contains("<content type=\"text\">DOWN: web</content>"),
+            "{feed}"
+        );
         assert!(
             feed.contains(
                 "<link rel=\"self\" href=\"https://status.example.org/home/feed.atom\"/>"
