@@ -220,9 +220,12 @@ pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Co
         if monitor_list.is_empty() && !problems.has_errors() {
             problems.warning(&dir.join("monitors"), "no monitors configured");
         }
-        if let Some(g) = &global {
-            check_push(g, &monitor_list, &dir.join("monitors"), &mut problems);
-        }
+        check_push(
+            global.as_ref(),
+            &monitor_list,
+            &dir.join("monitors"),
+            &mut problems,
+        );
     }
 
     let mut notifier_list = Vec::new();
@@ -357,7 +360,12 @@ fn check_global_secrets(g: &Global, meta: &fs::Metadata, file: &Path, problems: 
 }
 
 /// Push tokens must be unique, and pushes need the built-in server.
-fn check_push(g: &Global, monitors: &[Monitor], monitors_dir: &Path, problems: &mut Problems) {
+fn check_push(
+    g: Option<&Global>,
+    monitors: &[Monitor],
+    monitors_dir: &Path,
+    problems: &mut Problems,
+) {
     let push: Vec<&Monitor> = monitors.iter().filter(|m| m.kind == Kind::Push).collect();
     for (i, a) in push.iter().enumerate() {
         for b in &push[i + 1..] {
@@ -372,7 +380,8 @@ fn check_push(g: &Global, monitors: &[Monitor], monitors_dir: &Path, problems: &
             }
         }
     }
-    if !push.is_empty() && !g.server.enabled {
+    // Needs kinomi.toml; the duplicate check above does not.
+    if !push.is_empty() && g.is_some_and(|g| !g.server.enabled) {
         problems.warning(
             monitors_dir,
             "push monitors need the built-in server (server.enabled = true), or they will always be DOWN",
@@ -550,12 +559,16 @@ mod tests {
         dir.write("kinomi.toml", "config_version = 1\n[server\n");
         dir.write("monitors/bad.toml", "config_version = 1\ntype = \"tcp\"\n");
         dir.write("pages/home.toml", "anything");
+        let push = "config_version = 1\ntype = \"push\"\nname = \"p\"\n[push]\ntoken = \"abcdefghijklmnopqrstuvwxyz0123456789\"\n";
+        dir.write("monitors/p1.toml", push);
+        dir.write("monitors/p2.toml", push);
         let (config, problems) = load(dir.path(), &env, None);
         assert!(config.is_none());
         let all = format!("{problems:?}");
         assert!(all.contains("kinomi.toml"), "{all}");
         assert!(all.contains("monitors/bad.toml"), "{all}");
         assert!(all.contains("pages/home.toml"), "{all}");
+        assert!(all.contains("push token is the same"), "{all}");
     }
 
     #[test]

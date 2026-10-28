@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Update timer: a new version that crashed and was restarted by systemd
   within the 15 s check counted as running; now the main process must be
   the same after 15 s.
+- `check-config` with a broken `kinomi.toml` also reports duplicate push
+  tokens.
+- `install.sh` never overwrites a starter file (before, all of them were
+  written whenever `kinomi.toml` was missing), says that `--listen` only
+  applies to a new configuration, and its summary shows the address and
+  directories of the configuration in effect.
+- Ansible root role: installs `sudo` (needed for commands as
+  `KINOMI_USER`), and test-runs a downloaded binary as `KINOMI_USER`, not
+  as root.
 
 ### Changed
 - The uptime badge moved from `badge/{monitor}-uptime.svg` to

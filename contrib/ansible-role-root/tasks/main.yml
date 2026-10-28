@@ -8,6 +8,7 @@
       - curl
       - wget
       - minisign
+      - sudo # become_user (commands as KINOMI_USER)
     state: present
     cache_valid_time: 86400
 
@@ -90,7 +91,10 @@
           [ -n "$version" ] || { echo "unexpected trusted comment" >&2; exit 1; }
           sha256sum --check --ignore-missing --strict SHA256SUMS
           chmod 755 {{ kinomi_asset }}
-          ./{{ kinomi_asset }} version | grep -q "^uptime-kinomi $version (" ||
+          # The test run as KINOMI_USER, not as root.
+          chmod 711 .
+          runuser -u {{ KINOMI_USER | quote }} -- "$PWD/{{ kinomi_asset }}" version |
+              grep -q "^uptime-kinomi $version (" ||
               { echo "the binary does not report version $version" >&2; exit 1; }
         chdir: "{{ kinomi_download.path }}"
       changed_when: false

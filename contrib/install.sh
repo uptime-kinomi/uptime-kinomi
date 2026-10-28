@@ -197,12 +197,21 @@ host_names() {
     printf '%s' "$names"
 }
 
+# Write stdin to $1 unless it exists (a starter file is never overwritten).
+new_file() {
+    if [ -e "$1" ]; then
+        cat >/dev/null
+    else
+        cat >"$1"
+    fi
+}
+
 write_starter_config() {
     dir=$1
     listen=$2
     mkdir -p "$dir/monitors" "$dir/pages" "$dir/notifications"
     chmod 700 "$dir"
-    cat >"$dir/kinomi.toml" <<EOF
+    new_file "$dir/kinomi.toml" <<EOF
 # uptime-kinomi configuration (created by install.sh). Documentation:
 # https://github.com/uptime-kinomi/uptime-kinomi/blob/main/SPEC.md
 # After changes: uptime-kinomi check-config && systemctl --user restart uptime-kinomi
@@ -216,7 +225,7 @@ hostnames = [$(host_names)]
 timezone = "$(detect_timezone)"
 default_page = "home"
 EOF
-    cat >"$dir/monitors/example-web.toml" <<'EOF'
+    new_file "$dir/monitors/example-web.toml" <<'EOF'
 # An example HTTP monitor. Replace it with your own (one file per monitor).
 config_version = 1
 type = "http"
@@ -225,7 +234,7 @@ name = "example.org"
 [http]
 url = "https://example.org/"
 EOF
-    cat >"$dir/monitors/internet-dns.toml" <<'EOF'
+    new_file "$dir/monitors/internet-dns.toml" <<'EOF'
 # Is name resolution working? (asks the public resolver 9.9.9.9)
 config_version = 1
 type = "dns"
@@ -236,7 +245,7 @@ interval = "5m"
 name = "example.org"
 server = "9.9.9.9"
 EOF
-    cat >"$dir/pages/home.toml" <<'EOF'
+    new_file "$dir/pages/home.toml" <<'EOF'
 config_version = 1
 title = "Status"
 public = true
@@ -245,7 +254,7 @@ public = true
 name = "All"
 monitors = ["*"]
 EOF
-    cat >"$dir/README.txt" <<'EOF'
+    new_file "$dir/README.txt" <<'EOF'
 One file per monitor in monitors/, per notifier in notifications/, per
 status page in pages/. Examples of every file type:
 https://github.com/uptime-kinomi/uptime-kinomi/tree/main/contrib/examples/config
@@ -343,6 +352,7 @@ uninstall() {
 main() {
     version=""
     listen="127.0.0.1:8080"
+    listen_set=0
     service=1
     auto_update=1
     action=install
@@ -356,6 +366,7 @@ main() {
             --listen)
                 [ $# -ge 2 ] || die "--listen needs an address like 0.0.0.0:8080"
                 listen=$2
+                listen_set=1
                 shift
                 ;;
             --no-service) service=0 ;;
@@ -420,6 +431,9 @@ main() {
 
     if [ -e "$CONFIG_DIR/kinomi.toml" ]; then
         step "Keeping the existing configuration in $CONFIG_DIR"
+        if [ "$listen_set" = 1 ]; then
+            say "note: --listen only applies to a new configuration; set [server] listen in kinomi.toml"
+        fi
     else
         step "Creating a starter configuration in $CONFIG_DIR"
         write_starter_config "$CONFIG_DIR" "$listen"
@@ -475,9 +489,13 @@ main() {
         else
             say "  updates:       uptime-kinomi self-update (weekly timer not enabled)"
         fi
-        say "  status page:   http://$listen/"
-        say "  pages:         /run/user/$(id -u)/uptime-kinomi/www (tmpfs)"
-        say "  data, logs:    ${XDG_STATE_HOME:-$HOME/.local/state}/uptime-kinomi"
+        # From the configuration in effect (an existing one may differ).
+        dirs=$("$BIN_DIR/uptime-kinomi" check-config --config-dir "$CONFIG_DIR" 2>/dev/null || true)
+        address=$(sed -n 's/^listen *= *"\(.*\)".*/\1/p' "$CONFIG_DIR/kinomi.toml" | head -n 1)
+        say "  status page:   http://${address:-127.0.0.1:8080}/"
+        say "  pages:         $(printf '%s\n' "$dirs" | sed -n 's/^output dir: *//p')"
+        say "  data:          $(printf '%s\n' "$dirs" | sed -n 's/^data dir: *//p')"
+        say "  check log:     $(printf '%s\n' "$dirs" | sed -n 's/^log dir: *//p')"
         if [ "$linger" != yes ]; then
             say ""
             say "To keep it running after you log out and to start it at boot, run once:"
