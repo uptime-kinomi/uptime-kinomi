@@ -156,6 +156,14 @@ pub fn run(mut config: Config) -> Result<(), String> {
             ("monitors", &enabled),
         ],
     );
+    // So a rebuild from the log knows which monitors were disabled (the
+    // `paused` key of the state file, SPEC.md §4.6).
+    for m in service.monitors.iter().filter(|m| !m.enabled) {
+        service.log.record(
+            SystemTime::now(),
+            &[("event", "DISABLED"), ("monitor", m.id.as_str())],
+        );
+    }
     service.flush();
     eprintln!("uptime-kinomi {VERSION}: {enabled} monitors");
     eprintln!("  config: {}", config_dir.display());
@@ -405,15 +413,16 @@ impl Service {
             .collect();
         let now = clock::unix_seconds(SystemTime::now());
         // A monitor that was already DOWN before the restart gets no new
-        // DOWN notification, and its reminders continue from now.
+        // DOWN notification, and its reminders keep their schedule.
         let notify = monitors
             .iter()
             .map(|m| {
                 let h = &histories[&m.id];
                 if h.state == State::Down {
+                    let resend = i64::try_from(m.resend_interval.as_secs()).unwrap_or(i64::MAX);
                     NotifyState {
                         down_since: h.state_since,
-                        last_down_notice: Some(now),
+                        last_down_notice: Some(last_reminder_slot(h.state_since, now, resend)),
                         last_warn_notice: None,
                     }
                 } else {
@@ -841,6 +850,17 @@ fn first_push_wait(now: i64, r: RestoredPush, interval: Duration, grace: Duratio
     due.saturating_sub(since).max(grace)
 }
 
+/// Reminders come every `resend` seconds after the monitor went DOWN at
+/// `since`, also across restarts (else frequent restarts would postpone
+/// them forever). The last slot before `now` counts as sent: one that was
+/// due while kinomi was not running is not sent late.
+fn last_reminder_slot(since: Option<i64>, now: i64, resend: i64) -> i64 {
+    match since {
+        Some(since) if resend > 0 && since <= now => since + (now - since) / resend * resend,
+        _ => now,
+    }
+}
+
 /// The notifications a state change is worth (SPEC.md §5.1), updating
 /// `ns`. `resend`: reminder interval in seconds, 0 = none.
 fn notify_events(
@@ -917,6 +937,21 @@ mod tests {
 
     fn kinds(events: &[(Kind, Option<i64>)]) -> Vec<Kind> {
         events.iter().map(|(k, _)| *k).collect()
+    }
+
+    #[test]
+    fn reminders_keep_their_schedule_across_restarts() {
+        let day = 86_400;
+        // DOWN since day 0, reminders every 2 days, restarted on day 3:
+        // the next reminder on day 4, not on day 5.
+        assert_eq!(last_reminder_slot(Some(0), 3 * day, 2 * day), 2 * day);
+        assert_eq!(last_reminder_slot(Some(0), 3 * day + 1, 2 * day), 2 * day);
+        // On day 1: day 2.
+        assert_eq!(last_reminder_slot(Some(0), day, 2 * day), 0);
+        // No reminders, no DOWN time, clock before it: from now.
+        assert_eq!(last_reminder_slot(Some(0), day, 0), day);
+        assert_eq!(last_reminder_slot(None, day, 3600), day);
+        assert_eq!(last_reminder_slot(Some(2 * day), day, 3600), day);
     }
 
     #[test]

@@ -82,12 +82,31 @@ fn apply(
     histories: &mut HashMap<String, History>,
     covered: &mut HashMap<String, (i64, u32)>,
 ) {
+    // Disabled monitors are logged after each START (SPEC.md §7.1).
+    let newer = |id: &str, covered: &HashMap<String, (i64, u32)>| {
+        covered.get(id).is_none_or(|(until, _)| line.time >= *until)
+    };
+    if line.get("event") == Some("START") {
+        for (id, history) in histories.iter_mut() {
+            if newer(id, covered) {
+                history.paused = false;
+            }
+        }
+        return;
+    }
     let Some(monitor) = line.get("monitor") else {
         return;
     };
+    let is_newer = newer(monitor, covered);
     let Some(history) = histories.get_mut(monitor) else {
         return; // monitor no longer configured
     };
+    if line.get("event") == Some("DISABLED") {
+        if is_newer {
+            history.paused = true;
+        }
+        return;
+    }
     // Only results (incl. SKIPPED) are in a history and in covered_events;
     // other lines of the monitor (event=NOTIFY) must not use up the count.
     if line.get("result").is_none() {
@@ -307,6 +326,35 @@ mod tests {
         );
         // Nothing new for b.
         assert_eq!(histories["b"].recent.len(), 0);
+    }
+
+    #[test]
+    fn disabled_monitors_are_replayed() {
+        let dir = TestDir::new("replay-disabled");
+        write_log(
+            dir.path(),
+            "2026-10-22.log",
+            &[
+                "2026-10-22T10:00:00Z event=START version=0.6.0 monitors=1",
+                "2026-10-22T10:00:00Z event=DISABLED monitor=a",
+                "2026-10-22T10:00:00Z event=DISABLED monitor=b",
+                "2026-10-22T11:00:00Z event=START version=0.6.0 monitors=2",
+                "2026-10-22T11:00:00Z event=DISABLED monitor=b",
+            ],
+        );
+        let mut histories = HashMap::new();
+        for id in ["a", "b", "c"] {
+            histories.insert(id.to_string(), History::new(50, 400));
+        }
+        // c's state file is newer than the log: it decides.
+        let c = histories.get_mut("c").unwrap();
+        c.paused = true;
+        c.covered_until = clock::parse_rfc3339("2026-10-22T12:00:00Z");
+        replay(dir.path(), &mut histories).unwrap();
+        // a was enabled again at the last start, b is still disabled.
+        assert!(!histories["a"].paused);
+        assert!(histories["b"].paused);
+        assert!(histories["c"].paused);
     }
 
     #[test]

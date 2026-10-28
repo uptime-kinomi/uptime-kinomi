@@ -378,18 +378,20 @@ pub fn parse(
     })
 }
 
+/// A DNS name or an IP address (IPv6 without brackets, e.g. `::1`).
 fn is_valid_hostname(host: &str) -> bool {
-    !host.is_empty()
-        && host.len() <= 253
-        && host.split('.').all(|label| {
-            !label.is_empty()
-                && label.len() <= 63
-                && !label.starts_with('-')
-                && !label.ends_with('-')
-                && label
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        })
+    host.parse::<std::net::Ipv6Addr>().is_ok()
+        || !host.is_empty()
+            && host.len() <= 253
+            && host.split('.').all(|label| {
+                !label.is_empty()
+                    && label.len() <= 63
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            })
 }
 
 /// "UTC" or "Area/Location[/More]" with the characters used by the tz database.
@@ -546,7 +548,11 @@ notifications = ["ntfy-home"]
     fn hostnames() {
         assert!(is_valid_hostname("status.example.org"));
         assert!(is_valid_hostname("localhost"));
-        for bad in ["", "a..b", "-a.org", "a-.org", "a_b.org", "a b", "ä.org"] {
+        assert!(is_valid_hostname("::1"));
+        assert!(is_valid_hostname("2001:db8::1"));
+        for bad in [
+            "", "a..b", "-a.org", "a-.org", "a_b.org", "a b", "ä.org", "[::1]", ":::",
+        ] {
             assert!(!is_valid_hostname(bad), "{bad}");
         }
     }

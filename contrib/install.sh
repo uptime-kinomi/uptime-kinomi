@@ -180,6 +180,9 @@ detect_timezone() {
 # Allowed Host headers for the built-in server: local names and addresses.
 host_names() {
     names="\"localhost\", \"127.0.0.1\""
+    case "$listen" in
+        "["*) names="$names, \"::1\"" ;; # IPv6: http://[::1]:PORT/
+    esac
     h=$(hostname 2>/dev/null || true)
     case "$h" in
         "" | *[!A-Za-z0-9.-]*) ;;

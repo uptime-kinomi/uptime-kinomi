@@ -342,7 +342,10 @@ fn host_allowed(host: Option<&str>, allowed: &[String]) -> bool {
             }
         })
     };
-    allowed.iter().any(|a| a.eq_ignore_ascii_case(name))
+    let ip = name.parse::<std::net::IpAddr>().ok();
+    allowed
+        .iter()
+        .any(|a| a.eq_ignore_ascii_case(name) || (ip.is_some() && a.parse().ok() == ip))
 }
 
 /// Path without query, percent-decoded once, with no tricks allowed.
@@ -582,6 +585,8 @@ mod tests {
         assert!(!host_allowed(Some("status.example.org.evil.com"), &allowed));
         assert!(host_allowed(Some("anything"), &[]));
         assert!(host_allowed(Some("[::1]:8080"), &["::1".to_string()]));
+        assert!(host_allowed(Some("[0:0::1]"), &["::1".to_string()]));
+        assert!(!host_allowed(Some("[::2]:8080"), &["::1".to_string()]));
     }
 
     #[test]
