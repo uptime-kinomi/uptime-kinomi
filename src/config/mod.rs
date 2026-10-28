@@ -585,9 +585,15 @@ mod tests {
             "notifications/hook.toml",
             "config_version = 1\ntype = \"webhook\"\n[webhook]\nurl = \"https://chat.example.org/hooks/secret\"\n",
         );
+        let api = dir.write(
+            "monitors/api.toml",
+            "config_version = 1\ntype = \"http\"\nname = \"API\"\n[http]\n\
+             url = \"https://api.example.org/\"\nheaders = { \"X-Api-Key\" = \"k\" }\n",
+        );
         for f in [
             &global,
             &htpasswd,
+            &api,
             &dir.path().join("notifications/hook.toml"),
         ] {
             fs::set_permissions(f, fs::Permissions::from_mode(0o644)).unwrap();
@@ -598,6 +604,7 @@ mod tests {
         assert!(has("heartbeat.url"), "{warnings:?}");
         assert!(has("htpasswd: is readable by all users"), "{warnings:?}");
         assert!(has("contains webhook.url"), "{warnings:?}");
+        assert!(has("credentials in http.headers"), "{warnings:?}");
 
         // Private files, and a webhook URL from url_file: no warnings.
         let url = dir.write("secrets/hook.url", "https://chat.example.org/hooks/other\n");
@@ -608,6 +615,7 @@ mod tests {
         for f in [
             &global,
             &htpasswd,
+            &api,
             &url,
             &dir.path().join("notifications/hook.toml"),
             &dir.path().join("notifications/hook2.toml"),

@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A monitor that came back from DOWN straight into WARN (e.g. with an
   expiring certificate) sent only `up`; now also `warn` (at most once per
   24 h as before).
+- `http.url` with a user name or password (`https://user:pw@...`) is
+  rejected (it was shown on private pages); `check-config` warns about
+  credential headers (`Authorization`, API keys, ...) in monitor files that
+  are readable by all users.
 
 ### Changed
 - The uptime badge moved from `badge/{monitor}-uptime.svg` to

@@ -112,6 +112,9 @@ pub fn build(
         p.error("http.url must start with http:// or https://");
     } else if file.url.len() > 2048 || ureq::http::Uri::try_from(file.url.as_str()).is_err() {
         p.error("http.url is not a valid URL");
+    } else if origin(&file.url).contains('@') {
+        // It would be shown on private pages, and is a secret in the file.
+        p.error("http.url must not contain a user name or password (use basic_auth_user)");
     }
 
     let expected = match &file.expected_status {
@@ -167,6 +170,18 @@ pub fn build(
     }
 
     let mut warnings = Vec::new();
+    // Headers often carry credentials (Authorization, API keys).
+    let secret_header = |name: &str| {
+        let name = name.to_ascii_lowercase();
+        ["auth", "cookie", "key", "token", "secret"]
+            .iter()
+            .any(|word| name.contains(word))
+    };
+    if is_world_readable(ctx.file_meta) && headers.iter().any(|(name, _)| secret_header(name)) {
+        warnings.push(
+            "contains credentials in http.headers but is readable by all users (chmod o-r)".into(),
+        );
+    }
     let password_file = file
         .basic_auth_password_file
         .map(|f| resolve_path(ctx.config_dir, &f));
@@ -911,6 +926,7 @@ mod tests {
     fn config_errors() {
         for (table, expected) in [
             ("url = \"ftp://x/\"", "http://"),
+            ("url = \"https://user:pw@x/\"", "user name or password"),
             ("url = \"https://exa mple.org/\"", "valid URL"),
             (
                 "url = \"https://x/\"\nexpected_status = []",
