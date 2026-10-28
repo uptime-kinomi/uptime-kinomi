@@ -1,6 +1,6 @@
 # uptime-kinomi — Specification
 
-Status: **draft**, milestones M0 to M4 implemented and tested on a Raspberry Pi 1 (see §13)
+Status: **draft**, milestones M0 to M4 and fuzzing done, tested on a Raspberry Pi 1 (see §13)
 License: MIT
 
 uptime-kinomi is a self-hosted uptime monitor in the spirit of
@@ -16,11 +16,12 @@ Keywords in this document: **MUST**, **SHOULD**, **MAY** as in RFC 2119.
 
 ### Goals
 - Written in Rust. The crate uses `#![forbid(unsafe_code)]`. Dependencies are
-  few, checked in CI (`cargo-deny`: licenses, advisories, duplicates), and
+  few, checked in CI (`cargo-deny`: licenses and advisories; duplicate
+  versions are reported), and
   justified in `AGENTS.md`.
 - Simple code structure: **one source file per monitor type** and **one source
-  file per notification type**. Adding a type means adding one file and one
-  registry line.
+  file per notification type**. Adding a type means one new file plus a few
+  registry lines in `src/monitors/mod.rs` (see AGENTS.md).
 - Configuration only via TOML files: one global file, **one file per
   monitor, notification, status page, incident and maintenance window**. This
   makes deployment with Ansible/Salt/NixOS/plain `scp` trivial.
@@ -43,8 +44,8 @@ Keywords in this document: **MUST**, **SHOULD**, **MAY** as in RFC 2119.
 - No JavaScript, no charts that require JavaScript.
 - Not a metrics/observability platform (use Prometheus for that; kinomi
   MAY expose a minimal `/metrics`, §9.5).
-- **Linux only.** No Windows or macOS: kinomi relies on Unix permissions,
-  `/proc`, `/run/user/<uid>` and systemd (§10). Other Unix systems are
+- **Linux only.** No Windows or macOS: kinomi relies on Unix permissions and
+  `/proc`, and uses `/run/user/<uid>` and systemd where available (§10). Other Unix systems are
   neither built nor tested.
 
 ### Resource targets (Raspberry Pi 1, 50 monitors, 60 s interval)
@@ -117,7 +118,8 @@ installation uses `/etc/uptime-kinomi`. The directory structure is the same:
   silently.
 - Durations are strings with a unit: `"500ms"`, `"30s"`, `"5m"`, `"2h"`, `"1d"`.
 - Config files are limited to 64 KiB each. Durations are at most `3650d`.
-  Other limits are listed with the keys (§3.3, §4, §8.1, §14).
+  Other limits are listed with the keys (§3.3, §4, §5, §8.1, §14). Secret
+  files are at most 4096 bytes.
 - Relative paths in any config file are resolved against the configuration
   directory, so a configuration directory can be copied between machines and
   users unchanged.
@@ -130,8 +132,9 @@ installation uses `/etc/uptime-kinomi`. The directory structure is the same:
   (`systemctl restart uptime-kinomi`). Startup is designed to be fast.
 - `uptime-kinomi check-config [--config-dir DIR]` validates the whole
   configuration (syntax, types, references between files, duplicate push
-  tokens, file permissions) and exits non-zero on error. Suitable for Ansible's
-  `validate:` parameter and CI.
+  tokens, file permissions) and exits non-zero on error. Suitable for CI and
+  deployment tools; it checks a whole directory (not a single file), so with
+  Ansible check a staging copy first, as the roles in `contrib/` do.
 
 ### 3.3 Global file `kinomi.toml`
 
@@ -142,17 +145,19 @@ config_version = 1
 enabled = true                       # built-in HTTP server (§9)
 listen = "127.0.0.1:8080"            # default; behind a reverse proxy
 hostnames = ["status.example.org"]   # allowed Host headers; empty = any (warns)
-base_url = "https://status.example.org"  # absolute URLs in feeds, badges, notifications
+base_url = "https://status.example.org"  # absolute links in the Atom feed (§8.7)
 htpasswd_file = "htpasswd"           # relative to the config dir; needed if any page is private
 metrics = false                      # /metrics (§9.5); needs htpasswd_file
 
 [pages]
 # output_dir = "..."                 # default: see §10.6; may be a tmpfs, see §10.2
 render_interval = "60s"              # min 10s
-timezone = "Europe/Berlin"           # IANA name, default "UTC"; display only, storage is UTC
+timezone = "Europe/Berlin"           # IANA name, default "UTC"; for display and maintenance
+                                     # windows (§14.2); storage is always UTC
 custom_css = "custom.css"            # optional, appended after default CSS
 auto_refresh = "60s"                 # <meta http-equiv="refresh">, "0s" disables, else min 10s
-default_page = "home"                # page served at "/"; default: the first public page
+default_page = "home"                # "/" redirects to it (may be private); default: the
+                                     # public page with the alphabetically first ID
 recent_checks = 50                   # length of the heartbeat bar, 1-200
 
 [storage]
@@ -175,7 +180,7 @@ interval = "60s"                     # default 60s, min 10s
 interval = "60s"
 timeout = "10s"
 retries = 1                          # max 10
-notifications = ["ntfy-home"]
+notifications = ["phone"]
 ```
 
 ---
@@ -191,8 +196,8 @@ name = "My blog"              # display name, 1-100 characters (HTML-escaped on 
 description = "..."           # optional, max 1000 characters, shown on private pages only
 interval = "60s"              # min "10s"
 timeout = "10s"               # must be < interval (not for push: warns)
-retries = 1                   # 0-10 consecutive failures before DOWN (state PENDING in between)
-notifications = ["ntfy-home", "telegram-me"]   # notifier IDs
+retries = 1                   # 0-10; failures tolerated: DOWN after retries + 1 in a row (PENDING before)
+notifications = ["phone", "telegram"]   # notifier IDs
 resend_interval = "0s"        # repeat DOWN notification while down; 0 = never
                               # (checked with each result, so at most once per interval)
 enabled = true                # false: not checked, shown as PAUSED
@@ -207,12 +212,13 @@ tags = ["web", "family"]      # optional, usable for page groups; same rules as 
 | `WARN` | Succeeded, but a warning condition holds (e.g. certificate expires soon, slow response) | up |
 | `PENDING` | Failed, but `retries` not yet exhausted | up |
 | `DOWN` | Failed `retries + 1` times in a row | down |
-| `MAINTENANCE` | Inside a maintenance window (§14.2) | excluded |
+| `MAINTENANCE` | Inside a maintenance window (§14.2); shown only, derived from the windows, never stored or in `changes` | excluded |
 | `UNKNOWN` | No data yet (after first start) | excluded |
 
 After a restart a monitor continues where it was: `DOWN` stays down
-(§5.1), and `PENDING` keeps counting the failures in a row from the
-heartbeat bar towards `DOWN`.
+(§5.1), and `PENDING` keeps counting the FAIL results in a row at the end
+of the heartbeat bar (SKIPPED and MAINT entries do not interrupt the row;
+at least 1, at most `retries`; a bar shorter than the row counts less).
 
 A disabled monitor (`enabled = false`) is shown as `PAUSED` and counts in
 nothing. A **skipped** check (§6) is not a state. It is logged as `result=SKIPPED`,
@@ -274,17 +280,18 @@ type = "dns"
 [dns]
 name = "example.org"         # may contain _ (e.g. "_dmarc.example.org")
 record_type = "A"           # A | AAAA | CNAME | MX | TXT | NS (default A)
-server = "1.1.1.1:53"       # optional (IPv4 or IPv6, port 53 if omitted);
-                            # default: first nameserver in /etc/resolv.conf
+server = "1.1.1.1:53"       # optional: "1.1.1.1", "1.1.1.1:53", "::1" or "[::1]:53";
+                            # default: first nameserver in /etc/resolv.conf, read at
+                            # startup (127.0.0.1:53 with a warning if there is none)
 expected = ["93.184.216.34"]  # optional, 1-32 values; check fails if the answer set differs
 ```
 
 Implemented with a minimal built-in DNS client: UDP, one question, EDNS with
 a 1232-byte buffer, random query ID, responses with another ID ignored,
 strict bounds-checked parser (at most 16 compression pointers per name, at
-most 64 answer records). No recursion of its own, no caching, no DNSSEC
+most 64 matching records). No recursion of its own, no caching, no DNSSEC
 validation, no TCP fallback (a truncated answer fails: `DNS response
-truncated`) in v1.
+truncated`).
 
 - Records of the requested type behind a CNAME chain in the answer count
   (e.g. `www.github.com` type `A`). `record_type = "CNAME"` checks the CNAME
@@ -302,7 +309,7 @@ truncated`) in v1.
 ```toml
 type = "push"
 interval = "5m"            # expected push interval
-grace = "1m"               # extra time before the monitor fails
+grace = "1m"               # push only: extra time before the monitor fails (default 1m, max 1d)
 [push]
 token_file = "secrets/backup-job.token"   # relative to the config dir; or token = "..."
 ```
@@ -325,8 +332,9 @@ token_file = "secrets/backup-job.token"   # relative to the config dir; or token
   max `1d`.
 - `?status=down` counts as a failed check (`msg="push: status=down"`).
 - After a restart, the first deadline is `interval + grace` from the start.
-- Push monitors are not polled, so they have no `timeout` and do not use the
-  queue. They need the built-in server (`check-config` warns otherwise).
+- Push monitors are not polled, so they have no `timeout` (a `timeout` in
+  the push monitor's file warns; `[defaults] timeout` does not apply) and do
+  not use the queue. `grace` is a top-level key of push monitors only. They need the built-in server (`check-config` warns otherwise).
 
 ### 4.7 Planned for later versions
 `ping` (ICMP; needs `CAP_NET_RAW` or `net.ipv4.ping_group_range`), `smtp`,
@@ -356,7 +364,10 @@ after 5 s and 30 s). Every result is logged:
 ```
 
 A monitor that is already DOWN when kinomi starts (restored from its state
-file) gets no new `down` notification; reminders continue from the start.
+file) gets no new `down` notification; its first reminder comes
+`resend_interval` after the start. After a maintenance window the state
+machine continues: a monitor that was DOWN before the window and is UP after
+it sends `up`.
 
 Notification text is generated by kinomi only. The text contains only
 kinomi's own check summary (status code, error class), never content fetched
@@ -376,7 +387,7 @@ type = "ntfy"
 events = ["down", "up", "warn", "reminder"]   # default: all
 ```
 
-### 5.3 Types in v1
+### 5.3 Types
 
 Endpoint URLs may be `http://` (e.g. ntfy or Gotify in the LAN) or
 `https://`, never with a user name or password in the URL. Redirects are not
@@ -458,7 +469,7 @@ Planned later: `smtp` (email), `matrix`, `pushover`, `signal` (via signal-cli RE
 - A check that is still running when its next one is due is never started twice.
 - Push monitors do not use the queue; their deadlines are evaluated by the
   event loop (every 500 ms, cheap).
-- Queue length, skip counts and the average check time are exposed on
+- Queue length, skip counts and the average response time are exposed on
   private pages and `/metrics` (refreshed with the pages, so up to 10
   minutes old when nothing else changes).
 
@@ -473,18 +484,18 @@ All timestamps stored are **UTC, RFC 3339, second precision**.
 - One line per event in [logfmt](https://brandur.org/logfmt) format, timestamp first:
 
 ```
+2026-10-22T14:00:00Z event=START version=0.5.0 monitors=42
 2026-10-22T14:03:11Z monitor=blog result=UP latency_ms=123 cert_expires=2026-12-01 msg="HTTP 200"
-2026-10-22T14:04:11Z monitor=blog result=FAIL latency_ms=10000 msg="timeout"
-2026-10-22T14:05:11Z monitor=blog result=DOWN latency_ms=10000 msg="timeout"
-2026-10-22T14:05:11Z event=NOTIFY monitor=blog notifier=ntfy-home kind=down ok=true
+2026-10-22T14:04:11Z monitor=shop result=FAIL latency_ms=10000 msg="timeout"
+2026-10-22T14:05:11Z monitor=shop result=DOWN latency_ms=10000 msg="timeout"
+2026-10-22T14:05:12Z event=NOTIFY monitor=shop notifier=phone kind=down ok=true
 2026-10-22T14:06:00Z monitor=nas result=SKIPPED count=1 msg="queue full"
 2026-10-22T14:06:02Z monitor=backup-job result=UP msg="push"
-2026-10-22T14:07:00Z event=CLOCK_JUMP delta_s=-31536000
-2026-10-22T18:26:13Z event=PAUSED duration_s=11756
-2026-10-22T18:26:13Z monitor=nas result=SKIPPED count=196 msg="paused"
-2026-10-22T14:07:00Z event=START version=0.1.0 monitors=42
 2026-10-22T14:07:30Z event=AUTH_FAIL count=3 throttled=0
 2026-10-22T14:08:00Z event=HEARTBEAT ok=false msg="timeout"
+2026-10-22T14:30:00Z event=CLOCK_JUMP delta_s=-75
+2026-10-22T18:26:13Z event=PAUSED duration_s=11756
+2026-10-22T18:26:13Z monitor=nas result=SKIPPED count=196 msg="paused"
 2026-10-22T22:00:00Z event=STOP
 ```
 
@@ -493,7 +504,7 @@ All timestamps stored are **UTC, RFC 3339, second precision**.
   `NOTIFY`, `HEARTBEAT`, `AUTH_FAIL`, `CLOCK_JUMP`, `PAUSED`, and
   `LOG_LINES_DROPPED count=N` if more than 10 000 lines were waiting for a
   flush.
-- `msg` values are generated by kinomi (§5.1) or are error classes of
+- `msg` values are generated by kinomi (§4, §5.1) or are error classes of
   notifiers and the heartbeat; max 120 characters. Other values are cut at
   200 characters. Values are quoted when needed, `"` and `\` escaped,
   control characters replaced by `?`.
@@ -537,8 +548,11 @@ changes = [
 "2026-10-21" = { up = 1440, down = 0, skipped = 0, maint = 0, avg_ms = 121, timed = 1440 }
 ```
 
-- `up` counts UP, WARN and FAIL results; `timed` is the number of results
-  with a response time (successful checks), the basis of `avg_ms`. Unknown
+- `up` counts UP, WARN and FAIL results; `timed` is the number of UP and
+  WARN results (their response time is the basis of `avg_ms`, which is 0
+  when `timed` is 0). In `recent`, `-` means no response time.
+  `cert_expires` is the exact expiry from the last check, or midnight UTC of
+  the logged date when rebuilt from the log. Unknown
   keys are an error; a state file that cannot be read is rebuilt from the
   log.
 - State files also keep the last 100 state changes (`changes`, for the
@@ -546,8 +560,9 @@ changes = [
 - At startup, kinomi loads state files and **replays log lines after
   `covered_until`** (and the events of that second beyond `covered_events`).
 - `uptime-kinomi rebuild-state` regenerates all state files from the logs
-  (limited to what `log_retention` still holds). Deleting the state directory is
-  always safe within the log retention.
+  (limited to what `log_retention` still holds). Deleting the state directory
+  is safe for everything within the log retention; daily totals older than
+  that (`history_retention` can be longer) are lost.
 
 ---
 
@@ -593,15 +608,23 @@ Per monitor:
 States are shown with a symbol: ✓ UP, ⚠ WARN, … PENDING, ✗ DOWN,
 ⚙ MAINTENANCE, ‖ PAUSED, ? NO DATA (`UNKNOWN` in `status.json` and badges).
 
-Per page: overall status banner ("All systems operational" / "Partial outage" /
-"Major outage", or "Maintenance" / "No data yet" when no monitor of the page
-has a measured state; paused monitors are left out), active and recent
-incidents, upcoming maintenance, time of last update (in the configured time
-zone).
+Per page: overall status banner, active and recent incidents, upcoming
+maintenance, time of last update (in the configured time zone). The banner,
+over the page's enabled monitors ("measured" = not UNKNOWN and not in
+maintenance; WARN and PENDING count as up):
+
+| Condition | Banner | `overall` (§8.6) |
+|---|---|---|
+| no measured monitor, at least one in maintenance | ⚙ Maintenance | `maintenance` |
+| no measured monitor | ? No data yet | `unknown` |
+| no measured monitor DOWN | ✓ All systems operational | `up` |
+| every measured monitor DOWN | ✗ Major outage | `down` |
+| otherwise | ⚠ Partial outage | `partial` |
 
 Private pages additionally show: monitor type and target, last error message,
 kinomi self-status (version, uptime, queue length, skipped checks in the last
-24 h, average check time over 24 h, render duration, last log flush).
+24 h, average response time of successful checks over 24 h, render
+duration, last log flush).
 
 ### 8.3 Generated files
 ```
@@ -669,7 +692,7 @@ page.
 ```json
 {
   "schema": 1,
-  "kinomi_version": "0.3.0",
+  "kinomi_version": "0.5.0",
   "page": "home",
   "title": "Our services",
   "generated": "2026-10-23T08:15:00Z",
@@ -753,7 +776,7 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 | `GET/HEAD /assets/...` | – | style sheet and favicon (also below `/private/`) |
 | `GET/POST /push/{token}` | token | §4.6 |
 | `GET/HEAD /healthz` | – | `200 ok` while the dispatcher and the event loop run (each seen within 10 s), else `503` |
-| `GET /metrics` | Basic Auth | Prometheus text format (optional, `server.metrics = true`, §9.5) |
+| `GET/HEAD /metrics` | Basic Auth | Prometheus text format (optional, `server.metrics = true`, §9.5) |
 
 ### 9.3 HTTP Basic Auth
 - Users and passwords live in an **htpasswd file with bcrypt hashes** (`htpasswd -B -C 10`),
@@ -781,7 +804,8 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
   within 5 s (one deadline, not per read, so slow clients cannot hold a
   handler), write timeout 10 s. 4 connections are served at a time and 12 more wait; any
   further connection is closed at once.
-- Only `GET`, `HEAD`, and `POST` for `/push/` → otherwise `405`.
+- Methods: `GET` and `HEAD`; on `/push/` `GET` and `POST` only. Anything else
+  gets `405` with the right `Allow` header. Routing uses the decoded path.
 - `Host` header must match `hostnames` → otherwise `421`.
 - Paths: percent-decoding once, reject (`400`) `..`, `//`, `\`, control
   characters, paths over 512 bytes, and serve nothing outside the generated
@@ -805,21 +829,23 @@ serves the [Prometheus text format](https://prometheus.io/docs/instrumenting/exp
 behind Basic Auth, regenerated with the pages:
 
 ```
-kinomi_build_info{version="0.3.0"} 1
-kinomi_start_time_seconds 1792678991
+kinomi_build_info{version="0.5.0"} 1
+kinomi_start_time_seconds 1792656000
 kinomi_queue_length 0
 kinomi_skipped_checks_24h 3
 kinomi_check_response_ms_24h 95
-kinomi_last_log_flush_timestamp_seconds 1792679021
+kinomi_last_log_flush_timestamp_seconds 1792743291
 kinomi_monitor_up{monitor="blog",type="http"} 1
 kinomi_monitor_uptime_ratio{monitor="blog",window="24h"} 0.9998
 kinomi_monitor_uptime_ratio{monitor="blog",window="30d"} 0.9995
 kinomi_monitor_response_ms_24h{monitor="blog"} 120
-kinomi_monitor_cert_expiry_timestamp_seconds{monitor="blog"} 1795996800
+kinomi_monitor_cert_expiry_timestamp_seconds{monitor="blog"} 1796083200
 ```
 
-`kinomi_monitor_up` is 1 for UP and WARN, 0 for PENDING and DOWN; monitors
-without data or in maintenance are left out of it. Disabled monitors are
+`kinomi_monitor_up` is the current health: 1 for UP and WARN, 0 for PENDING
+and DOWN (a failure is in progress, even if retries are left; the uptime
+ratio counts PENDING as up). Monitors without data or in maintenance are
+left out of it. Disabled monitors are
 left out of all per-monitor metrics, and values without data are left out.
 
 ---
@@ -850,13 +876,13 @@ kinomi runs on Linux only (§1), with the static musl binaries of §12.
 - Pages change at almost every render (heartbeat bars, durations). Measured
   on a Raspberry Pi 1 with 50 monitors every 60 s: about 370 KB of page
   files per render, i.e. roughly 500 MB per day. Therefore the default
-  `output_dir` is a tmpfs: `/run/user/<uid>/uptime-kinomi/www` (§10.6), or
-  `/run/uptime-kinomi/www` with the system unit. Losing the pages is
+  `output_dir` is a tmpfs: `/run/user/<uid>/uptime-kinomi/www` (§10.6); the
+  system configuration sets `/run/uptime-kinomi/www`. Losing the pages is
   harmless: they are regenerated from the state files within one render
   cycle. Log and state files together are about 0.3 MB per 10 minutes for
   the same setup.
 - Without `/run/user/<uid>` (no lingering, no login, e.g. `@reboot` in
-  crontab), pages go to the state directory on the SD card; set
+  crontab), pages go to `<data_dir>/www` on the SD card; set
   `output_dir` to a tmpfs or use `render_interval = "5m"`.
 - In mode B (§9.1) the proxy must read the pages: use the system unit
   (`/run/uptime-kinomi`, group `kinomi`); `/run/user/<uid>` is private to
@@ -864,7 +890,9 @@ kinomi runs on Linux only (§1), with the static musl binaries of §12.
 
 ### 10.3 Self-monitoring
 - Optional outbound heartbeat (`[heartbeat]`): a `GET` of `url` (15 s
-  timeout), then a pause of `interval`, e.g. the push URL of a second kinomi
+  timeout), then a pause of `interval` (so the period is the request time
+  plus `interval`). The URL is given inline only (kinomi warns if
+  `kinomi.toml` is readable by all users), e.g. the push URL of a second kinomi
   (two Pis monitoring each other) or of a service like healthchecks.io. The
   first result and every change (`ok`, or the error class) are logged
   (`event=HEARTBEAT ok=true|false msg=...`), so a long outage does not flood
@@ -930,19 +958,20 @@ Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error,
   - `ansible-role-user`: kinomi runs as the login user; no become.
     `minisign` must be installed, and `loginctl enable-linger` must be
     allowed for the user (or done once by an administrator).
-  - `ansible-role-root`: Ansible logs in as root, installs `curl`, `wget`
-    and `minisign` with apt, and creates `KINOMI_USER` (default `kinomi`) if
+  - `ansible-role-root`: Ansible logs in as root, installs `curl`, `wget`,
+    `minisign` and `sudo` with apt, and creates `KINOMI_USER` (default `kinomi`) if
     it does not exist; files belong to that user and user commands run as it.
 - `release/sign-release.sh`: maintainer tool (§12.1).
 
 ### 10.6 Running without root
-kinomi is designed to run as an ordinary user. Nothing in v1 needs privileges:
+kinomi is designed to run as an ordinary user. Nothing needs privileges:
 it listens on an unprivileged port (default 8080), uses no raw sockets, and
 writes only to its own directories.
 
 **Default directories** (when not set in `kinomi.toml`). They depend only
 on the user (`$HOME`, `$XDG_STATE_HOME`, UID), never on how kinomi was
-started. The systemd service and a manual `uptime-kinomi run` of the same
+started (if you set `$XDG_STATE_HOME`, set it for the systemd user manager
+too, or set `data_dir`). The systemd service and a manual `uptime-kinomi run` of the same
 user (e.g. after `systemctl --user stop uptime-kinomi` for debugging)
 therefore use exactly the same directories and, from the same
 `kinomi.toml`, the same port. kinomi does not read `$STATE_DIRECTORY`,
@@ -981,7 +1010,7 @@ message of `run` print all directories.
 **Root is discouraged:** `run` with UID 0 (read from `/proc/self/status`,
 no `unsafe` needed) prints a warning recommending a dedicated user.
 
-**Features that will need privileges later** (not in v1) are optional and
+**Features that will need privileges later** (not implemented yet) are optional and
 documented with the least privilege needed, e.g. ICMP `ping` via the kernel
 setting `net.ipv4.ping_group_range` instead of root.
 
@@ -1189,7 +1218,8 @@ The router is being updated. Internet will be unavailable for a few minutes.
 
 - Shown on the pages above the monitors: **ongoing** (started, not ended),
   **scheduled** (start in the future) and **resolved** (ended within the
-  last 7 days). Older incidents stay in the feed for 30 days (§8.7).
+  last 7 days). An incident stays in the feed until 30 days after its end
+  (§8.7).
 - Incidents are pure information: they do not change monitor states.
 
 ### 14.2 Maintenance windows
@@ -1201,7 +1231,9 @@ title = "Weekly NAS backup"
 monitors = ["nas", "nextcloud"]   # monitor IDs, or ["*"]
 tags = ["backup"]                 # optional: also all monitors with these tags (monitors or tags needed)
 schedule = "weekly"               # once | daily | weekly
-start = "2026-10-25T03:00:00"     # local time in pages.timezone (no offset)
+start = "2026-10-25T03:00:00"     # local time in pages.timezone (no offset); a time that
+                                  # does not exist (DST gap) moves forward, a repeated
+                                  # one (DST end) is the first
 duration = "2h"                   # 1m to 7d; daily at most 1d
 ```
 

@@ -5,15 +5,21 @@ Deploys uptime-kinomi with Ansible logged in as **root**, for a systemd
 runs as root. Without root access, use
 [`ansible-role-user`](../ansible-role-user/) instead.
 
-- installs `curl`, `wget` and `minisign` with apt;
+- installs `curl`, `wget`, `minisign` and `sudo` with apt;
 - creates `KINOMI_USER` if it does not exist;
 - enables lingering for it, so the service starts at boot without a login;
 - if `~KINOMI_USER/.local/bin/uptime-kinomi` does not exist: downloads the
   latest release for the CPU, verifies the minisign signature of
   `SHA256SUMS` and the checksum, and installs it. An existing binary is
   never touched; updates are done by `self-update`;
-- copies the configuration to a staging directory, runs `check-config` on
-  it as `KINOMI_USER`, and only then replaces `~/.config/uptime-kinomi`;
+- sends the configuration as one archive (Ansible Vault files decrypted,
+  symlinks followed), unpacks it into an emptied staging directory, runs
+  `check-config` there as `KINOMI_USER`, and only then replaces
+  `~/.config/uptime-kinomi` with it, if anything differs. Files removed or
+  renamed in your configuration disappear on the target too. The role stops
+  if `data_dir`, `log_dir` or `output_dir` is inside the configuration
+  directory (they would be deleted). The target needs `tar`, `gzip` and
+  `diff`;
 - installs the units from `contrib/systemd/user/`, (re)starts the service
   and enables the weekly self-update timer, unless `kinomi_auto_update: false`.
 

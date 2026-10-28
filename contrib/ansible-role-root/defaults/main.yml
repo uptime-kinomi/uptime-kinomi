@@ -2,8 +2,10 @@
 # not exist.
 KINOMI_USER: kinomi
 
-# The configuration directory (start from contrib/examples/config). Keep the
-# trailing slash: the contents are copied, not the directory itself.
+# The configuration directory on the controller (start from
+# contrib/examples/config). Ansible Vault files in it are decrypted. Keep
+# data_dir, log_dir and output_dir outside of it: the deployed directory is
+# replaced as a whole.
 kinomi_config: "{{ playbook_dir }}/files/config/"
 
 # Enable the weekly self-update timer (contrib/systemd/user/

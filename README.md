@@ -48,7 +48,7 @@ on SD cards.
 If you want a configuration UI, use uptime-kuma. If you want config-as-code on
 minimal hardware, use kinomi.
 
-## Features (planned v1.0)
+## Features
 
 - **Monitors:** HTTP(S) (status code, keyword, TLS certificate expiry, slow
   response), TCP port (optional banner), DNS records, push/heartbeat
@@ -62,8 +62,9 @@ minimal hardware, use kinomi.
 - **Extras:** SVG status badges, Atom feed per page, `status.json`, optional
   Prometheus `/metrics`.
 - **Config as code:** one `.toml` file per monitor, notifier, page, incident
-  and maintenance window. `uptime-kinomi check-config` validates everything,
-  and you can plug it into Ansible's `validate:`.
+  and maintenance window. `uptime-kinomi check-config` validates the whole
+  directory, e.g. in CI or before a deployment (the Ansible roles in
+  `contrib/` do exactly that).
 - **Built for weak hardware:** one binary, thread-based check queue with fair
   skipping under overload, low-priority background page rendering, buffered
   log writes, works without a real-time clock.
@@ -131,7 +132,8 @@ mkdir -p ~/.local/bin
 install -m 755 uptime-kinomi-armv6 ~/.local/bin/uptime-kinomi
 
 # 2. create a configuration
-mkdir -p ~/.config/uptime-kinomi/{monitors,notifications,pages,secrets}
+mkdir -p ~/.config/uptime-kinomi/monitors ~/.config/uptime-kinomi/notifications \
+         ~/.config/uptime-kinomi/pages ~/.config/uptime-kinomi/secrets
 cd ~/.config/uptime-kinomi
 ```
 
@@ -261,8 +263,8 @@ without root as long as the binary lives in a directory you own, such as
 **Automatic updates:** `install.sh` and the Ansible roles enable
 `uptime-kinomi-update.timer` ([`contrib/systemd/user/`](contrib/systemd/user/)),
 which runs `self-update` once a week (Monday morning), checks your
-configuration with the new version, restarts the service, and rolls back if
-the check fails or the service does not stay up:
+configuration with the new version, restarts the service if it is running,
+and rolls back if the check fails or the service does not stay up:
 
 ```sh
 systemctl --user list-timers uptime-kinomi-update.timer   # next run
@@ -283,8 +285,8 @@ gh attestation verify uptime-kinomi-armv6 --repo uptime-kinomi/uptime-kinomi   #
 
 [`contrib/`](contrib/) has a complete example configuration
 ([`contrib/examples/config/`](contrib/examples/config/)), systemd units for
-user and system installation, nginx and Apache configurations, and an
-Ansible playbook.
+user and system installation, nginx and Apache configurations, the one-line
+installer, and two Ansible roles.
 
 ## Running behind a reverse proxy
 
@@ -294,8 +296,8 @@ certificate with certbot / Let's Encrypt. Two supported setups:
 - **Mode A (default):** the proxy forwards everything to `127.0.0.1:8080`.
 - **Mode B (don't trust a custom HTTP server?):** the proxy serves the generated
   files directly from disk and does Basic Auth itself with the same htpasswd
-  file. Only `/push/` is forwarded to kinomi, or nothing at all if you have no push
-  monitors.
+  file. Only `/push/` (and `/metrics`, if enabled) is forwarded to kinomi, or
+  nothing at all if you use neither.
 
 Example nginx and Apache configs for both modes are in `contrib/`.
 
@@ -311,12 +313,15 @@ One file per day, UTC timestamps first, `grep`- and `awk`-friendly.
 
 ## Deploying with Ansible
 
-Because every monitor is a file, a deployment is a `template:` loop plus a
-handler that restarts the service. `uptime-kinomi check-config` can be used as
-the `validate:` command. Two complete Ansible roles are included; both check
-the configuration in a staging directory before it goes live, install the
-systemd user service, enable lingering, and install the latest signed release
-only if no binary is installed yet (updates are left to `self-update`):
+Because every monitor is a file, the configuration directory can live in Git
+and be deployed as a whole. `uptime-kinomi check-config --config-dir DIR`
+checks a complete directory (Ansible's `validate:` only hands over single
+files, so check a staging copy first). Two complete Ansible roles are
+included. Both send the configuration as one archive (Vault files are
+decrypted), check it in a staging directory before it goes live, replace
+the live directory only if something changed, install the systemd user
+service, enable lingering, and install the latest signed release only if no
+binary is installed yet (updates are left to `self-update`):
 
 - [`contrib/ansible-role-user/`](contrib/ansible-role-user/): kinomi runs as
   the Ansible login user; no root needed.

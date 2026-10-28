@@ -102,8 +102,10 @@ testdata/                  generated test vectors (with their generator scripts)
      }
      ```
    - unit tests in the same file, against local `TcpListener` servers.
-2. In `src/monitors/mod.rs`: add a variant to `Kind`, an `Option<<Type>File>`
-   field to `MonitorFile`, and an arm to `build_check`.
+2. In `src/monitors/mod.rs`: `pub mod <type>;`, a variant to `Kind` and its
+   `Kind::name` arm, an `Option<<Type>File>` field to `MonitorFile`, the
+   field in the "which table is present" list, and the parameter and arm in
+   `build_check`. The compiler points to every place you missed.
 3. Document the type in SPEC.md §4 and add an example to `contrib/examples/`.
 4. If it parses network data: add an entry point to `src/fuzzing.rs` and a
    target in `fuzz/` (see fuzz/README.md).

@@ -428,7 +428,7 @@ fn self_status(out: &mut String, tz: &TimeZone, s: &SelfStatus, now: i64) {
         ),
         ("Skipped checks (24 h)", s.skipped_24h.to_string()),
         (
-            "Average check time (24 h)",
+            "Average response time (24 h)",
             s.avg_check_ms_24h
                 .map_or_else(|| "–".to_string(), |ms| format!("{ms} ms")),
         ),

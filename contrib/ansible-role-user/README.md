@@ -9,8 +9,14 @@ install packages, use [`ansible-role-root`](../ansible-role-root/) instead.
   release for the CPU, verifies the minisign signature of `SHA256SUMS` and
   the checksum, and installs it. An existing binary is never touched;
   updates are done by `self-update`;
-- copies the configuration to a staging directory, runs `check-config` on
-  it, and only then replaces `~/.config/uptime-kinomi`;
+- sends the configuration as one archive (Ansible Vault files decrypted,
+  symlinks followed), unpacks it into an emptied staging directory, runs
+  `check-config` there, and only then replaces
+  `~/.config/uptime-kinomi` with it, if anything differs. Files removed or
+  renamed in your configuration disappear on the target too. The role stops
+  if `data_dir`, `log_dir` or `output_dir` is inside the configuration
+  directory (they would be deleted). The target needs `tar`, `gzip` and
+  `diff`;
 - installs the units from `contrib/systemd/user/`, (re)starts the service
   and enables the weekly self-update timer, unless `kinomi_auto_update: false`.
 
