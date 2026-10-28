@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   behind (regression in 0.5.0).
 - Replay counted `event=NOTIFY` lines against `covered_events`, so a result
   of the same second could be counted twice (regression in 0.5.0).
+- `HEAD` on a percent-encoded push URL (`/%70ush/<token>`) still counted
+  as a push: the method check used the raw path. Now every decision uses
+  the decoded path.
+
+### Added
+- `check-config` warns when `data_dir`, `log_dir` or `output_dir` is inside
+  the configuration directory (deleted when the directory is deployed by
+  replacing it, as the Ansible roles do).
 
 ### Changed
 - Ansible roles: the configuration is sent as one archive and unpacked on

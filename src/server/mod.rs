@@ -190,7 +190,12 @@ pub(crate) fn parse_request(head: &[u8]) -> Option<Request> {
 
 /// Decide the response. Pure function of the request and the current site.
 pub fn route(req: &Request, options: &Options, site: &crate::render::Site) -> Response {
-    let is_push = req.path.starts_with("/push/");
+    // Decode first: every decision below is about the decoded path, so
+    // e.g. /%70ush/ is a push path too.
+    let Some(path) = clean_path(&req.path) else {
+        return Response::text(400, "Bad Request\n");
+    };
+    let is_push = path.starts_with("/push/");
     // A push is GET or POST only: HEAD (link previews, probes) must not
     // count as a push.
     let allowed = matches!(
@@ -206,9 +211,6 @@ pub fn route(req: &Request, options: &Options, site: &crate::render::Site) -> Re
     if !host_allowed(req.host.as_deref(), &options.hostnames) {
         return Response::text(421, "Misdirected Request\n");
     }
-    let Some(path) = clean_path(&req.path) else {
-        return Response::text(400, "Bad Request\n");
-    };
 
     if path == "/" {
         return match &options.default_page {
@@ -484,11 +486,13 @@ mod tests {
         assert_eq!(r.status, 405);
         assert_eq!(header(&r, "Allow"), Some("GET, HEAD"));
         // HEAD must not count as a push (link previews, probes).
-        req.path = "/push/abc".into();
-        req.method = "HEAD".into();
-        let r = route(&req, &options(), &site());
-        assert_eq!(r.status, 405);
-        assert_eq!(header(&r, "Allow"), Some("GET, POST"));
+        for path in ["/push/abc", "/%70ush/abc", "/push%2fabc"] {
+            req.path = path.into();
+            req.method = "HEAD".into();
+            let r = route(&req, &options(), &site());
+            assert_eq!(r.status, 405, "{path}");
+            assert_eq!(header(&r, "Allow"), Some("GET, POST"), "{path}");
+        }
         req.path = "/home/".into();
         req.method = "GET".into();
         req.host = Some("evil.example.com".into());

@@ -163,6 +163,7 @@ pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Co
             let g = global::parse(&text, &global_file, dir, env, runtime, &mut problems);
             if let Some(g) = &g {
                 check_global_secrets(g, &meta, &global_file, &mut problems);
+                check_state_outside_config(g, dir, &global_file, &mut problems);
             }
             g
         }
@@ -304,6 +305,39 @@ pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Co
         _ => None,
     };
     (config, problems)
+}
+
+/// Data, logs and pages inside the configuration directory get lost when
+/// the configuration is deployed by replacing the directory (Ansible roles)
+/// and end up in Git with it.
+fn check_state_outside_config(g: &Global, dir: &Path, file: &Path, problems: &mut Problems) {
+    let config = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    for (key, path) in [
+        ("storage.data_dir", &g.storage.data_dir),
+        ("storage.log_dir", &g.storage.log_dir),
+        ("pages.output_dir", &g.pages.output_dir),
+    ] {
+        // The directory may not exist yet: compare its existing ancestor.
+        let resolved = path
+            .ancestors()
+            .find_map(|a| {
+                fs::canonicalize(a)
+                    .ok()
+                    .map(|c| c.join(path.strip_prefix(a).unwrap_or(Path::new(""))))
+            })
+            .unwrap_or_else(|| path.clone());
+        if resolved.starts_with(&config) {
+            problems.warning(
+                file,
+                format!(
+                    "{key} {} is inside the configuration directory; it would be deleted when \
+                     the configuration is deployed by replacing the directory (e.g. by the \
+                     Ansible roles). Use a directory outside it",
+                    path.display()
+                ),
+            );
+        }
+    }
 }
 
 /// Files with secrets that are not `*_file` secrets: the heartbeat URL
@@ -574,6 +608,35 @@ mod tests {
                 .any(|w| w.to_string().contains("readable by all"))
         );
         assert_eq!(config.map(|c| c.notifiers.len()), Some(2), "{problems:?}");
+    }
+
+    #[test]
+    fn state_inside_the_config_directory_warns() {
+        let dir = TestDir::new("config-state-inside");
+        dir.write(
+            "kinomi.toml",
+            "config_version = 1\n[storage]\ndata_dir = \"data\"\n",
+        );
+        dir.write("monitors/m.toml", TCP);
+        let (_, problems) = load(dir.path(), &env, None);
+        let all: Vec<String> = problems.warnings().map(|w| w.to_string()).collect();
+        // data_dir, and log_dir and the page fallback below it.
+        assert_eq!(
+            all.iter()
+                .filter(|w| w.contains("is inside the configuration directory"))
+                .count(),
+            3,
+            "{all:?}"
+        );
+        let dir = TestDir::new("config-state-outside");
+        dir.write("kinomi.toml", "config_version = 1\n");
+        dir.write("monitors/m.toml", TCP);
+        let (_, problems) = load(dir.path(), &env, None);
+        assert!(
+            !problems
+                .warnings()
+                .any(|w| w.to_string().contains("inside the configuration"))
+        );
     }
 
     #[test]
