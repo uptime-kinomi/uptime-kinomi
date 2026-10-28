@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   ntfy URL redirecting to https) was logged as delivered (`ok=true`) without
   delivering anything. Any non-2xx answer is now an error (`HTTP 301`) and
   retried.
+- `timeout` now covers the whole check: before, an `http` check got the
+  full timeout for every redirect hop (up to 11 times with
+  `max_redirects = 10`), and a `tcp` banner read for every read.
 
 ### Added
 - `check-config` warns when `data_dir`, `log_dir` or `output_dir` is inside

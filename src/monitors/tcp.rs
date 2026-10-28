@@ -110,14 +110,18 @@ impl Check for TcpCheck {
 }
 
 /// Read until `wanted` bytes arrived, the peer closes, or the limit is hit.
+/// `timeout` is for all reads together, so a server sending one byte at a
+/// time cannot stretch the check.
 fn read_banner(stream: &mut TcpStream, wanted: usize, timeout: Duration) -> io::Result<Vec<u8>> {
-    if timeout.is_zero() {
-        return Err(io::ErrorKind::TimedOut.into());
-    }
-    stream.set_read_timeout(Some(timeout))?;
+    let deadline = Instant::now() + timeout;
     let mut received = Vec::with_capacity(wanted);
     let mut buf = [0u8; MAX_BANNER_BYTES];
     while received.len() < wanted {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::ErrorKind::TimedOut.into());
+        }
+        stream.set_read_timeout(Some(left))?;
         let n = stream.read(&mut buf[..MAX_BANNER_BYTES - received.len()])?;
         if n == 0 {
             break;
@@ -208,6 +212,31 @@ mod tests {
         let silent = check(silent_port, Some("SSH-"), 100);
         assert_eq!(silent.status, Status::Fail);
         assert!(silent.msg.contains("banner"), "{silent:?}");
+    }
+
+    #[test]
+    fn slow_banner_stays_within_timeout() {
+        // One byte every 400 ms: each read is quick, the banner is not.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            if let Some(Ok(mut stream)) = listener.incoming().next() {
+                for b in b"SSH-2.0" {
+                    if stream.write_all(&[*b]).is_err() {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(400));
+                }
+            }
+        });
+        let start = Instant::now();
+        let r = check(port, Some("SSH-2.0"), 1000);
+        assert_eq!(r.status, Status::Fail, "{r:?}");
+        assert!(
+            start.elapsed() < Duration::from_millis(1500),
+            "{:?}",
+            start.elapsed()
+        );
     }
 
     #[test]

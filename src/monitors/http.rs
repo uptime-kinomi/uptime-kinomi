@@ -85,6 +85,8 @@ pub struct HttpCheck {
     slow_warn: Option<Duration>,
     cert: Option<CertCheck>,
     agent: ureq::Agent,
+    /// For the whole check, all redirect hops together.
+    timeout: Duration,
 }
 
 /// Certificate expiry check of the configured https URL's host.
@@ -266,6 +268,7 @@ pub fn build(
         slow_warn,
         cert,
         agent,
+        timeout,
     })
 }
 
@@ -391,7 +394,11 @@ impl HttpCheck {
             // Credentials and custom headers only go to the configured
             // origin, never to a redirect target elsewhere.
             let same_origin = origin(&url).eq_ignore_ascii_case(origin(&self.url));
-            let mut response = match self.request(&url, same_origin) {
+            let left = self.timeout.saturating_sub(start.elapsed());
+            if left.is_zero() {
+                return CheckResult::fail(Some(start.elapsed()), "timeout");
+            }
+            let mut response = match self.request(&url, same_origin, left) {
                 Ok(r) => r,
                 Err(e) => return CheckResult::fail(Some(start.elapsed()), error_message(&e)),
             };
@@ -459,10 +466,12 @@ impl HttpCheck {
         }
     }
 
+    /// One request (one redirect hop), within `left` of the check's timeout.
     fn request(
         &self,
         url: &str,
         same_origin: bool,
+        left: Duration,
     ) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
         let mut request = match self.method {
             Method::Get => self.agent.get(url),
@@ -478,7 +487,7 @@ impl HttpCheck {
                 request = request.header("Authorization", auth);
             }
         }
-        request.call()
+        request.config().timeout_global(Some(left)).build().call()
     }
 }
 
@@ -810,6 +819,38 @@ mod tests {
         let r = cert.apply(up, Duration::from_millis(200));
         assert_eq!((r.status, r.msg.as_str()), (Status::Up, "HTTP 200"));
         assert!(cert.cache.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn timeout_covers_all_redirect_hops() {
+        // Each answer takes 1.2 s; the check's timeout is 2 s (build_text).
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            for stream in listener.incoming().take(4) {
+                let mut stream = stream.unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                while reader.read_line(&mut line).unwrap_or(0) > 0 && line != "\r\n" {
+                    line.clear();
+                }
+                thread::sleep(Duration::from_millis(1200));
+                let _ =
+                    stream.write_all(response("302 Found", "Location: /again\r\n", "").as_bytes());
+            }
+        });
+        let start = Instant::now();
+        let r = run(&format!("url = \"http://{addr}/\"\nmax_redirects = 3"));
+        assert_eq!(
+            (r.status, r.msg.as_str()),
+            (Status::Fail, "timeout"),
+            "{r:?}"
+        );
+        assert!(
+            start.elapsed() < Duration::from_millis(3000),
+            "{:?}",
+            start.elapsed()
+        );
     }
 
     #[test]
