@@ -410,19 +410,25 @@ impl Default for Written {
 
 impl Written {
     fn update(&mut self, output_dir: &Path, site: &Arc<Site>) -> io::Result<()> {
-        match write(output_dir, site, &self.site, self.first) {
-            Ok(()) => {
-                self.site = site.clone();
-                self.first = false;
-                Ok(())
-            }
-            Err(e) => {
-                // Not known what made it to disk: write everything again next
-                // time, and clean up after the first complete write.
-                self.site = Arc::new(Site::default());
-                Err(e)
-            }
+        if let Err(e) = write(output_dir, site, &self.site, false) {
+            // Not known what made it to disk: write everything again next
+            // time, and clean up after the first complete write.
+            self.site = Arc::new(Site::default());
+            return Err(e);
         }
+        self.site = site.clone();
+        if self.first {
+            // Tried once only: a cleanup that keeps failing (e.g. a directory
+            // kinomi may not delete) must not cause rewrites forever.
+            self.first = false;
+            remove_stale(output_dir, site).map_err(|e| {
+                io::Error::new(
+                    e.kind(),
+                    format!("removing pages that are no longer configured: {e}"),
+                )
+            })?;
+        }
+        Ok(())
     }
 }
 
@@ -760,6 +766,31 @@ mod tests {
         assert!(dir.path().join("public/assets/favicon.svg").is_file());
         assert!(dir.path().join("public/home/index.html").is_file());
         assert!(!written.first);
+    }
+
+    #[test]
+    fn failing_cleanup_is_tried_once() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TestDir::new("render-cleanup");
+        let r = renderer(dir.path());
+        let site = Arc::new(r.build(&snapshot(1_792_678_991)));
+        // A stale page directory kinomi may not delete.
+        let stale = dir.path().join("public/old");
+        fs::create_dir_all(&stale).unwrap();
+        fs::write(stale.join("index.html"), "x").unwrap();
+        fs::set_permissions(&stale, fs::Permissions::from_mode(0o500)).unwrap();
+        let mut written = Written::default();
+        let first = written.update(dir.path(), &site);
+        fs::set_permissions(&stale, fs::Permissions::from_mode(0o700)).unwrap();
+        if first.is_ok() {
+            return; // running as root: nothing to test
+        }
+        // The pages were written and are not written again.
+        assert!(Arc::ptr_eq(&written.site, &site));
+        let css = dir.path().join("public/assets/kinomi.css");
+        fs::write(&css, "marker").unwrap();
+        written.update(dir.path(), &site).unwrap();
+        assert_eq!(fs::read_to_string(&css).unwrap(), "marker");
     }
 
     #[test]

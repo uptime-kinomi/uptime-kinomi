@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `HEAD` on a percent-encoded push URL (`/%70ush/<token>`) still counted
   as a push: the method check used the raw path. Now every decision uses
   the decoded path.
+- If removing stale pages at startup kept failing, every render rewrote
+  all files (SD card wear). The cleanup is now tried once and its error
+  reported; the pages count as written.
 
 ### Added
 - `check-config` warns when `data_dir`, `log_dir` or `output_dir` is inside
