@@ -331,7 +331,11 @@ token_file = "secrets/backup-job.token"   # relative to the config dir; or token
   without a push. `retries` applies as usual. `grace` defaults to `1m`,
   max `1d`.
 - `?status=down` counts as a failed check (`msg="push: status=down"`).
-- After a restart, the first deadline is `interval + grace` from the start.
+- After a restart, the deadline is `interval + grace` after the last push
+  or check before the restart (`last_check` in the state file), so restarts do
+  not postpone it; but at least `grace` after the start, for a push sent
+  while kinomi was down. A push monitor without any result yet waits
+  `interval + grace` from the start.
 - Push monitors are not polled, so they have no `timeout` (a `timeout` in
   the push monitor's file warns; `[defaults] timeout` does not apply) and do
   not use the queue. `grace` is a top-level key of push monitors only. They need the built-in server (`check-config` warns otherwise).

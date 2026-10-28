@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   replacing it, as the Ansible roles do).
 
 ### Fixed
+- A push monitor never failed if kinomi restarted more often than
+  `interval + grace` (deploys, updates, reboots): every start set a new
+  deadline `interval + grace` from the start. Now the deadline counts from
+  the last push before the restart, and an overdue monitor fails `grace`
+  after the start.
 - A state file with an incomplete `last_error` pair was half loaded before
   being rejected; the following replay then skipped the data it had not
   loaded (heartbeat bar, totals, changes). Now a broken file leaves nothing

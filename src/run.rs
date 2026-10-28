@@ -395,7 +395,12 @@ impl Service {
         let start = Instant::now();
         let push_deadline = monitors
             .iter()
-            .map(|m| (m.enabled && m.kind == Kind::Push).then(|| start + m.interval + m.grace))
+            .map(|m| {
+                (m.enabled && m.kind == Kind::Push).then(|| {
+                    let last = histories[&m.id].last_check;
+                    start + first_push_wait(now, last, m.interval, m.grace)
+                })
+            })
             .collect();
         Ok(Service {
             monitors,
@@ -749,6 +754,19 @@ fn running_as_root() -> bool {
         .unwrap_or(false)
 }
 
+/// How long after a start a push monitor waits before it fails
+/// (SPEC.md §4.6): `interval + grace` from the last push or check before
+/// the restart, so restarts do not postpone it, but at least `grace`, for
+/// a push that was sent while kinomi was down. `interval + grace` from the
+/// start if the monitor has never had a result.
+fn first_push_wait(now: i64, last: Option<i64>, interval: Duration, grace: Duration) -> Duration {
+    let Some(last) = last else {
+        return interval + grace;
+    };
+    let since = Duration::from_secs(u64::try_from(now.saturating_sub(last)).unwrap_or(0));
+    (interval + grace).saturating_sub(since).max(grace)
+}
+
 /// The notifications a state change is worth (SPEC.md §5.1), updating
 /// `ns`. `resend`: reminder interval in seconds, 0 = none.
 fn notify_events(
@@ -798,6 +816,32 @@ fn notify_events(
 mod tests {
     use super::*;
     use crate::notifiers::Kind;
+
+    #[test]
+    fn first_push_wait_counts_from_the_last_push() {
+        let h = |n: u64| Duration::from_secs(n * 3600);
+        let (day, grace) = (h(24), h(2));
+        let now = 1_000_000_000;
+        // Never pushed: interval + grace from the start.
+        assert_eq!(first_push_wait(now, None, day, grace), day + grace);
+        // Pushed 10 h before the restart: 16 h left, restarts do not reset it.
+        assert_eq!(first_push_wait(now, Some(now - 36_000), day, grace), h(16));
+        // Overdue (last push 2 days ago): fail after grace.
+        assert_eq!(
+            first_push_wait(now, Some(now - 2 * 86_400), day, grace),
+            grace
+        );
+        // Less than grace left: still grace.
+        assert_eq!(
+            first_push_wait(now, Some(now - 25 * 3600), day, grace),
+            grace
+        );
+        // Clock went back: never longer than interval + grace.
+        assert_eq!(
+            first_push_wait(now, Some(now + 3600), day, grace),
+            day + grace
+        );
+    }
 
     fn kinds(events: &[(Kind, Option<i64>)]) -> Vec<Kind> {
         events.iter().map(|(k, _)| *k).collect()
