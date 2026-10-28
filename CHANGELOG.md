@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   full timeout for every redirect hop (up to 11 times with
   `max_redirects = 10`), and a `tcp` banner read for every read.
 
+### Changed
+- The uptime badge moved from `badge/{monitor}-uptime.svg` to
+  `badge/uptime/{monitor}.svg`: monitor `web-uptime`'s state badge and
+  monitor `web`'s uptime badge had the same name, and one overwrote the
+  other.
+
 ### Added
 - `check-config` warns when `data_dir`, `log_dir` or `output_dir` is inside
   the configuration directory (deleted when the directory is deployed by

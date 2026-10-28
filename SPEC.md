@@ -612,6 +612,7 @@ kinomi self-status (version, uptime, queue length, skipped checks in the last
 ├── public/{page}/status.json          /{page}/status.json         (§8.6)
 ├── public/{page}/feed.atom            /{page}/feed.atom           (§8.7)
 ├── public/{page}/badge/{monitor}.svg  /{page}/badge/{monitor}.svg (§8.8, if show_badges)
+├── public/{page}/badge/uptime/{monitor}.svg                       (§8.8, if show_badges)
 ├── private/assets/kinomi.css          /private/assets/kinomi.css   (if there are private pages)
 ├── private/assets/favicon.svg         /private/assets/favicon.svg
 └── private/{page}/...                 /private/{page}/...        (public = false)
@@ -723,7 +724,7 @@ For this, each state file keeps the last 100 state changes (§7.2).
 ### 8.8 Badges
 
 With `show_badges = true`, `badge/{monitor}.svg` (state, e.g. `My blog | UP`)
-and `badge/{monitor}-uptime.svg` (`uptime 30d | 99.95 %`; green from
+and `badge/uptime/{monitor}.svg` (`uptime 30d | 99.95 %`; green from
 99 %, yellow from 95 %, else red) are generated for every monitor of the
 page, in the style of shields.io: plain SVG, no scripts, no external
 resources, text XML-escaped, names cut at 40 characters. For embedding in READMEs

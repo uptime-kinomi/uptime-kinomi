@@ -242,7 +242,9 @@ impl Renderer {
                         None => badge::color(""),
                     };
                     add(
-                        &format!("badge/{}-uptime.svg", m.id),
+                        // A directory of its own: monitor IDs cannot contain
+                        // "/", so the names can never collide.
+                        &format!("badge/uptime/{}.svg", m.id),
                         "image/svg+xml",
                         badge::badge("uptime 30d", &uptime, color),
                     );
@@ -319,7 +321,14 @@ fn is_generated_page_dir(dir: &Path) -> bool {
     let Some(top) = names(dir) else { return false };
     top.iter().all(|n| match n.as_str() {
         "index.html" | "status.json" | "feed.atom" => true,
-        "badge" => names(&dir.join("badge")).is_some_and(|b| b.iter().all(|f| f.ends_with(".svg"))),
+        "badge" => names(&dir.join("badge")).is_some_and(|b| {
+            b.iter().all(|f| {
+                f.ends_with(".svg")
+                    || (f == "uptime"
+                        && names(&dir.join("badge/uptime"))
+                            .is_some_and(|u| u.iter().all(|f| f.ends_with(".svg"))))
+            })
+        }),
         _ => false,
     })
 }
@@ -353,9 +362,12 @@ fn remove_stale(output_dir: &Path, site: &Site) -> io::Result<()> {
             }
             if site.files.contains_key(&url) {
                 // Badges of monitors no longer on the page (or show_badges off).
-                remove_files_not_in(&dir.join("badge"), &format!("{url}badge/"), site, |n| {
-                    n.ends_with(".svg")
-                })?;
+                // The uptime badges first, so badge/ can go when it is empty.
+                for sub in ["badge/uptime/", "badge/"] {
+                    remove_files_not_in(&dir.join(sub), &format!("{url}{sub}"), site, |n| {
+                        n.ends_with(".svg")
+                    })?;
+                }
             } else if is_generated_page_dir(&dir) {
                 fs::remove_dir_all(&dir)?;
             }
@@ -595,7 +607,7 @@ mod tests {
             "/home/",
             "/home/feed.atom",
             "/home/badge/web.svg",
-            "/home/badge/web-uptime.svg",
+            "/home/badge/uptime/web.svg",
         ] {
             assert!(!text(&site, url).contains("secret-detail"), "{url}");
             assert!(!site.files[url].private, "{url}");
@@ -725,6 +737,12 @@ mod tests {
         // A badge of a monitor that is no longer on the page.
         fs::create_dir_all(dir.path().join("public/home/badge")).unwrap();
         fs::write(dir.path().join("public/home/badge/gone.svg"), "<svg/>").unwrap();
+        fs::create_dir_all(dir.path().join("public/home/badge/uptime")).unwrap();
+        fs::write(
+            dir.path().join("public/home/badge/uptime/gone.svg"),
+            "<svg/>",
+        )
+        .unwrap();
         fs::write(dir.path().join("public/home/badge/notes.txt"), "not ours").unwrap();
 
         let first = r.build(&snapshot(1_792_678_991));
@@ -734,6 +752,7 @@ mod tests {
         assert!(!dir.path().join("public/old").exists());
         assert!(dir.path().join("public/keep/notes.txt").exists());
         assert!(!dir.path().join("public/home/badge/gone.svg").exists());
+        assert!(!dir.path().join("public/home/badge/uptime").exists());
         assert!(dir.path().join("public/home/badge/notes.txt").exists());
         let mode = fs::metadata(dir.path().join("public/home/index.html"))
             .unwrap()
