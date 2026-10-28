@@ -98,7 +98,15 @@ pub fn start(options: Options, published: Published) -> Result<(), String> {
     thread::Builder::new()
         .name("http-accept".into())
         .spawn(move || {
-            for stream in listener.incoming().flatten() {
+            for stream in listener.incoming() {
+                let stream = match stream {
+                    Ok(stream) => stream,
+                    // E.g. out of file descriptors: do not spin at 100 %.
+                    Err(_) => {
+                        thread::sleep(Duration::from_millis(100));
+                        continue;
+                    }
+                };
                 match tx.try_send(stream) {
                     Ok(()) => {}
                     // Overloaded: close the connection instead of queueing.
@@ -189,7 +197,24 @@ pub(crate) fn parse_request(head: &[u8]) -> Option<Request> {
 }
 
 /// Decide the response. Pure function of the request and the current site.
+/// Every response has a Cache-Control header (SPEC.md §9.4): files set
+/// their own; everything else (errors, redirects, 401) gets one by path.
 pub fn route(req: &Request, options: &Options, site: &crate::render::Site) -> Response {
+    let mut r = route_inner(req, options, site);
+    if !r.headers.iter().any(|(name, _)| *name == "Cache-Control") {
+        let path = clean_path(&req.path).unwrap_or_default();
+        let private = path.starts_with("/private/") || path == "/metrics";
+        let value = if private {
+            "private, no-store"
+        } else {
+            "no-cache"
+        };
+        r.headers.push(("Cache-Control", value.into()));
+    }
+    r
+}
+
+fn route_inner(req: &Request, options: &Options, site: &crate::render::Site) -> Response {
     // Decode first: every decision below is about the decoded path, so
     // e.g. /%70ush/ is a push path too.
     let Some(path) = clean_path(&req.path) else {
@@ -372,11 +397,30 @@ fn write_response(stream: &mut TcpStream, r: &Response, head_only: bool) -> io::
         head.push_str(&format!("{name}: {value}\r\n"));
     }
     head.push_str(&format!("Content-Length: {}\r\n\r\n", r.body.len()));
-    stream.write_all(head.as_bytes())?;
+    // One deadline for the whole response, so a client that reads slowly
+    // cannot hold a handler (as for the request head).
+    let deadline = Instant::now() + WRITE_TIMEOUT;
+    write_within(stream, head.as_bytes(), deadline)?;
     if !head_only {
-        stream.write_all(&r.body)?;
+        write_within(stream, &r.body, deadline)?;
     }
     stream.flush()
+}
+
+fn write_within(stream: &mut TcpStream, mut data: &[u8], deadline: Instant) -> io::Result<()> {
+    while !data.is_empty() {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::ErrorKind::TimedOut.into());
+        }
+        stream.set_write_timeout(Some(left))?;
+        let n = stream.write(&data[..data.len().min(16 * 1024)])?;
+        if n == 0 {
+            return Err(io::ErrorKind::WriteZero.into());
+        }
+        data = &data[n..];
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -499,6 +543,21 @@ mod tests {
         assert_eq!(route(&req, &options(), &site()).status, 421);
         req.host = None;
         assert_eq!(route(&req, &options(), &site()).status, 421);
+    }
+
+    #[test]
+    fn every_response_has_cache_control() {
+        let cc = |r: &Response| header(r, "Cache-Control").map(str::to_string);
+        // Login needed, redirect to the slash URL, missing private file.
+        for path in ["/private/all/", "/private/all", "/%70rivate/nope/"] {
+            assert_eq!(
+                cc(&get(path, None)).as_deref(),
+                Some("private, no-store"),
+                "{path}"
+            );
+        }
+        assert_eq!(cc(&get("/nope/", None)).as_deref(), Some("no-cache"));
+        assert_eq!(cc(&get("/", None)).as_deref(), Some("no-cache"));
     }
 
     #[test]

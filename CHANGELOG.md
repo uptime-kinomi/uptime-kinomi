@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Ansible root role: installs `sudo` (needed for commands as
   `KINOMI_USER`), and test-runs a downloaded binary as `KINOMI_USER`, not
   as root.
+- Built-in server: every response has `Cache-Control` (before, `401`,
+  `429` and redirects below `/private/` had none, and a `301` is cacheable
+  by default); the 10 s write timeout covers the whole response; the
+  accept loop pauses after an error (e.g. out of file descriptors) instead
+  of spinning.
 
 ### Changed
 - The uptime badge moved from `badge/{monitor}-uptime.svg` to
