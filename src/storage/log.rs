@@ -88,10 +88,17 @@ impl LogWriter {
             self.buffer.drain(..count);
         }
 
+        // Cleanup errors are not write errors: the lines are written. They
+        // are reported and the cleanup is tried again at the next flush.
         let today = clock::days_since_epoch(now);
         if self.last_cleanup_day != Some(today) && clock::is_plausible(now) {
-            self.last_cleanup_day = Some(today);
-            self.delete_expired(today)?;
+            match self.delete_expired(today) {
+                Ok(()) => self.last_cleanup_day = Some(today),
+                Err(e) => eprintln!(
+                    "warning: cannot delete expired log files in {}: {e}",
+                    self.dir.display()
+                ),
+            }
         }
         Ok(())
     }
@@ -222,6 +229,23 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn cleanup_errors_are_not_write_errors() {
+        let dir = TestDir::new("log-cleanup-error");
+        // An "expired log file" that cannot be removed with remove_file.
+        fs::create_dir_all(dir.path().join("2026-07-01.log")).unwrap();
+        let mut log = LogWriter::open(dir.path(), 90).unwrap();
+        log.record(t(0), &[("event", "START")]);
+        log.flush(t(0)).unwrap();
+        assert!(
+            fs::read_to_string(dir.path().join("2026-10-22.log"))
+                .unwrap()
+                .contains("event=START")
+        );
+        // Tried again at the next flush.
+        assert_eq!(log.last_cleanup_day, None);
     }
 
     #[test]

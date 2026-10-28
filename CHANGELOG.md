@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `timeout` now covers the whole check: before, an `http` check got the
   full timeout for every redirect hop (up to 11 times with
   `max_redirects = 10`), and a `tcp` banner read for every read.
+- Paused monitors showed "PAUSED for …" with the time since their last
+  state change; now no duration (and `since: null` in `status.json`).
+- Results inside a maintenance window did not log `cert_expires`, so a
+  rebuilt state lacked it.
+- State files of 0.4.0 with `state = "MAINTENANCE"` kept showing
+  MAINTENANCE outside any window; they are read as UNKNOWN.
+- A failed deletion of expired log files was reported as a failed log
+  write; it is now a warning and retried at the next flush.
+- `event=AUTH_FAIL` could be logged after `event=STOP` at shutdown.
+- Update timer: a new version that crashed and was restarted by systemd
+  within the 15 s check counted as running; now the main process must be
+  the same after 15 s.
 
 ### Changed
 - The uptime badge moved from `badge/{monitor}-uptime.svg` to

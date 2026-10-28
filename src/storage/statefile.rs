@@ -185,8 +185,13 @@ pub fn from_toml(text: &str, monitor: &str, history: &mut History) -> Result<(),
             .map(|v| clock::parse_rfc3339(v).ok_or_else(|| format!("invalid {field}")))
             .transpose()
     };
-    let state =
-        State::parse(&file.state).ok_or_else(|| format!("invalid state '{}'", file.state))?;
+    let state = match State::parse(&file.state) {
+        // Written by 0.4.0: MAINTENANCE is now derived from the windows, and
+        // what the monitor was before the window is not in the file.
+        Some(State::Maintenance) => State::Unknown,
+        Some(state) => state,
+        None => return Err(format!("invalid state '{}'", file.state)),
+    };
     let mut changes = std::collections::VecDeque::new();
     for entry in &file.changes {
         let (t, s) = entry.split_once(' ').ok_or("invalid change entry")?;
@@ -366,6 +371,12 @@ mod tests {
         let mut restored = History::new(50, 400);
         from_toml(&old, "blog", &mut restored).unwrap();
         assert_eq!(restored.covered_events, u32::MAX);
+
+        // 0.4.0 stored MAINTENANCE as a state; it is not one any more.
+        let maint = text.replace("state = \"DOWN\"", "state = \"MAINTENANCE\"");
+        let mut restored = History::new(50, 400);
+        from_toml(&maint, "blog", &mut restored).unwrap();
+        assert_eq!(restored.state, State::Unknown);
     }
 
     #[test]

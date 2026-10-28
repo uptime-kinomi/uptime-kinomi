@@ -239,6 +239,7 @@ pub fn run(mut config: Config) -> Result<(), String> {
     while let Ok(event) = rx.try_recv() {
         service.handle(event);
     }
+    service.record_auth_failures();
     service.log.record(SystemTime::now(), &[("event", "STOP")]);
     service.save_states();
     eprintln!("uptime-kinomi stopped");
@@ -572,6 +573,13 @@ impl Service {
         if let Some(latency) = &latency_text {
             fields.push(("latency_ms", latency));
         }
+        // The log is the source of truth: also for what a MAINT check found.
+        let cert_expires = result
+            .cert_expires
+            .map(|t| clock::format_date(clock::from_unix(t)));
+        if let Some(date) = &cert_expires {
+            fields.push(("cert_expires", date));
+        }
         fields.push(("msg", &result.msg));
         self.log.record(time, &fields);
         if let Some(h) = self.histories.get_mut(&m.id) {
@@ -661,7 +669,12 @@ impl Service {
             .enumerate()
             .map(|(i, m)| {
                 let h = self.histories.get(&m.id).unwrap_or(&empty);
-                MonitorView::new(h, now, self.maintenance_start(i, now))
+                let mut view = MonitorView::new(h, now, self.maintenance_start(i, now));
+                if !m.enabled {
+                    // Shown as PAUSED: since when is not known.
+                    view.since = None;
+                }
+                view
             })
             .collect();
         Snapshot {
@@ -680,6 +693,15 @@ impl Service {
     }
 
     fn flush(&mut self) {
+        self.record_auth_failures();
+        match self.log.flush(SystemTime::now()) {
+            Ok(()) => self.last_flush = Some(clock::unix_seconds(SystemTime::now())),
+            Err(e) => eprintln!("error: cannot write the check log: {e}"),
+        }
+    }
+
+    /// `event=AUTH_FAIL` with the failed logins since the last call.
+    fn record_auth_failures(&mut self) {
         if let Some((failed, throttled)) = self
             .auth
             .as_ref()
@@ -694,10 +716,6 @@ impl Service {
                     ("throttled", &throttled.to_string()),
                 ],
             );
-        }
-        match self.log.flush(SystemTime::now()) {
-            Ok(()) => self.last_flush = Some(clock::unix_seconds(SystemTime::now())),
-            Err(e) => eprintln!("error: cannot write the check log: {e}"),
         }
     }
 

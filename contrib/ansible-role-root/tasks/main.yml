@@ -112,88 +112,118 @@
         state: absent
       when: kinomi_download.path is defined
 
-# The configuration goes over as one archive (copying a directory is one
-# transfer per file, which takes seconds each on a Pi 1). It is unpacked
-# into an empty staging directory and checked there with check-config; only
-# then does it replace the live directory, and only if something differs.
-# The live directory then has exactly the files of kinomi_config, so files
-# removed or renamed there are gone on the target too.
-- name: Configuration (archive on the controller)
-  delegate_to: localhost
-  become: false
+# The configuration goes over as one archive (a directory copy is one
+# transfer per file, which takes seconds each on a Pi 1). On the controller,
+# ansible.builtin.copy first decrypts Ansible Vault files and follows
+# symlinks. On the target, KINOMI_USER unpacks it into an empty staging
+# directory, runs check-config there, and only then replaces the live
+# directory, if something differs. The live directory then has exactly the
+# files of kinomi_config: files removed or renamed there are gone too.
+- name: Configuration
   block:
     - name: Configuration (temporary directory on the controller)
+      delegate_to: localhost
+      become: false
       ansible.builtin.tempfile:
         state: directory
         prefix: uptime-kinomi-config-
       register: kinomi_config_tmp
       changed_when: false
 
+    - name: Configuration (decrypt Vault files, follow symlinks)
+      delegate_to: localhost
+      become: false
+      ansible.builtin.copy:
+        src: "{{ kinomi_config | regex_replace('/*$', '/') }}"
+        dest: "{{ kinomi_config_tmp.path }}/config/"
+        mode: "u=rwX,go="
+      changed_when: false
+
     - name: Configuration (pack)
+      delegate_to: localhost
+      become: false
       # No ._* resource fork files from macOS tar.
       environment:
         COPYFILE_DISABLE: "1"
       ansible.builtin.command:
-        cmd: "tar -C {{ kinomi_config | quote }} -czf {{ kinomi_config_tmp.path }}/config.tgz ."
+        cmd: "tar -C {{ kinomi_config_tmp.path }}/config -czf {{ kinomi_config_tmp.path }}/config.tgz ."
       changed_when: false
 
-- name: Configuration (empty staging directory)
-  ansible.builtin.file:
-    path: "{{ kinomi_staging_dir }}"
-    state: absent
-  changed_when: false
+    - name: Configuration (upload directory on the target)
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: uptime-kinomi-config-
+      register: kinomi_upload
+      changed_when: false
 
-- name: Configuration (staging directory)
-  ansible.builtin.file:
-    path: "{{ kinomi_staging_dir }}"
-    state: directory
-    owner: "{{ KINOMI_USER }}"
-    group: "{{ kinomi_account.group }}"
-    mode: "0700"
-  changed_when: false
+    # Root creates it, KINOMI_USER may only open the archive inside.
+    - name: Configuration (upload directory readable for KINOMI_USER)
+      ansible.builtin.file:
+        path: "{{ kinomi_upload.path }}"
+        mode: "0711"
+      changed_when: false
 
-- name: Configuration (unpack into staging)
-  ansible.builtin.unarchive:
-    src: "{{ kinomi_config_tmp.path }}/config.tgz"
-    dest: "{{ kinomi_staging_dir }}"
-    owner: "{{ KINOMI_USER }}"
-    group: "{{ kinomi_account.group }}"
-  changed_when: false
+    - name: Configuration (upload)
+      ansible.builtin.copy:
+        src: "{{ kinomi_config_tmp.path }}/config.tgz"
+        dest: "{{ kinomi_upload.path }}/config.tgz"
+        owner: "{{ KINOMI_USER }}"
+        mode: "0600"
+      changed_when: false
 
-- name: Configuration (remove the archive on the controller)
-  delegate_to: localhost
-  become: false
-  ansible.builtin.file:
-    path: "{{ kinomi_config_tmp.path }}"
-    state: absent
-  changed_when: false
+    # One step: fewer slow module starts on a Pi 1, and check-config sees the
+    # final file modes.
+    - name: Configuration (unpack, check, replace if it differs)
+      become: true
+      become_user: "{{ KINOMI_USER }}"
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          live={{ kinomi_config_dir | quote }}
+          new={{ kinomi_staging_dir | quote }}
+          rm -rf "$new"
+          mkdir -p -m 700 "$new"
+          tar -xzf {{ kinomi_upload.path | quote }}/config.tgz -C "$new" --no-same-owner
+          chmod -R u=rwX,go= "$new"
+          if ! out=$({{ kinomi_bin_dir | quote }}/uptime-kinomi check-config --config-dir "$new" 2>&1); then
+              printf '%s\n' "$out" >&2
+              exit 1
+          fi
+          printf '%s\n' "$out"
+          # Replacing the directory would delete data, logs or pages inside it.
+          if printf '%s\n' "$out" | grep -q "inside the configuration directory"; then
+              echo "data_dir, log_dir or output_dir is inside the configuration directory: not replacing it" >&2
+              exit 1
+          fi
+          if [ -d "$live" ] && diff -r -q "$new" "$live" >/dev/null 2>&1; then
+              echo unchanged
+              exit 0
+          fi
+          rm -rf "$live.new"
+          cp -a "$new" "$live.new"
+          rm -rf "$live"
+          mv "$live.new" "$live"
+          echo replaced
+      register: kinomi_config_replace
+      changed_when: "kinomi_config_replace.stdout_lines[-1] == 'replaced'"
+      notify: Restart uptime-kinomi
 
-- name: Check the configuration
-  become: true
-  become_user: "{{ KINOMI_USER }}"
-  ansible.builtin.command:
-    cmd: "{{ kinomi_bin_dir }}/uptime-kinomi check-config --config-dir {{ kinomi_staging_dir }}"
-  changed_when: false
+  always:
+    - name: Configuration (remove the upload)
+      ansible.builtin.file:
+        path: "{{ kinomi_upload.path }}"
+        state: absent
+      when: kinomi_upload.path is defined
+      changed_when: false
 
-- name: Configuration (replace the live directory if it differs)
-  ansible.builtin.shell:
-    cmd: |
-      set -eu
-      live={{ kinomi_config_dir | quote }}
-      new={{ kinomi_staging_dir | quote }}
-      chmod -R u=rwX,go= "$new"
-      if [ -d "$live" ] && diff -r -q "$new" "$live" >/dev/null 2>&1; then
-          echo unchanged
-          exit 0
-      fi
-      rm -rf "$live.new"
-      cp -a "$new" "$live.new"
-      rm -rf "$live"
-      mv "$live.new" "$live"
-      echo replaced
-  register: kinomi_config_replace
-  changed_when: "'replaced' in kinomi_config_replace.stdout"
-  notify: Restart uptime-kinomi
+    - name: Configuration (remove the temporary directory on the controller)
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ kinomi_config_tmp.path }}"
+        state: absent
+      when: kinomi_config_tmp.path is defined
+      changed_when: false
 
 # The units shipped in contrib/systemd/user/, next to this role.
 - name: User units

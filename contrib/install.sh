@@ -298,8 +298,11 @@ ExecStart=/bin/sh -euc '\
   fi; \
   systemctl --user is-active --quiet uptime-kinomi.service || exit 0; \
   systemctl --user restart uptime-kinomi.service; \
+  pid=$$(systemctl --user show -p MainPID --value uptime-kinomi.service); \
   sleep 15; \
-  if ! systemctl --user is-active --quiet uptime-kinomi.service; then \
+  now=$$(systemctl --user show -p MainPID --value uptime-kinomi.service); \
+  if [ "$$pid" = 0 ] || [ "$$now" != "$$pid" ] \
+     || ! systemctl --user is-active --quiet uptime-kinomi.service; then \
     echo "the service did not stay up with the new version, rolling back" >&2; \
     "$$bin" self-update --rollback; \
     systemctl --user restart uptime-kinomi.service; exit 1; \
