@@ -600,50 +600,30 @@ impl Service {
         let m = &self.monitors[monitor];
         let ns = &mut self.notify[monitor];
         let resend = i64::try_from(m.resend_interval.as_secs()).unwrap_or(i64::MAX);
-        let event = if after == State::Down && before != State::Down {
-            ns.down_since = Some(t);
-            ns.last_down_notice = Some(t);
-            Some((notifiers::Kind::Down, None))
-        } else if before == State::Down && after != State::Down {
-            let down_for = ns.down_since.map(|s| t - s);
-            ns.down_since = None;
-            Some((notifiers::Kind::Up, down_for))
-        } else if after == State::Down
-            && resend > 0
-            && ns.last_down_notice.is_some_and(|l| t - l >= resend)
-        {
-            ns.last_down_notice = Some(t);
-            Some((notifiers::Kind::Reminder, ns.down_since.map(|s| t - s)))
-        } else if after == State::Warn
-            && before != State::Warn
-            && ns.last_warn_notice.is_none_or(|w| t - w >= WARN_EVERY)
-        {
-            ns.last_warn_notice = Some(t);
-            Some((notifiers::Kind::Warn, None))
-        } else {
-            None
-        };
-        let (Some((kind, down_for)), Some(jobs)) = (event, &self.notify_tx) else {
+        let events = notify_events(ns, before, after, t, resend);
+        let Some(jobs) = &self.notify_tx else {
             return;
         };
-        let message = Arc::new(Message {
-            kind,
-            monitor_id: m.id.clone(),
-            monitor_name: m.name.clone(),
-            detail: detail.to_string(),
-            time: t,
-            local_time: render::html::format_time(&self.tz, t, "%Y-%m-%d %H:%M %Z"),
-            down_for,
-        });
-        for id in &m.notifications {
-            let Some(index) = self.notifiers.iter().position(|n| &n.id == id) else {
-                continue;
-            };
-            if self.notifiers[index].events.contains(&kind) {
-                let _ = jobs.send(Job {
-                    notifier: index,
-                    message: message.clone(),
-                });
+        for (kind, down_for) in events {
+            let message = Arc::new(Message {
+                kind,
+                monitor_id: m.id.clone(),
+                monitor_name: m.name.clone(),
+                detail: detail.to_string(),
+                time: t,
+                local_time: render::html::format_time(&self.tz, t, "%Y-%m-%d %H:%M %Z"),
+                down_for,
+            });
+            for id in &m.notifications {
+                let Some(index) = self.notifiers.iter().position(|n| &n.id == id) else {
+                    continue;
+                };
+                if self.notifiers[index].events.contains(&kind) {
+                    let _ = jobs.send(Job {
+                        notifier: index,
+                        message: message.clone(),
+                    });
+                }
             }
         }
     }
@@ -767,4 +747,97 @@ fn running_as_root() -> bool {
                 .and_then(|ids| ids.split_whitespace().nth(1).map(|euid| euid == "0"))
         })
         .unwrap_or(false)
+}
+
+/// The notifications a state change is worth (SPEC.md §5.1), updating
+/// `ns`. `resend`: reminder interval in seconds, 0 = none.
+fn notify_events(
+    ns: &mut NotifyState,
+    before: State,
+    after: State,
+    t: i64,
+    resend: i64,
+) -> Vec<(notifiers::Kind, Option<i64>)> {
+    let event = if after == State::Down && before != State::Down {
+        ns.down_since = Some(t);
+        ns.last_down_notice = Some(t);
+        Some((notifiers::Kind::Down, None))
+    } else if before == State::Down && after != State::Down {
+        let down_for = ns.down_since.map(|s| t - s);
+        ns.down_since = None;
+        Some((notifiers::Kind::Up, down_for))
+    } else if after == State::Down
+        && resend > 0
+        && ns.last_down_notice.is_some_and(|l| t - l >= resend)
+    {
+        ns.last_down_notice = Some(t);
+        Some((notifiers::Kind::Reminder, ns.down_since.map(|s| t - s)))
+    } else if after == State::Warn
+        && before != State::Warn
+        && ns.last_warn_notice.is_none_or(|w| t - w >= WARN_EVERY)
+    {
+        ns.last_warn_notice = Some(t);
+        Some((notifiers::Kind::Warn, None))
+    } else {
+        None
+    };
+    let mut events: Vec<(notifiers::Kind, Option<i64>)> = event.into_iter().collect();
+    // Back from DOWN straight into WARN (e.g. up again, but the
+    // certificate expires soon): the warning is news too.
+    if before == State::Down
+        && after == State::Warn
+        && ns.last_warn_notice.is_none_or(|w| t - w >= WARN_EVERY)
+    {
+        ns.last_warn_notice = Some(t);
+        events.push((notifiers::Kind::Warn, None));
+    }
+    events
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::notifiers::Kind;
+
+    fn kinds(events: &[(Kind, Option<i64>)]) -> Vec<Kind> {
+        events.iter().map(|(k, _)| *k).collect()
+    }
+
+    #[test]
+    fn notification_events() {
+        let mut ns = NotifyState::default();
+        let t = 1_000_000;
+        assert_eq!(
+            kinds(&notify_events(&mut ns, State::Up, State::Down, t, 0)),
+            [Kind::Down]
+        );
+        // No reminders without resend_interval, one per interval with it.
+        assert!(notify_events(&mut ns, State::Down, State::Down, t + 600, 0).is_empty());
+        assert_eq!(
+            kinds(&notify_events(
+                &mut ns,
+                State::Down,
+                State::Down,
+                t + 600,
+                300
+            )),
+            [Kind::Reminder]
+        );
+        // Back from DOWN straight into WARN: up, and the warning.
+        let events = notify_events(&mut ns, State::Down, State::Warn, t + 900, 0);
+        assert_eq!(kinds(&events), [Kind::Up, Kind::Warn]);
+        assert_eq!(events[0].1, Some(900), "down for 15 min");
+        // The warning at most once per 24 h.
+        notify_events(&mut ns, State::Warn, State::Down, t + 1000, 0);
+        assert_eq!(
+            kinds(&notify_events(
+                &mut ns,
+                State::Down,
+                State::Warn,
+                t + 1100,
+                0
+            )),
+            [Kind::Up]
+        );
+    }
 }

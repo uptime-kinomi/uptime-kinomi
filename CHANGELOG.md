@@ -55,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The Atom feed was invalid without `server.base_url`: entries without a
   link need content. Every entry now has content (its title if there is no
   text).
+- A monitor that came back from DOWN straight into WARN (e.g. with an
+  expiring certificate) sent only `up`; now also `warn` (at most once per
+  24 h as before).
 
 ### Changed
 - The uptime badge moved from `badge/{monitor}-uptime.svg` to
