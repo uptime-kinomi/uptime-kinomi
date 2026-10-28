@@ -15,7 +15,7 @@ runs as root. Without root access, use
 - sends the configuration as one archive (Ansible Vault files decrypted,
   symlinks followed), unpacks it into an emptied staging directory, runs
   `check-config` there as `KINOMI_USER`, and only then replaces
-  `~/.config/uptime-kinomi` with it, if anything differs. Files removed or
+  `~KINOMI_USER/.config/uptime-kinomi` with it, if anything differs. Files removed or
   renamed in your configuration disappear on the target too. The role stops
   if `data_dir`, `log_dir` or `output_dir` is inside the configuration
   directory (they would be deleted). The target needs `tar`, `gzip` and

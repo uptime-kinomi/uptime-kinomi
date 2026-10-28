@@ -26,13 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   replacing it, as the Ansible roles do).
 
 ### Fixed
-- install.sh: `--listen` accepts IPv6 addresses (`[::1]:8080`); `--uninstall`
-  no longer names a fixed data path.
-- The mode-B proxy examples send `Cache-Control: no-cache` for public files,
-  as kinomi's own server does.
-- Log cleanup: a file that cannot be deleted no longer stops the deletion of
-  the other expired files, and the warning comes once a day, not at every
-  flush.
+- IPv6: `server.hostnames` accepts IPv6 addresses (`"::1"`, compared as
+  addresses), so a server on `[::1]:8080` can be used without accepting any
+  Host header. install.sh `--listen` accepts IPv6 addresses and then adds
+  `::1` to `hostnames`; `--uninstall` no longer names a fixed data path.
+- Reminders kept being postponed by restarts: the first one came
+  `resend_interval` after the start. They now keep their schedule from when
+  the monitor went DOWN.
+- After `rebuild-state` (or without state files), a disabled push monitor
+  was treated as enabled. Disabled monitors are now logged after `START`
+  (`event=DISABLED monitor=ID`).
+- The mode-B proxy examples send `Cache-Control: no-cache` for public pages
+  (kinomi's own server does the same; the proxies also use it for `/assets/`).
+- Log cleanup: a failed deletion of expired log files was reported as a
+  failed log write; it is now a warning, tried again the next day. A file
+  that cannot be deleted no longer stops the deletion of the others.
 - `400` and `431` responses and `/private` (without slash) now get the same
   `Cache-Control` as everything else.
 - State files with more than 100 state changes are trimmed when loaded.
@@ -73,8 +81,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   rebuilt state lacked it.
 - State files of 0.4.0 with `state = "MAINTENANCE"` kept showing
   MAINTENANCE outside any window; they are read as UNKNOWN.
-- A failed deletion of expired log files was reported as a failed log
-  write; it is now a warning and retried at the next flush.
 - `event=AUTH_FAIL` could be logged after `event=STOP` at shutdown.
 - Update timer: a new version that crashed and was restarted by systemd
   within the 15 s check counted as running; now the main process must be

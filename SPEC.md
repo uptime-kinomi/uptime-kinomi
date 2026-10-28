@@ -79,7 +79,7 @@ pages and 100 badges, over 10 minutes:
 | **Notifier** | A notification channel, defined by one file in `notifications/`. |
 | **Page** | A status page, defined by one file in `pages/`. Public or private. |
 | **Incident** | A human-written announcement shown on pages (`incidents/`). |
-| **Maintenance** | A time window during which monitors are in `MAINTENANCE` and notifications are muted (`maintenance/`). |
+| **Maintenance** | A time window during which monitors are in `MAINTENANCE` and notifications are muted, except `up` from a push (`maintenance/`, §14.2). |
 
 ---
 
@@ -128,7 +128,8 @@ installation uses `/etc/uptime-kinomi`. The directory structure is the same:
   and in `check-config` if a file containing secrets is world-readable: secret
   files, config files with inline secrets, `kinomi.toml` with a
   `[heartbeat]` URL, the htpasswd file, and monitor files with an
-  `Authorization`, `Cookie` or other credential header in `headers`.
+  credential header in `headers` (a name containing `auth`, `cookie`,
+  `key`, `token` or `secret`, ignoring case).
 - `check-config` warns if `data_dir`, `log_dir` or `output_dir` is inside
   the configuration directory: tools that deploy the configuration by
   replacing the directory (like the Ansible roles) would delete them.
@@ -148,7 +149,7 @@ config_version = 1
 [server]
 enabled = true                       # built-in HTTP server (§9)
 listen = "127.0.0.1:8080"            # default; behind a reverse proxy
-hostnames = ["status.example.org"]   # allowed Host headers; empty = any (warns)
+hostnames = ["status.example.org"]   # allowed Host headers (port ignored; IPv6 as "::1", no brackets); empty = any (warns)
 base_url = "https://status.example.org"  # absolute links in the Atom feed (§8.7)
 htpasswd_file = "htpasswd"           # relative to the config dir; needed if any page is private
 metrics = false                      # /metrics (§9.5); needs htpasswd_file
@@ -181,10 +182,10 @@ url = "https://other-pi.example.org/push/abcdef..."
 interval = "60s"                     # default 60s, min 10s
 
 [defaults]                           # defaults for all monitors, overridable per monitor
-interval = "60s"
-timeout = "10s"
-retries = 1                          # max 10
-notifications = ["phone"]
+interval = "60s"                     # built-in default 60s
+timeout = "10s"                      # built-in default 10s
+retries = 1                          # built-in default 1, max 10
+notifications = ["phone"]            # built-in default [] (none)
 ```
 
 ---
@@ -203,7 +204,7 @@ timeout = "10s"               # must be < interval, also when inherited from [de
 retries = 1                   # 0-10; failures tolerated: DOWN after retries + 1 in a row (PENDING before)
 notifications = ["phone", "telegram"]   # notifier IDs
 resend_interval = "0s"        # repeat DOWN notification while down; 0 = never
-                              # (checked with each result, so at most once per interval)
+                              # (on time, also across restarts, §5.1)
 enabled = true                # false: not checked, shown as PAUSED
 tags = ["web", "family"]      # optional, usable for page groups; same rules as IDs
 ```
@@ -228,7 +229,7 @@ at least 1, at most `retries`; a bar shorter than the row counts less). If
 
 A disabled monitor (`enabled = false`) is shown as `PAUSED` (also inside a
 maintenance window) and counts in nothing. This is unrelated to
-`event=PAUSED` and `msg="paused"` (§10.2), which mean that the kinomi
+`event=PAUSED` and `msg="paused"` (§10.1), which mean that the kinomi
 process itself did not run. A **skipped** check (§6) is not a state. It is logged as `result=SKIPPED`,
 shown as a grey gap, and excluded from uptime percentages.
 
@@ -341,14 +342,19 @@ token_file = "secrets/backup-job.token"   # relative to the config dir; or token
   push instead of a day later. `grace` defaults to `1m`, max `1d`.
 - `?status=down` counts as a failed check (`msg="push: status=down"`). Every
   push (also `status=down`) starts a new `interval + grace`.
-- After a restart, the deadline is where it would be without the restart:
-  `interval + grace` after the last push, `interval` after the last missed
-  push (`last_check` and `last_msg` in the state file), so restarts do not
-  postpone it; but at least `grace` after the start, for a push sent while
+- After a restart, the deadline is where it would be without the restart,
+  counted from the monitor's last logged result (`last_check` and
+  `last_msg` in the state file): `interval` after a missed push (a result
+  with `msg="no push received"`, also `MAINT`), else `interval + grace`
+  (any push, also `status=down` or `MAINT`). So restarts do not postpone
+  it; but it is at least `grace` after the start, for a push sent while
   kinomi was down. A push monitor without any result yet, or one that was
-  disabled (`paused` in the state file), waits `interval + grace` from the
+  disabled at the last start (`paused` in the state file, rebuilt from
+  `event=DISABLED` in the log, §7.1), waits `interval + grace` from the
   start. If the wall clock jumps after the start (e.g. NTP correcting a
-  fake-hwclock time), these first deadlines are computed again.
+  fake-hwclock time), deadlines from the state file that no push or missed
+  push has replaced yet are computed again when the jump is detected
+  (§10.1).
 - A disabled push monitor answers `404` like an unknown token.
 - Push monitors are not polled, so they have no `timeout` (a `timeout` in
   the push monitor's file warns; `[defaults] timeout` does not apply) and do
@@ -371,7 +377,7 @@ token_file = "secrets/backup-job.token"   # relative to the config dir; or token
 | `warn` | Monitor enters `WARN` (e.g. certificate expiry), at most once per 24 h per monitor (not kept across restarts). From `DOWN` straight to `WARN`: `up`, then `warn` |
 | `reminder` | Still `DOWN` after `resend_interval`, checked continuously, not only with results (a push monitor has one result per `interval`) |
 
-No notifications during `MAINTENANCE` (§14.2), except `up` from a push (§4.6). Notifications are never
+No notifications during `MAINTENANCE`, except `up` from a push (§14.2). Notifications are never
 skipped by the queue (§6). They are sent one after the other by a dedicated
 thread, each request with a 15 s timeout, with up to 3 attempts (retries
 after 5 s and 30 s). Every result is logged:
@@ -382,8 +388,10 @@ after 5 s and 30 s). Every result is logged:
 ```
 
 A monitor that is already DOWN when kinomi starts (restored from its state
-file) gets no new `down` notification; its first reminder comes
-`resend_interval` after the start. After a maintenance window the state
+file) gets no new `down` notification. Reminders keep their schedule across
+restarts: every `resend_interval` after the monitor went DOWN
+(`state_since`); one that was due while kinomi was not running is not sent
+late. After a maintenance window the state
 machine continues: a monitor that was DOWN before the window and is UP after
 it sends `up`.
 
@@ -503,6 +511,7 @@ All timestamps stored are **UTC, RFC 3339, second precision**.
 
 ```
 2026-10-22T14:00:00Z event=START version=0.5.0 monitors=42
+2026-10-22T14:00:00Z event=DISABLED monitor=old-nas
 2026-10-22T14:03:11Z monitor=blog result=UP latency_ms=123 cert_expires=2026-12-01 msg="HTTP 200"
 2026-10-22T14:04:11Z monitor=shop result=FAIL latency_ms=10000 msg="timeout"
 2026-10-22T14:05:11Z monitor=shop result=DOWN latency_ms=10000 msg="timeout"
@@ -518,7 +527,8 @@ All timestamps stored are **UTC, RFC 3339, second precision**.
 ```
 
 - `result` is `UP`, `WARN`, `FAIL` (failed, retries left), `DOWN`,
-  `SKIPPED` or `MAINT` (§14.2). Other lines are events: `START`, `STOP`,
+  `SKIPPED` or `MAINT` (§14.2). Other lines are events: `START` (followed
+  by one `DISABLED monitor=ID` per disabled monitor), `STOP`,
   `NOTIFY`, `HEARTBEAT`, `AUTH_FAIL`, `CLOCK_JUMP`, `PAUSED`, and
   `LOG_LINES_DROPPED count=N` if more than 10 000 lines were waiting for a
   flush.
@@ -836,7 +846,7 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
   `X-Frame-Options: DENY`. Every response has `Cache-Control`:
   `public, max-age=300` for `/assets/`; `private, no-store` for `/private`,
-  everything below `/private/` and `/metrics` (also `401` and redirects
+  everything below `/private/` (also `/private/assets/`) and `/metrics` (also `401` and redirects
   there); `no-cache` for everything else (public pages and their files,
   `/push/`, `/healthz`, errors, redirects). In mode B the proxy sets it for
   the files it serves (see `contrib/nginx/`, `contrib/apache/`).
@@ -899,8 +909,9 @@ kinomi runs on Linux only (§1), with the static musl binaries of §12.
 - Pages change at almost every render (heartbeat bars, durations). Measured
   on a Raspberry Pi 1 with 50 monitors every 60 s: about 370 KB of page
   files per render, i.e. roughly 500 MB per day. Therefore the default
-  `output_dir` is a tmpfs: `/run/user/<uid>/uptime-kinomi/www` (§10.6); the
-  system configuration sets `/run/uptime-kinomi/www`. Losing the pages is
+  `output_dir` is a tmpfs: `/run/user/<uid>/uptime-kinomi/www` (§10.6); for
+  the system unit, which creates `/run/uptime-kinomi`, `kinomi.toml` must set
+  `/run/uptime-kinomi/www` (§10.6). Losing the pages is
   harmless: they are regenerated from the state files within one render
   cycle. Log and state files together are about 0.3 MB per 10 minutes for
   the same setup.
@@ -1149,8 +1160,8 @@ the matching public keys are compiled into kinomi.
 
 `uptime-kinomi self-update` replaces the running binary with the latest
 signed release for the same platform. The uptime-kinomi binary never runs
-`self-update` automatically; the administrator decides when to update. Regular
-updates can be achieved with a systemd timer: see
+`self-update` automatically. Regular updates come from a systemd timer
+(enabled by `install.sh` and the Ansible roles unless switched off): see
 [`contrib/systemd/user/`](contrib/systemd/user/) and §12.3.
 
 1. **Preconditions:** the binary's own directory must be writable by the
@@ -1273,16 +1284,20 @@ duration = "2h"                   # 1m to 7d; daily at most 1d
   - no notifications are sent, and the monitor's state machine (retries,
     DOWN) is left untouched: after the window, the next check continues
     from the state before it;
-  - a push monitor whose push is overdue does not fail during the window,
-    and `status=down` pushes are logged as `MAINT`. A push with
-    `status=up` is a report from the client, not a check: it is processed as
-    outside the window (logged `UP`, may change the state and send `up`).
+  - push monitors: a missed deadline and a `status=down` push are logged as
+    `MAINT` and both start the next deadline as usual (§4.6), so a push
+    that stays overdue fails at the first deadline after the window. A push
+    with `status=up` is a report from the client, not a check: it is
+    processed as outside the window (logged `UP`, counted as `up`, may
+    change the state and send `up`). This is the only exception to the
+    rules above.
 - Pages list the maintenance windows of their monitors that are active now
   ("now") or start within the next 7 days, each window file with its next
   occurrence only.
 - `MAINTENANCE` is shown from the start to the end of a window, also before
-  the first check in it. Results in a window do not change the monitor's
-  state, so a restart during a window continues from the state before it.
+  the first check in it. Results in a window (except `status=up` pushes)
+  do not change the monitor's state, so a restart during a window continues
+  from the state before it.
 
 ---
 
