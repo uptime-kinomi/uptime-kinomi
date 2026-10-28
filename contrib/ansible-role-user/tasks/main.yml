@@ -153,13 +153,15 @@
           fi
           printf '%s\n' "$out"
           # Replacing the directory would delete data, logs or pages inside
-          # it. check-config prints the directories (with the staging
-          # directory as the configuration directory); this works with every
-          # kinomi version.
+          # it. check-config prints the directories (relative ones resolved
+          # against the staging directory, absolute ones may point into the
+          # live one); this works with every kinomi version.
+          rnew=$(realpath -m -- "$new")
+          rlive=$(realpath -m -- "$live")
           printf '%s\n' "$out" | sed -n 's/^\(data\|log\|output\) dir: *//p' |
               while IFS= read -r d; do
-                  case "$d/" in
-                      "$new"/*)
+                  case "$(realpath -m -- "$d")/" in
+                      "$rnew"/* | "$rlive"/* | "$rlive.new"/*)
                           echo "$d is inside the configuration directory: not replacing it" >&2
                           exit 1
                           ;;
