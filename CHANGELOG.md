@@ -6,68 +6,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-29
+
 ### Security
 - `HEAD` on a percent-encoded push URL (`/%70ush/<token>`) still counted
   as a push: the method check used the raw path. Now every decision uses
   the decoded path.
-- Built-in server: every response has `Cache-Control` (before, `401`,
-  `429` and redirects below `/private/` had none, and a `301` is cacheable
-  by default); the 10 s write timeout covers the whole response; the
-  accept loop pauses after an error (e.g. out of file descriptors) instead
-  of spinning.
+- Built-in server: every response has `Cache-Control` (before, `400`,
+  `401`, `429`, `431` and redirects below `/private/` had none, and a `301`
+  is cacheable by default); the 10 s write timeout covers the whole
+  response; the accept loop pauses after an error (e.g. out of file
+  descriptors) instead of spinning.
 - `http.url` with a user name or password (`https://user:pw@...`) is
   rejected (it was shown on private pages); `check-config` warns about
   credential headers (`Authorization`, API keys, ...) in monitor files that
   are readable by all users.
+- Ansible roles: they stop if `data_dir`, `log_dir` or `output_dir` is
+  inside the configuration directory (relative, or an absolute path into
+  the live directory), which replacing the directory would delete.
 
 ### Added
 - `check-config` warns when `data_dir`, `log_dir` or `output_dir` is inside
-  the configuration directory (deleted when the directory is deployed by
-  replacing it, as the Ansible roles do).
+  the configuration directory.
+- `server.hostnames` accepts IPv6 addresses (`"::1"`, compared as
+  addresses). install.sh `--listen` accepts IPv6 addresses and then adds
+  `::1` to `hostnames`.
+- Log: `event=DISABLED monitor=ID` after `event=START` for every disabled
+  monitor; state files: `paused = true` while a monitor is disabled.
 
 ### Fixed
-- IPv6: `server.hostnames` accepts IPv6 addresses (`"::1"`, compared as
-  addresses), so a server on `[::1]:8080` can be used without accepting any
-  Host header. install.sh `--listen` accepts IPv6 addresses and then adds
-  `::1` to `hostnames`; `--uninstall` no longer names a fixed data path.
-- Reminders kept being postponed by restarts: the first one came
-  `resend_interval` after the start. They now keep their schedule from when
-  the monitor went DOWN.
-- After `rebuild-state` (or without state files), a disabled push monitor
-  was treated as enabled. Disabled monitors are now logged after `START`
-  (`event=DISABLED monitor=ID`).
-- The mode-B proxy examples send `Cache-Control: no-cache` for public pages
-  (kinomi's own server does the same; the proxies also use it for `/assets/`).
-- Log cleanup: a failed deletion of expired log files was reported as a
-  failed log write; it is now a warning, tried again the next day. A file
-  that cannot be deleted no longer stops the deletion of the others.
-- `400` and `431` responses and `/private` (without slash) now get the same
-  `Cache-Control` as everything else.
-- State files with more than 100 state changes are trimmed when loaded.
-- A push monitor never failed if kinomi restarted more often than
-  `interval + grace` (deploys, updates, reboots): every start set a new
-  deadline `interval + grace` from the start. Now the deadline counts from
-  the last push before the restart, and an overdue monitor fails `grace`
-  after the start. A missed push before the restart counts too (next
-  failure `interval` later), a monitor that was disabled waits a full
+- Push monitors could stay UP for days without a push. Every start set the
+  deadline `interval + grace` after the start, so a monitor never failed if
+  kinomi restarted more often than that (deploys, updates, reboots). Now
+  the deadline after a start is where it would have been without the
+  restart (counted from the last push or missed push), but at least `grace`
+  after the start. A monitor that was disabled waits a full
   `interval + grace`, and a wrong clock at the start (fake-hwclock before
   NTP) is corrected when the clock jumps.
 - Reminders (`resend_interval`) only came with a result, so a daily push
-  monitor reminded at most once a day. They are now sent on time.
+  monitor reminded at most once a day, and every restart postponed the
+  next one. They are now sent on time and keep their schedule from when
+  the monitor went DOWN.
 - A push monitor that was DOWN stayed DOWN after a maintenance window even
-  if pushes came in during it. A push (`status=up`) now counts inside a
-  window too.
+  if pushes came in during it. A push with `status=up` now counts inside a
+  window too (see Changed).
 - The push examples set `retries = 0`: with `[defaults] retries = 1`, a
   missed daily push only made the monitor DOWN a day later.
-- A state file with an incomplete `last_error` pair was half loaded before
-  being rejected; the following replay then skipped the data it had not
-  loaded (heartbeat bar, totals, changes). Now a broken file leaves nothing
-  behind (regression in 0.5.0).
-- Replay counted `event=NOTIFY` lines against `covered_events`, so a result
-  of the same second could be counted twice (regression in 0.5.0).
-- If removing stale pages at startup kept failing, every render rewrote
-  all files (SD card wear). The cleanup is now tried once and its error
-  reported; the pages count as written.
+- A monitor that came back from DOWN straight into WARN (e.g. with an
+  expiring certificate) sent only `up`; now also `warn` (at most once per
+  24 h as before).
 - A notification endpoint that answered with a redirect (e.g. an `http://`
   ntfy URL redirecting to https) was logged as delivered (`ok=true`) without
   delivering anything. Any non-2xx answer is now an error (`HTTP 301`) and
@@ -75,45 +62,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `timeout` now covers the whole check: before, an `http` check got the
   full timeout for every redirect hop (up to 11 times with
   `max_redirects = 10`), and a `tcp` banner read for every read.
-- Paused monitors showed "PAUSED for …" with the time since their last
-  state change; now no duration (and `since: null` in `status.json`).
+- A state file with an incomplete `last_error` pair was half loaded before
+  being rejected; the following replay then skipped the data it had not
+  loaded (heartbeat bar, totals, changes). Now a broken file leaves nothing
+  behind (regression in 0.5.0).
+- Replay counted `event=NOTIFY` lines against `covered_events`, so a result
+  of the same second could be counted twice (regression in 0.5.0).
+- State files of 0.4.0 with `state = "MAINTENANCE"` kept showing
+  MAINTENANCE outside any window; they are read as UNKNOWN. State files
+  with more than 100 state changes are trimmed when loaded.
 - Results inside a maintenance window did not log `cert_expires`, so a
   rebuilt state lacked it.
-- State files of 0.4.0 with `state = "MAINTENANCE"` kept showing
-  MAINTENANCE outside any window; they are read as UNKNOWN.
-- `event=AUTH_FAIL` could be logged after `event=STOP` at shutdown.
-- Update timer: a new version that crashed and was restarted by systemd
-  within the 15 s check counted as running; now the main process must be
-  the same after 15 s.
-- `check-config` with a broken `kinomi.toml` also reports duplicate push
-  tokens.
-- `install.sh` never overwrites a starter file (before, all of them were
-  written whenever `kinomi.toml` was missing), says that `--listen` only
-  applies to a new configuration, and its summary shows the address and
-  directories of the configuration in effect.
-- Ansible root role: installs `sudo` (needed for commands as
-  `KINOMI_USER`), and test-runs a downloaded binary as `KINOMI_USER`, not
-  as root.
+- If removing stale pages at startup kept failing, every render rewrote
+  all files (SD card wear). The cleanup is now tried once and its error
+  reported; the pages count as written.
+- Log cleanup: a failed deletion of expired log files was reported as a
+  failed log write; it is now a warning, tried again the next day. A file
+  that cannot be deleted no longer stops the deletion of the others.
+- Paused monitors showed "PAUSED for …" with the time since their last
+  state change; now no duration (and `since: null` in `status.json`).
 - The Atom feed was invalid without `server.base_url`: entries without a
   link need content. Every entry now has content (its title if there is no
   text).
-- A monitor that came back from DOWN straight into WARN (e.g. with an
-  expiring certificate) sent only `up`; now also `warn` (at most once per
-  24 h as before).
+- `event=AUTH_FAIL` could be logged after `event=STOP` at shutdown.
+- `check-config` with a broken `kinomi.toml` also reports duplicate push
+  tokens.
+- Update timer: a new version that crashed and was restarted by systemd
+  within the 15 s check counted as running; now the main process must be
+  the same after 15 s.
+- `install.sh` never overwrites a starter file (before, all of them were
+  written whenever `kinomi.toml` was missing), says that `--listen` only
+  applies to a new configuration, its summary shows the address and
+  directories of the configuration in effect, and `--uninstall` no longer
+  names a fixed data path.
+- Ansible root role: installs `sudo` (needed for commands as
+  `KINOMI_USER`), and test-runs a downloaded binary as `KINOMI_USER`, not
+  as root.
+- The mode-B proxy examples send `Cache-Control: no-cache` for public pages
+  (kinomi's own server does the same; the proxies also use it for
+  `/assets/`).
 
 ### Changed
+- A push with `status=up` inside a maintenance window is processed as
+  outside it (logged `UP`, may change the state and send `up`). Missed
+  pushes and `status=down` are still `MAINT`.
 - The uptime badge moved from `badge/{monitor}-uptime.svg` to
   `badge/uptime/{monitor}.svg`: monitor `web-uptime`'s state badge and
   monitor `web`'s uptime badge had the same name, and one overwrote the
-  other.
+  other. Old files are removed.
 - Ansible roles: the configuration is sent as one archive instead of one
   transfer per file (twice). Ansible Vault files are decrypted and symlinks
   followed on the controller; on the target the archive is unpacked into an
   emptied staging directory (by `KINOMI_USER` in the root role), checked,
-  and replaces the live directory only if something differs. The roles stop
-  if `data_dir`, `log_dir` or `output_dir` is inside the configuration
-  directory (relative, or an absolute path into the live directory). A complete run takes about 4.5 minutes on an idle Raspberry
-  Pi 1.
+  and replaces the live directory only if something differs. A complete
+  run takes about 4.5 minutes on an idle Raspberry Pi 1.
+- Downgrade to 0.5.0 (e.g. `self-update --rollback`): 0.5.0 cannot read
+  the state file of a disabled monitor (`paused` key) and rebuilds that
+  monitor from the log.
 
 ## [0.5.0] - 2026-10-27
 
@@ -367,7 +372,8 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.2.0...v0.3.0
