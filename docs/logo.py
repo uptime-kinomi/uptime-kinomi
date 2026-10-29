@@ -3,11 +3,11 @@
 
 A blackberry as a round sticker: half-spheres in shades of purple, placed
 at the 32 face centres of a soccer ball (truncated icosahedron) with a
-hexagon facing the viewer, a white pulse in front, on a dark grid "screen".
+hexagon facing the viewer, a white pulse in front, on a grey "screen".
 
     python3 docs/logo.py      # writes docs/logo.svg and assets/favicon.svg
 
-The favicon drops the shadow and the grid and uses a thicker pulse, so it
+The favicon drops the shadow and uses a thicker pulse, so it
 stays readable at 16 px.
 """
 import math
@@ -16,6 +16,7 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 INK = "#1a0826"
+SCREEN = "#9b9b9b"
 SHADES = ["#3b1457", "#5a2183", "#7433a6", "#4a1a6e", "#8a4cc0", "#62268f"]
 C = 64                         # centre
 # Outer radius of the sticker and width of the white pulse; the white ring
@@ -92,9 +93,7 @@ def berry(ri):
 
 
 def pulse(width):
-    return (f'<path d="{PULSE}" fill="none" stroke="{INK}" stroke-width="{2 * width:.1f}" '
-            'stroke-linejoin="round" stroke-linecap="round"/>'
-            f'<path d="{PULSE}" fill="none" stroke="#fff" stroke-width="{width:.1f}" '
+    return (f'<path d="{PULSE}" fill="none" stroke="#fff" stroke-width="{width:.1f}" '
             'stroke-linejoin="round" stroke-linecap="round"/>')
 
 
@@ -109,11 +108,7 @@ def svg(favicon):
     if not favicon:
         parts.append(f'<circle cx="{C + 1.5}" cy="{C + 3}" r="{outer}" fill="#000" opacity=".3" filter="url(#s)"/>')
     parts.append(f'<circle cx="{C}" cy="{C}" r="{outer}" fill="#fff"/>'
-                 f'<circle cx="{C}" cy="{C}" r="{ri:.1f}" fill="#1d1230"/>')
-    if not favicon:
-        parts.append('<g clip-path="url(#c)" stroke="#3a2a55" stroke-width=".7">'
-                     + "".join(f'<path d="M{x},0V128"/>' for x in range(8, 128, 8))
-                     + "".join(f'<path d="M0,{y}H128"/>' for y in range(8, 128, 8)) + '</g>')
+                 f'<circle cx="{C}" cy="{C}" r="{ri:.1f}" fill="{SCREEN}"/>')
     parts.append(berry(ri))
     parts.append(f'<g clip-path="url(#c)">{pulse(width)}</g>')
     size = 'width="128" height="128" ' if not favicon else ""
