@@ -50,21 +50,21 @@ Keywords in this document: **MUST**, **SHOULD**, **MAY** as in RFC 2119.
 
 ### Resource targets (Raspberry Pi 1, 50 monitors, 60 s interval)
 
-Measured on 2026-10-23 on a Raspberry Pi Model B Rev 1 (ARMv6 700 MHz,
+Measured on 2026-10-29 on a Raspberry Pi Model B Rev 1 (ARMv6 700 MHz,
 256 MB, Raspbian 13) with 10 HTTPS, 10 DNS and 30 TCP/HTTP monitors, two
 pages and 100 badges, over 10 minutes:
 
-| Metric | Target | Measured (0.3.0) |
+| Metric | Target | Measured (0.6.0) |
 |---|---|---|
-| Resident memory | < 10 MB | 4.8 MB (peak 6.0 MB), 12 threads |
-| Average CPU | < 5 % | 1.8 % of the single core |
-| Startup until the server answers | < 1 s (excluding log replay of > 1 day) | 0.4–0.5 s |
-| Binary size (stripped, static) | < 6 MB | 3.3 MB |
+| Resident memory | < 10 MB | 4.2 MB (peak 5.6 MB), 12 threads |
+| Average CPU | < 5 % | 2.5 % of the single core |
+| Startup until the server answers | < 1 s (excluding log replay of > 1 day) | 0.4–0.7 s |
+| Binary size (stripped, static) | < 6 MB | 3.4 MB |
 | SD card writes | ≤ 1 log flush per `flush_interval` (default 30 s) | log + state: ~0.3 MB / 10 min; pages on a tmpfs by default (§10.2) |
-| Page render (2 pages, JSON, feeds, 100 badges) | – | 162 ms |
-| First login (bcrypt cost 10) / cached | – | 0.76 s / 10 ms |
-| HTTPS check incl. TLS handshake | – | 80–370 ms |
-| `self-update` (download, verify, test run, replace) | – | 3.5 s |
+| Page render (2 pages, JSON, feeds, 100 badges) | – | 195 ms |
+| First login (bcrypt cost 10) / cached | – | 0.66 s / 10 ms |
+| HTTPS check incl. TLS handshake | – | 150–400 ms (one slow site: 950 ms) |
+| `self-update` (download, verify, test run, replace) | – | 4.4 s |
 
 ---
 
