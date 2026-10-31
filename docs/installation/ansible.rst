@@ -147,15 +147,17 @@ Secrets with Ansible Vault
 --------------------------
 
 Push tokens, notification tokens and passwords should not be in Git in
-plain text. Encrypt each secret file with Ansible Vault:
+plain text. Encrypt each file that contains one with Ansible Vault, e.g.
+the push monitor with its token:
 
 .. code-block:: sh
 
-   ansible-vault encrypt files/config/secrets/backup.token
+   ansible-vault encrypt files/config/monitors/backup.toml
    ansible-playbook site.yml --ask-vault-pass
 
 The roles decrypt Vault files while packing the configuration, so the Pi
-gets the plain file and kinomi reads it as usual. On the Pi, the whole
+gets the plain file and kinomi reads it as usual. (``ansible-vault edit``
+opens an encrypted file for changes.) On the Pi, the whole
 configuration directory is readable only by the user kinomi runs as.
 
 Several Pis

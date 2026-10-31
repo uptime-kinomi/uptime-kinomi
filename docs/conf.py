@@ -26,7 +26,7 @@ myst_heading_anchors = 3
 
 highlight_language = "none"
 html_theme = "furo"
-html_title = f"uptime-kinomi {release}"
+html_title = f"kinomi {release}"
 html_logo = "logo.svg"
 html_favicon = "../assets/favicon.svg"
 html_static_path = ["_static"]

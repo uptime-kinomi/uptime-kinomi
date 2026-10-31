@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - README: shorter, with a screenshot; the details moved to the
   documentation.
 - `install.sh`: the starter configuration links to the documentation.
+- `contrib/examples/config`: the push monitor has its token inline
+  (`token`), with `token_file` as a commented-out alternative.
 - Logo and favicon: grey screen without grid, and the pulse line without
   its dark outline.
 

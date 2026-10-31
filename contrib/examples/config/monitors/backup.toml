@@ -1,5 +1,5 @@
 # The backup script calls this at its end:
-#   curl -fsS https://status.example.org/push/$(cat secrets/backup.token)
+#   curl -fsS -m 10 --retry 3 https://status.example.org/push/U0YgFZqKmZ0Eq4N6nC5novlahBwYuH6yFXeQpVvozI8
 config_version = 1
 type = "push"
 name = "Nightly backup"
@@ -9,4 +9,6 @@ retries = 0                 # [defaults] retries = 1 would mean DOWN a day later
 resend_interval = "12h"
 
 [push]
-token_file = "secrets/backup.token"   # create with: uptime-kinomi gen-token > secrets/backup.token
+token = "U0YgFZqKmZ0Eq4N6nC5novlahBwYuH6yFXeQpVvozI8"   # from: uptime-kinomi gen-token
+# Alternatively, read the token from a file (keeps it out of this file):
+# token_file = "secrets/backup.token"
