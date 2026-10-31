@@ -165,9 +165,9 @@ Details
 
 **Query parameters.** ``status=up`` (the default) or ``status=down``. The
 parameters ``msg`` and ``ping`` of uptime-kuma push URLs are accepted, but
-ignored: kinomi never stores what a client sends. The URL format is the
-same as uptime-kuma's, but kinomi tokens are longer (see below), so a
-moved job needs a new token.
+ignored: kinomi never stores what a client sends. A job moved from
+uptime-kuma can keep its token (32 letters and digits, valid here too); only
+the path changes from ``/api/push/<token>`` to ``/push/<token>``.
 
 **Tokens** are 32 to 128 characters from ``A-Z a-z 0-9 _ -`` and must be
 unique. ``uptime-kinomi gen-token`` prints a random one. Write it into the
