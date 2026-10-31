@@ -286,3 +286,21 @@ The pages in ``/run/uptime-kinomi/www`` belong to the group ``kinomi``. A
 web server that should serve them directly (mode B in
 :doc:`/operations/reverse-proxy`) must be in that group: ``sudo usermod -aG
 kinomi www-data``.
+
+Building from source
+--------------------
+
+For a processor without a release binary, or to run your own changes,
+build kinomi with Rust (1.85 or newer, from https://rustup.rs):
+
+.. code-block:: sh
+
+   git clone https://github.com/uptime-kinomi/uptime-kinomi.git
+   cd uptime-kinomi
+   cargo build --release
+   install -m 755 target/release/uptime-kinomi ~/.local/bin/uptime-kinomi
+
+Building on a Raspberry Pi 1 takes hours; build on a faster computer
+instead, e.g. with `cross <https://github.com/cross-rs/cross>`_:
+``cross build --release --target arm-unknown-linux-musleabihf``.
+``self-update`` replaces a self-built binary with the next signed release.

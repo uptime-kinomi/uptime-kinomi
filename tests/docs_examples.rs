@@ -5,13 +5,15 @@
 use std::path::Path;
 use std::process::Command;
 
-/// Warnings the examples trigger on purpose. Git does not keep the
-/// "others" permission bits, so in a checkout every secret is readable by
-/// all users.
+/// Warnings the examples trigger on purpose or that depend on the system.
+/// Git does not keep the "others" permission bits, so in a checkout every
+/// secret is readable by all users; the cross build containers have no
+/// time zone database.
 const EXPECTED_WARNINGS: &[&str] = &[
     "readable by all users",
     "http.tls_verify = false",
     "private pages on a non-loopback address",
+    "not found in the system time zone database",
 ];
 
 #[test]

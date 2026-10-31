@@ -2,36 +2,38 @@
 
 # uptime-kinomi
 
-**The SBC-friendly cousin of uptime-kuma.** A self-hosted uptime monitor and
-static status page generator written in Rust, built to run on a
-**Raspberry Pi 1**, configured with plain **TOML files**, and producing
-**JavaScript-free HTML + CSS status pages**.
+**📖 Documentation: [kinomi.readthedocs.io](https://kinomi.readthedocs.io/en/latest/)**
 
-> ⚠️ **Status: pre-1.0.** All features described here are implemented
-> (milestones M0 to M4 in [SPEC.md](SPEC.md)), tested on a real Raspberry
-> Pi 1 and with all parsers fuzzed ([fuzz/](fuzz/)). Before 1.0: polishing.
-> Expect configuration details to change until then.
+**The lightweight cousin of uptime-kuma.** A self-hosted uptime monitor and
+static status page generator written in Rust, configured with plain **TOML
+files** and producing **JavaScript-free HTML + CSS status pages**. It runs
+on any Linux machine, and even on low-end hardware such as a
+**Raspberry Pi 1**.
 
-📖 **Documentation: [kinomi.readthedocs.io](https://kinomi.readthedocs.io)**,
-with a step-by-step tutorial and examples for every monitor.
+> ⚠️ **Status: pre-1.0.** All features described here are implemented,
+> tested on a real Raspberry Pi 1 and with all parsers fuzzed. Before 1.0:
+> polishing. Expect configuration details to change until then.
 
----
+<p align="center"><img src="docs/_static/status-page.png" width="600" alt="A kinomi status page: the banner 'All systems operational', then groups of monitors with heartbeat bars, uptime percentages and their state"></p>
 
-## What can I use my Raspberry Pi 1 for?
+## What it does
 
-That old Pi 1 (or Pi Zero) in your drawer is enough to:
+- 🌐 **Watches websites and servers:** HTTP(S) status codes, keywords,
+  response time, TCP ports, DNS records.
+- 🔒 **Warns before your certificate expires.**
+- 💾 **Checks that your nightly backup actually ran:** the backup script
+  calls a push URL, and kinomi alerts you if it doesn't.
+- 📡 **Tells you whether "the internet is down" or just the Wi-Fi**, on a
+  public status page the whole family can open.
+- 🔔 **Sends alerts** to ntfy, Gotify, Telegram, Discord, Slack,
+  Mattermost, or any webhook.
+- 📄 **Status pages**, public or private (password), with heartbeat bars,
+  uptime, incidents, maintenance windows, badges, an Atom feed and
+  `status.json`.
 
-- 🌐 **Watch your websites and home server** (HTTP/HTTPS status codes, keywords, response time).
-- 🔒 **Warn you before your Let's Encrypt certificate expires.**
-- 💾 **Check that your nightly backup actually ran:** the backup script calls
-  a push URL, and kinomi alerts you if it doesn't.
-- 📡 **Tell you whether "the internet is down" or just your Wi-Fi:** router, DNS,
-  and upstream checks on a public status page the whole family can open.
-- 🔔 **Send alerts** to ntfy, Gotify, Telegram, Discord, Slack, Mattermost, or any webhook.
-- 👀 **Watch another Pi, which watches it back.** Two cheap boards keep an eye on each other.
-
-It uses a few MB of RAM, a few percent of a single 700 MHz core, and is gentle
-on SD cards.
+It needs a few MB of RAM and, even on a 700 MHz Pi 1, a few percent of the
+CPU. It writes little to SD cards and runs as your normal user, without
+root.
 
 ## Why not uptime-kuma?
 
@@ -41,127 +43,39 @@ on SD cards.
 |---|---|---|
 | Runs on Raspberry Pi 1 / Zero (ARMv6) | ❌ | ✅ first-class target |
 | Runtime | Node.js + SQLite/MariaDB | single static binary |
-| Memory | ~100+ MB | target < 10 MB |
+| Memory | ~100+ MB | < 10 MB |
 | Configuration | point-and-click web UI | **TOML files** (one per monitor), Ansible/Git friendly |
 | Status pages | JavaScript single-page app | **static HTML5 + CSS, no JavaScript** |
-| Private overview | login to web UI | private status pages behind HTTP Basic Auth |
 | Data | database | **human-readable log files** + human-readable state files |
 | Attack surface | full web application | tiny read-only server (or none at all) |
 
-If you want a configuration UI, use uptime-kuma. If you want config-as-code on
-minimal hardware, use kinomi.
+If you want a configuration UI, use uptime-kuma. If you want config as code
+on any hardware, use kinomi.
 
-## Features
+## Install
 
-- **Monitors:** HTTP(S) (status code, keyword, TLS certificate expiry, slow
-  response), TCP port (optional banner), DNS records, push/heartbeat
-  (compatible with uptime-kuma push URLs).
-- **Notifications:** generic webhook (JSON, Discord, Slack/Mattermost format),
-  ntfy, Gotify, Telegram. Down, recovery, warning and reminder events.
-- **Status pages:** as many as you like, each **public or private** (HTTP Basic
-  Auth). Heartbeat bar, 24 h and 30 d uptime, response time, certificate
-  expiry, incidents, maintenance windows. Dark mode, auto-refresh via `<meta>`,
-  works in text browsers. Custom CSS supported.
-- **Extras:** SVG status badges, Atom feed per page, `status.json`, optional
-  Prometheus `/metrics`.
-- **Config as code:** one `.toml` file per monitor, notifier, page, incident
-  and maintenance window. `uptime-kinomi check-config` validates the whole
-  directory, e.g. in CI or before a deployment (the Ansible roles in
-  `contrib/` do exactly that).
-- **Built for weak hardware:** one binary, thread-based check queue with fair
-  skipping under overload, low-priority background page rendering, buffered
-  log writes, works without a real-time clock.
-- **Runs without root:** install, configure and run everything as your
-  normal user (`~/.config`, `~/.local/state`, `systemctl --user`). System-wide
-  installation with a dedicated service user is supported too.
-- **Signed self-update:** `uptime-kinomi self-update` installs the latest
-  release after checking its minisign signature and checksum.
-- **Security first:** no `unsafe` code, strict input limits, nothing fetched
-  from targets is ever shown or forwarded, strict CSP, no inbound TLS (left to
-  your reverse proxy), hardened systemd unit.
-
-## Download: which binary do I need?
-
-Binaries are static (musl), so they don't depend on your distribution's libc.
-Run `uname -m` if unsure.
-
-| Your board / system | `uname -m` | Binary |
-|---|---|---|
-| Raspberry Pi 1 (A, B, A+, B+), Pi Zero, Pi Zero W, Compute Module 1 | `armv6l` | `uptime-kinomi-armv6` |
-| Raspberry Pi 2, 3, 4, 5, Zero 2 W with a **32-bit** OS | `armv7l` | `uptime-kinomi-armv7` (`armv6` also works) |
-| Banana Pi M1/M2/M3, Orange Pi PC/One/Zero, BeagleBone, other 32-bit ARMv7 | `armv7l` | `uptime-kinomi-armv7` |
-| Raspberry Pi 3, 4, 5, Zero 2 W with a **64-bit** OS | `aarch64` | `uptime-kinomi-aarch64` |
-| Banana Pi M5/M7, Orange Pi 5, Rock Pi, Odroid, other 64-bit ARM | `aarch64` | `uptime-kinomi-aarch64` |
-| PC, NUC, VM, server | `x86_64` | `uptime-kinomi-x86_64` |
-| VisionFive 2, Banana Pi BPI-F3, other RISC-V (best effort) | `riscv64` | `uptime-kinomi-riscv64` |
-
-Rule of thumb: when in doubt on 32-bit ARM, take `armv6`. It runs everywhere,
-just a bit slower.
-
-## Install in one line (Raspberry Pi or any Linux), no root needed
-
-Logged in as the user who should run kinomi (e.g. `pi`):
+On a Raspberry Pi or any Linux machine, as the user who should run kinomi
+(no root needed):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/uptime-kinomi/uptime-kinomi/main/contrib/install.sh | sh
 ```
 
-[`contrib/install.sh`](contrib/install.sh) picks the binary for your CPU,
-**verifies the release signature** (with `minisign`, or OpenSSL 3 as on
-Raspberry Pi OS bookworm) and the checksum, installs to `~/.local/bin`,
-creates a starter configuration in `~/.config/uptime-kinomi` (an existing one
-is never overwritten, and is checked with the new version before anything is
-replaced), installs and starts a systemd user service, and enables a weekly
-self-update timer (see [Updating](#updating-and-verifying-downloads)). Options:
+The script verifies the release signature, installs kinomi to
+`~/.local/bin`, creates a starter configuration, starts a systemd user
+service and enables weekly signed self-updates. Manual and Ansible
+installations are described in the
+[installation guide](https://kinomi.readthedocs.io/en/latest/installation/).
+Then follow [First steps](https://kinomi.readthedocs.io/en/latest/getting-started/first-steps.html).
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/uptime-kinomi/uptime-kinomi/main/contrib/install.sh | sh -s -- --listen 0.0.0.0:8080
-```
+## A taste
 
-`--listen 0.0.0.0:8080` makes the status page reachable from your LAN
-(default: only `127.0.0.1`), `--version X.Y.Z` installs a specific release,
-`--no-service` skips systemd, `--no-auto-update` leaves the weekly update
-timer off, `--uninstall` removes binary and service
-(configuration and data are kept). Prefer to read it first? Download it,
-read it, then run `sh install.sh`.
+One file per monitor, `~/.config/uptime-kinomi/monitors/blog.toml`:
 
-## Manual setup, no root needed
-
-kinomi runs as your normal user. Everything below works without `sudo`.
-
-```sh
-# 1. install the binary into your home directory
-mkdir -p ~/.local/bin
-install -m 755 uptime-kinomi-armv6 ~/.local/bin/uptime-kinomi
-
-# 2. create a configuration
-mkdir -p ~/.config/uptime-kinomi/monitors ~/.config/uptime-kinomi/notifications \
-         ~/.config/uptime-kinomi/pages ~/.config/uptime-kinomi/secrets
-cd ~/.config/uptime-kinomi
-```
-
-`~/.config/uptime-kinomi/kinomi.toml`:
-```toml
-config_version = 1
-
-[server]
-listen = "127.0.0.1:8080"
-hostnames = ["status.example.org"]
-base_url = "https://status.example.org"
-htpasswd_file = "htpasswd"          # relative paths are relative to this directory
-
-[pages]
-timezone = "Europe/Berlin"
-default_page = "home"
-```
-
-`monitors/blog.toml`:
 ```toml
 config_version = 1
 type = "http"
 name = "My blog"
-interval = "60s"
-notifications = ["phone"]
 
 [http]
 url = "https://blog.example.org/"
@@ -169,143 +83,8 @@ keyword = "Welcome"
 tls_expiry_warn = "14d"
 ```
 
-`monitors/backup.toml` (your backup script runs
-`curl -fsS https://status.example.org/push/<token>` at the end):
-```toml
-config_version = 1
-type = "push"
-name = "Nightly backup"
-interval = "1d"
-grace = "2h"
-retries = 0                 # DOWN at the first missed push, not a day later
-notifications = ["phone"]
-
-[push]
-token_file = "secrets/backup.token"   # create with: uptime-kinomi gen-token > secrets/backup.token
-```
-
-`notifications/phone.toml`:
-```toml
-config_version = 1
-type = "ntfy"
-
-[ntfy]
-url = "https://ntfy.sh"
-topic = "my-secret-topic-name"
-```
-
-`pages/home.toml` (public) and `pages/all.toml` (private):
-```toml
-config_version = 1
-title = "Our services"
-public = true
-
-[[groups]]
-name = "Web"
-monitors = ["blog"]
-```
-```toml
-config_version = 1
-title = "Everything"
-public = false
-
-[[groups]]
-name = "All monitors"
-monitors = ["*"]
-```
-
-```sh
-# 3. a password for private pages (prints a random password once; same file format as Apache/nginx htpasswd)
-uptime-kinomi hash-password admin >> htpasswd
-chmod 600 htpasswd secrets/*
-
-# 4. validate and start as a systemd user service (unit file in contrib/systemd/user/)
-uptime-kinomi check-config
-mkdir -p ~/.config/systemd/user
-curl -fsSLo ~/.config/systemd/user/uptime-kinomi.service \
-  https://raw.githubusercontent.com/uptime-kinomi/uptime-kinomi/main/contrib/systemd/user/uptime-kinomi.service
-systemctl --user enable --now uptime-kinomi
-```
-
-State and logs end up in `~/.local/state/uptime-kinomi/`, the generated
-pages in `/run/user/<uid>/uptime-kinomi/www` (a tmpfs, to spare the SD
-card). The directories are the same whether systemd starts kinomi or you run
-`uptime-kinomi run` yourself, e.g. for debugging after
-`systemctl --user stop uptime-kinomi`.
-
-To keep the service running after you log out and start it at boot, *lingering*
-must be enabled once for your user (`loginctl enable-linger`; on some systems an
-administrator has to do this). Without systemd, a crontab line does the job:
-
-```
-@reboot ~/.local/bin/uptime-kinomi run
-```
-
-**System-wide installation** works the same way, with a dedicated `kinomi`
-user (never root), config in `/etc/uptime-kinomi/` and the hardened system unit
-from `contrib/systemd/system/`, which creates `/var/lib/uptime-kinomi`,
-`/var/log/uptime-kinomi` and `/run/uptime-kinomi`; set these paths in
-`kinomi.toml` (see the comment in the unit). See [SPEC.md](SPEC.md) §10.6.
-
-Everything is explained in [SPEC.md](SPEC.md).
-
-## Updating and verifying downloads
-
-```sh
-uptime-kinomi self-update --check     # exit code 3 if a newer release exists
-uptime-kinomi self-update             # download, verify, replace; then restart the service
-systemctl --user restart uptime-kinomi
-```
-
-`self-update` only accepts releases whose checksum file is signed with the
-project's offline [minisign](https://jedisct1.github.io/minisign/) keys
-(embedded in the binary), tests the new binary on your CPU before replacing
-anything, and keeps the previous version (`self-update --rollback`). It works
-without root as long as the binary lives in a directory you own, such as
-`~/.local/bin`.
-
-**Automatic updates:** `install.sh` and the Ansible roles enable
-`uptime-kinomi-update.timer` ([`contrib/systemd/user/`](contrib/systemd/user/)),
-which runs `self-update` once a week (Monday morning), checks your
-configuration with the new version, restarts the service if it is running,
-and rolls back if the check fails or the service does not stay up:
-
-```sh
-systemctl --user list-timers uptime-kinomi-update.timer   # next run
-systemctl --user start uptime-kinomi-update               # update now
-systemctl --user disable --now uptime-kinomi-update.timer # turn it off
-```
-
-To verify a manual download (primary key `16F640342DF96A16`; the backup key
-is listed in [SPEC.md](SPEC.md) §12.1 and in [keys/](keys/)):
-
-```sh
-minisign -Vm SHA256SUMS -P RWQWavktNED2FrnDC8yLcpUPBKv4JeUoguh4zMF2wCBxwRJKVs3vRZu3
-sha256sum --ignore-missing -c SHA256SUMS
-gh attestation verify uptime-kinomi-armv6 --repo uptime-kinomi/uptime-kinomi   # optional: build provenance
-```
-
-## Examples and deployment files
-
-[`contrib/`](contrib/) has a complete example configuration
-([`contrib/examples/config/`](contrib/examples/config/)), systemd units for
-user and system installation, nginx and Apache configurations, the one-line
-installer, and two Ansible roles.
-
-## Running behind a reverse proxy
-
-kinomi does not do TLS itself. Put nginx, Apache or Caddy in front and get a
-certificate with certbot / Let's Encrypt. Two supported setups:
-
-- **Mode A (default):** the proxy forwards everything to `127.0.0.1:8080`.
-- **Mode B (don't trust a custom HTTP server?):** the proxy serves the generated
-  files directly from disk and does Basic Auth itself with the same htpasswd
-  file. Only `/push/` (and `/metrics`, if enabled) is forwarded to kinomi, or
-  nothing at all if you use neither.
-
-Example nginx and Apache configs for both modes are in `contrib/`.
-
-## Logs you can read
+`uptime-kinomi check-config` validates the whole configuration. Everything
+kinomi does ends up in plain log files, one per day:
 
 ```
 2026-10-22T14:03:11Z monitor=blog result=UP latency_ms=123 msg="HTTP 200"
@@ -313,25 +92,31 @@ Example nginx and Apache configs for both modes are in `contrib/`.
 2026-10-22T14:05:11Z event=NOTIFY monitor=blog notifier=phone kind=down ok=true
 ```
 
-One file per day, UTC timestamps first, `grep`- and `awk`-friendly.
+## Documentation
 
-## Deploying with Ansible
+- [Installation](https://kinomi.readthedocs.io/en/latest/installation/):
+  `install.sh`, manual, Ansible, and which binary you need
+- [First steps](https://kinomi.readthedocs.io/en/latest/getting-started/first-steps.html):
+  a 30-minute tutorial
+- [Monitors](https://kinomi.readthedocs.io/en/latest/monitors/) and
+  [notifications](https://kinomi.readthedocs.io/en/latest/notifications/),
+  with examples for every type
+- [HTTPS and a reverse proxy](https://kinomi.readthedocs.io/en/latest/operations/reverse-proxy.html),
+  [updates](https://kinomi.readthedocs.io/en/latest/operations/updates.html),
+  [troubleshooting](https://kinomi.readthedocs.io/en/latest/operations/troubleshooting.html)
+- The [specification](SPEC.md): the complete, normative description
 
-Because every monitor is a file, the configuration directory can live in Git
-and be deployed as a whole. `uptime-kinomi check-config --config-dir DIR`
-checks a complete directory (Ansible's `validate:` only hands over single
-files, so check a staging copy first). Two complete Ansible roles are
-included. Both send the configuration as one archive (Vault files are
-decrypted), check it in a staging directory before it goes live, replace
-the live directory only if something changed, install the systemd user
-service, enable lingering, and install the latest signed release only if no
-binary is installed yet (updates are left to `self-update`):
+## Security
 
-- [`contrib/ansible-role-user/`](contrib/ansible-role-user/): kinomi runs as
-  the Ansible login user; no root needed.
-- [`contrib/ansible-role-root/`](contrib/ansible-role-root/): Ansible logs in
-  as root, installs the packages and creates `KINOMI_USER` (default
-  `kinomi`) for kinomi to run as.
+No `unsafe` code, strict input limits, fuzzed parsers, nothing fetched from
+monitored targets is ever shown or forwarded, strict CSP, no JavaScript, a
+hardened systemd unit, and no root. Releases are signed with offline
+[minisign](https://jedisct1.github.io/minisign/) keys, which `install.sh`
+and `self-update` verify before anything is replaced (primary key
+`RWQWavktNED2FrnDC8yLcpUPBKv4JeUoguh4zMF2wCBxwRJKVs3vRZu3`; both keys are in
+[keys/](keys/)). See
+[Updates](https://kinomi.readthedocs.io/en/latest/operations/updates.html)
+and [SPEC.md](SPEC.md) §11-12.
 
 ## Contributing
 

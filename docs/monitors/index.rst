@@ -87,8 +87,8 @@ Choosing interval, timeout and retries
 ``interval``
    How quickly do you need to know? Every minute is a good default for
    websites. Things that change slowly (certificates, DNS records, mail
-   records) are fine with ``"1h"`` or even ``"1d"``. A Pi 1 easily handles
-   50 monitors at one minute.
+   records) are fine with ``"1h"`` or even ``"1d"``. Even a Raspberry Pi 1
+   easily handles 50 monitors at one minute.
 
 ``timeout``
    How long a check may take before it counts as failed. 10 seconds is

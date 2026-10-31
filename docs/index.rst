@@ -5,8 +5,9 @@ uptime-kinomi
 cron jobs, sends you a message when something goes down, and publishes
 status pages that the whole family or all your customers can open.
 
-It is built for small computers: it runs on a **Raspberry Pi 1** with a few
-megabytes of memory, as your normal user, without root. You configure it
+It runs on any Linux computer, from a server to low-end hardware such as
+the very first **Raspberry Pi**, using only a few megabytes of memory, as
+your normal user, without root. You configure it
 with plain text files, one per monitor, so your setup can live in Git.
 
 .. figure:: _static/status-page.png

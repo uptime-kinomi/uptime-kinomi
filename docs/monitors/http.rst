@@ -82,7 +82,7 @@ pages. Let it warn you in time:
 * ``method = "HEAD"`` asks only for the headers, not the page: less traffic
   for a check that does not need the content. A keyword needs ``GET``.
 
-To keep a Pi 1 fast, kinomi reads the certificate in an extra connection at
+To keep checks cheap on slow hardware, kinomi reads the certificate in an extra connection at
 most every 6 hours. The ``tls_*`` keys can also be added to any other
 ``https://`` monitor, like the website above; a separate monitor is only
 useful if you want a different interval or name for it.

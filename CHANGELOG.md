@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Documentation at https://kinomi.readthedocs.io: installation with
+- Documentation at https://kinomi.readthedocs.io/en/latest/: installation with
   `install.sh`, by hand or with Ansible, a first-steps tutorial, examples
   for every monitor and notifier type, status pages, incidents and
   maintenance, reverse proxies, updates, logs, troubleshooting, and the
@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- README: shorter, with a screenshot; the details moved to the
+  documentation.
+- `install.sh`: the starter configuration links to the documentation.
 - Logo and favicon: grey screen without grid, and the pulse line without
   its dark outline.
 

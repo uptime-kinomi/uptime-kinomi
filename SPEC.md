@@ -1152,7 +1152,8 @@ the matching public keys are compiled into kinomi.
 
   So a compromised GitHub account or CI can publish a release, but not one
   that any installed kinomi accepts.
-- **Manual verification** (documented in the README):
+- **Manual verification** (documented in the manual installation guide,
+  `docs/installation/manual.rst`):
   `minisign -Vm SHA256SUMS -P <public key from the table above>` and then
   `sha256sum --ignore-missing -c SHA256SUMS`.
 
