@@ -5,11 +5,11 @@ config_version = 1
 type = "push"
 name = "Nightly backup"
 interval = "1d"            # one push per day expected
-grace = "2h"               # the backup may take two hours longer than usual
 retries = 0                # DOWN at the first missing push, not a day later
 resend_interval = "12h"    # remind me twice a day while it stays DOWN
 
 [push]
+grace = "2h"               # the backup may take two hours longer than usual
 token = "3T1YbhlYipY4nh5R27mMQ7DONHlW2cAJDj2cq2vyGL4"   # from: uptime-kinomi gen-token
 # Alternatively, read the token from a file (keeps it out of this file):
 # token_file = "secrets/backup.token"

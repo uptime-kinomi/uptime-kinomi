@@ -1,5 +1,5 @@
 # Watch the certificate: WARN 14 days before it expires (a notification
-# you can act on), DOWN 3 days before (if renewing keeps failing).
+# you can act on), a failed check 3 days before (if renewing keeps failing).
 # kinomi reads the expiry date at most every 6 hours.
 config_version = 1
 type = "http"
@@ -10,4 +10,4 @@ interval = "1h"
 url = "https://www.example.org/"
 method = "HEAD"                # no body needed; GET is the default
 tls_expiry_warn = "14d"
-tls_expiry_down = "3d"
+tls_expiry_fail = "3d"

@@ -44,7 +44,7 @@ Put it into the monitor file:
    :caption: monitors/backup.toml
 
 * ``interval = "1d"``: one call per day.
-* ``grace = "2h"``: a backup that takes up to two hours longer than the
+* ``grace = "2h"`` (in ``[push]``): a backup that takes up to two hours longer than the
   day before is still on time. Without ``grace``, one minute is allowed.
 * ``retries = 0``: DOWN at the first missed call. With the default
   ``retries = 1``, kinomi would tolerate one missed day and tell you only
@@ -210,7 +210,7 @@ believes it.
    * - ``interval`` (top level)
      - from ``[defaults]``
      - How often a call is expected.
-   * - ``grace`` (top level)
+   * - ``grace`` (in ``[push]``)
      - ``"1m"``
      - Extra time before the first missed call counts; at most ``1d``.
    * - ``token`` / ``token_file``

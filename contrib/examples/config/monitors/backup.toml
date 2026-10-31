@@ -4,11 +4,11 @@ config_version = 1
 type = "push"
 name = "Nightly backup"
 interval = "1d"
-grace = "2h"
 retries = 0                 # [defaults] retries = 1 would mean DOWN a day later
 resend_interval = "12h"
 
 [push]
+grace = "2h"
 token = "U0YgFZqKmZ0Eq4N6nC5novlahBwYuH6yFXeQpVvozI8"   # from: uptime-kinomi gen-token
 # Alternatively, read the token from a file (keeps it out of this file):
 # token_file = "secrets/backup.token"

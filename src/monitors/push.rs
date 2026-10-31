@@ -4,11 +4,13 @@
 //! fails the monitor if no push arrived within `interval + grace`.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::Deserialize;
 
 use super::{Check, CheckResult};
 use crate::config::FileProblems;
+use crate::config::duration::Dur;
 use crate::config::secret::{self, Secret, is_world_readable};
 
 pub const MIN_TOKEN_LEN: usize = 32;
@@ -19,6 +21,14 @@ pub const MAX_TOKEN_LEN: usize = 128;
 pub struct PushFile {
     token: Option<String>,
     token_file: Option<PathBuf>,
+    grace: Option<Dur>,
+}
+
+/// The `[push]` table of a monitor, checked.
+pub struct PushConfig {
+    pub token: Secret,
+    /// Extra time after `interval` before the monitor fails.
+    pub grace: Duration,
 }
 
 pub fn is_valid_token(token: &str) -> bool {
@@ -28,7 +38,11 @@ pub fn is_valid_token(token: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-pub fn build(file: PushFile, ctx: &super::Context, p: &mut FileProblems) -> Option<Secret> {
+pub fn build(file: PushFile, ctx: &super::Context, p: &mut FileProblems) -> Option<PushConfig> {
+    let grace = file.grace.unwrap_or(Dur::secs(60));
+    if grace > Dur::secs(86400) {
+        p.error("push.grace must be at most 1d");
+    }
     let mut warnings = Vec::new();
     let token_file = file
         .token_file
@@ -61,7 +75,10 @@ pub fn build(file: PushFile, ctx: &super::Context, p: &mut FileProblems) -> Opti
             "push.token must be {MIN_TOKEN_LEN} to {MAX_TOKEN_LEN} characters from A-Z, a-z, 0-9, _ and - (use: uptime-kinomi gen-token)"
         ));
     }
-    Some(token)
+    Some(PushConfig {
+        token,
+        grace: grace.0,
+    })
 }
 
 /// Placeholder: push monitors are never polled by the scheduler.

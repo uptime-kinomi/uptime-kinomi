@@ -30,9 +30,9 @@ usually through a reverse proxy (:doc:`reverse-proxy`).
    type = "push"
    name = "Pi A"
    interval = "60s"           # pi-a's heartbeat interval
-   grace = "30s"
 
    [push]
+   grace = "30s"
    token = "PASTE-THE-TOKEN-HERE"
 
 Then run ``chmod 600 monitors/pi-a.toml``: the file contains the token.

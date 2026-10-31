@@ -4,9 +4,9 @@ config_version = 1
 type = "push"
 name = "Hourly import"
 interval = "1h"
-grace = "10m"
 
 [push]
+grace = "10m"
 token = "SODnRpmzrUMfMoQp1NUEfZjCdSfAGUPpd76mEOPAhZg"   # from: uptime-kinomi gen-token
 # Alternatively, read the token from a file (keeps it out of this file):
 # token_file = "secrets/cron-hourly.token"

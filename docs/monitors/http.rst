@@ -77,7 +77,7 @@ pages. Let it warn you in time:
   the certificate expires. Let's Encrypt certificates are renewed 30 days
   before they expire, so a warning means the renewal has failed for two
   weeks.
-* ``tls_expiry_down = "3d"``: the check fails 3 days before. "0s" (the
+* ``tls_expiry_fail = "3d"``: the check fails 3 days before. "0s" (the
   default for both) switches a limit off.
 * ``method = "HEAD"`` asks only for the headers, not the page: less traffic
   for a check that does not need the content. A keyword needs ``GET``.
@@ -190,7 +190,7 @@ All keys
    * - ``tls_expiry_warn``
      - ``"0s"`` (off)
      - WARN when the certificate expires within this time.
-   * - ``tls_expiry_down``
+   * - ``tls_expiry_fail``
      - ``"0s"`` (off)
      - Fail when the certificate expires within this time.
    * - ``slow_warn``
@@ -214,7 +214,7 @@ These appear in the log and on private pages:
    * - ``HTTP 200, slow response``
      - Slower than ``slow_warn`` (WARN).
    * - ``HTTP 200, certificate expires in 10 days``
-     - Within ``tls_expiry_warn`` (WARN) or ``tls_expiry_down`` (failure).
+     - Within ``tls_expiry_warn`` (WARN) or ``tls_expiry_fail`` (failure).
    * - ``timeout``
      - No complete answer within ``timeout``.
    * - ``connection refused``

@@ -1007,8 +1007,8 @@ mod tests {
         dir.write(
             "monitors/b.toml",
             &format!(
-                "config_version = 1\nname = \"Backup\"\ntype = \"push\"\ninterval = \"1d\"\ngrace = \"2h\"\n\
-                 retries = 0\n{extra}\n[push]\ntoken = \"{TOKEN}\"\n"
+                "config_version = 1\nname = \"Backup\"\ntype = \"push\"\ninterval = \"1d\"\n\
+                 retries = 0\n{extra}\n[push]\ngrace = \"2h\"\ntoken = \"{TOKEN}\"\n"
             ),
         );
         let env = |_: &str| None;

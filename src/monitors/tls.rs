@@ -1,4 +1,4 @@
-//! TLS certificate expiry (SPEC.md §4.3 `tls_expiry_warn` / `tls_expiry_down`).
+//! TLS certificate expiry (SPEC.md §4.3 `tls_expiry_warn` / `tls_expiry_fail`).
 //!
 //! ureq does not expose the server certificate, so we do a separate TLS
 //! handshake with rustls and read `notAfter` from the leaf certificate with a

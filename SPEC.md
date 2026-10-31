@@ -250,7 +250,7 @@ basic_auth_user = "..."               # optional (not together with an Authoriza
 basic_auth_password_file = "..."      # or basic_auth_password = "..."
 tls_verify = true                     # false warns; tls_* keys only with https://
 tls_expiry_warn = "14d"               # WARN when certificate expires within this time; "0s" off
-tls_expiry_down = "0s"                # the check fails (DOWN after retries) when the certificate expires within this time; "0s" off
+tls_expiry_fail = "0s"                # the check fails (DOWN after retries) when the certificate expires within this time; "0s" off
 slow_warn = "0s"                      # WARN if response slower than this (< timeout); "0s" off
 ```
 
@@ -264,7 +264,7 @@ Security requirements:
 - Credentials (`basic_auth_*`) and custom `headers` are only sent to the
   origin (scheme, host, port) of `url`. A redirect to another origin gets
   neither.
-- The certificate expiry (`tls_expiry_warn`, `tls_expiry_down`) is read in a
+- The certificate expiry (`tls_expiry_warn`, `tls_expiry_fail`) is read in a
   separate TLS handshake with the URL's host, at most every 6 hours (every
   10 minutes after a failure), so a Pi 1 does not pay for two handshakes per
   check. Only the validity dates of the leaf certificate are read. The expiry
@@ -318,9 +318,9 @@ truncated`).
 ```toml
 type = "push"
 interval = "5m"            # expected push interval
-grace = "1m"               # push only: extra time before the monitor fails (default 1m, max 1d)
 [push]
 token_file = "secrets/backup-job.token"   # relative to the config dir; or token = "..."
+grace = "1m"               # extra time before the monitor fails (default 1m, max 1d)
 ```
 
 - URL: `GET` or `POST` `{base_url}/push/{token}`. uptime-kuma tokens are valid kinomi
@@ -359,7 +359,7 @@ token_file = "secrets/backup-job.token"   # relative to the config dir; or token
 - A disabled push monitor answers `404` like an unknown token.
 - Push monitors are not polled, so they have no `timeout` (a `timeout` in
   the push monitor's file warns; `[defaults] timeout` does not apply) and do
-  not use the queue. `grace` is a top-level key of push monitors only. They need the built-in server (`check-config` warns otherwise).
+  not use the queue. They need the built-in server (`check-config` warns otherwise).
 
 ### 4.7 Planned for later versions
 `ping` (ICMP; needs `CAP_NET_RAW` or `net.ipv4.ping_group_range`), `smtp`,

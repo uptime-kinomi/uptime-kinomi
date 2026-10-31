@@ -320,7 +320,7 @@ Then the monitor, ``monitors/backup.toml``, with your token:
    :language: toml
    :caption: monitors/backup.toml
 
-``interval = "1d"`` means: one call per day is expected. ``grace = "2h"``
+``interval = "1d"`` means: one call per day is expected. ``grace = "2h"`` in ``[push]``
 allows the backup to finish up to two hours later than the day before.
 ``retries = 0`` makes the monitor DOWN at the first missing call; with the
 default of one retry you would only hear about it a day later.

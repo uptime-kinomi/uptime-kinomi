@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+- Push monitors: `grace` moved into the `[push]` table. A top-level
+  `grace` is now an error ("unknown field `grace`"); move the line below
+  `[push]`.
+- HTTP monitors: `tls_expiry_down` is renamed to `tls_expiry_fail` (the
+  check fails; the monitor goes DOWN only after its retries). The old name
+  is an error.
+
 ### Added
 
 - Documentation at https://kinomi.readthedocs.io/en/latest/: installation with

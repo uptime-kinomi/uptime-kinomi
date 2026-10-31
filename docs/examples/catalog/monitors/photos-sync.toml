@@ -5,10 +5,10 @@ config_version = 1
 type = "push"
 name = "Photo sync"
 interval = "6h"
-grace = "30m"
 enabled = false
 
 [push]
+grace = "30m"
 token = "SIjnF7PvLdyAh0aeqVvNZE2Sc-hzzsC0p0IiMbKGLk8"   # from: uptime-kinomi gen-token
 # Alternatively, read the token from a file (keeps it out of this file):
 # token_file = "secrets/photos-sync.token"

@@ -68,7 +68,7 @@ pub struct HttpFile {
     basic_auth_password_file: Option<PathBuf>,
     tls_verify: Option<bool>,
     tls_expiry_warn: Option<Dur>,
-    tls_expiry_down: Option<Dur>,
+    tls_expiry_fail: Option<Dur>,
     slow_warn: Option<Dur>,
 }
 
@@ -95,7 +95,7 @@ struct CertCheck {
     port: u16,
     verify: bool,
     warn: Duration,
-    down: Duration,
+    fail: Duration,
     timeout: Duration,
     /// (checked at, notAfter or error)
     cache: Mutex<Option<(Instant, Result<i64, &'static str>)>>,
@@ -220,10 +220,10 @@ pub fn build(
 
     let tls_verify = file.tls_verify.unwrap_or(true);
     let tls_expiry_warn = file.tls_expiry_warn.unwrap_or(Dur::secs(14 * 86400)).0;
-    let tls_expiry_down = file.tls_expiry_down.unwrap_or(Dur::secs(0)).0;
+    let tls_expiry_fail = file.tls_expiry_fail.unwrap_or(Dur::secs(0)).0;
     if !is_https
         && (file.tls_expiry_warn.is_some()
-            || file.tls_expiry_down.is_some()
+            || file.tls_expiry_fail.is_some()
             || file.tls_verify.is_some())
     {
         p.error("http.tls_* options need an https:// URL");
@@ -231,14 +231,14 @@ pub fn build(
     if !tls_verify {
         p.warning("http.tls_verify = false: certificate errors are ignored");
     }
-    let cert = if is_https && !(tls_expiry_warn.is_zero() && tls_expiry_down.is_zero()) {
+    let cert = if is_https && !(tls_expiry_warn.is_zero() && tls_expiry_fail.is_zero()) {
         match host_port(&file.url) {
             Some((host, port)) => Some(CertCheck {
                 host,
                 port,
                 verify: tls_verify,
                 warn: tls_expiry_warn,
-                down: tls_expiry_down,
+                fail: tls_expiry_fail,
                 timeout,
                 cache: Mutex::new(None),
             }),
@@ -335,7 +335,7 @@ impl CertCheck {
     fn apply(&self, result: CheckResult, budget: Duration) -> CheckResult {
         let now = clock::unix_seconds(SystemTime::now());
         match self.not_after(budget) {
-            Some(not_after) => rate_expiry(result, not_after, now, self.warn, self.down),
+            Some(not_after) => rate_expiry(result, not_after, now, self.warn, self.fail),
             None => result,
         }
     }
@@ -346,7 +346,7 @@ fn rate_expiry(
     not_after: Result<i64, &'static str>,
     now: i64,
     warn: Duration,
-    down: Duration,
+    fail: Duration,
 ) -> CheckResult {
     let Ok(not_after) = not_after else {
         if result.status == Status::Up {
@@ -365,7 +365,7 @@ fn rate_expiry(
     let within = |limit: Duration| {
         !limit.is_zero() && left <= i64::try_from(limit.as_secs()).unwrap_or(i64::MAX)
     };
-    if within(down) {
+    if within(fail) {
         result.status = Status::Fail;
         result.msg = format!("{}, {text}", result.msg);
     } else if within(warn) {
@@ -825,7 +825,7 @@ mod tests {
             port: 1,
             verify: true,
             warn: Duration::from_secs(14 * 86400),
-            down: Duration::ZERO,
+            fail: Duration::ZERO,
             timeout: Duration::from_secs(10),
             cache: Mutex::new(None),
         };
@@ -983,13 +983,13 @@ mod tests {
         let now = 1_800_000_000;
         let up = || CheckResult::up(Duration::from_millis(5), "HTTP 200");
         let warn = Duration::from_secs(14 * day as u64);
-        let rate = |not_after, down: u64| {
+        let rate = |not_after, fail: u64| {
             rate_expiry(
                 up(),
                 not_after,
                 now,
                 warn,
-                Duration::from_secs(down * day as u64),
+                Duration::from_secs(fail * day as u64),
             )
         };
 

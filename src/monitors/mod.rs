@@ -162,7 +162,6 @@ struct MonitorFile {
     tcp: Option<tcp::TcpFile>,
     dns: Option<dns::DnsFile>,
     push: Option<push::PushFile>,
-    grace: Option<Dur>,
 }
 
 /// Context for building a monitor from its file.
@@ -207,7 +206,7 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
     }
     // Push monitors have no timeout: nothing is polled.
     if raw.kind == Kind::Push && raw.timeout.is_some() {
-        p.warning("timeout has no effect on push monitors (use grace)");
+        p.warning("timeout has no effect on push monitors (use push.grace)");
     }
     if raw.kind != Kind::Push && (timeout.is_zero() || timeout >= interval) {
         p.error(format!(
@@ -249,15 +248,7 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
             ));
         }
     }
-    if raw.grace.is_some() && raw.kind != Kind::Push {
-        p.error("grace is only valid for push monitors");
-    }
-    let grace = raw.grace.unwrap_or(Dur::secs(60));
-    if grace > Dur::secs(86400) {
-        p.error("grace must be at most 1d");
-    }
-
-    let (check, push_token): (Box<dyn Check>, Option<Secret>) = match (raw.kind, raw.push) {
+    let (check, push): (Box<dyn Check>, Option<push::PushConfig>) = match (raw.kind, raw.push) {
         (Kind::Push, Some(file)) => (Box::new(push::PushCheck), Some(push::build(file, ctx, p)?)),
         (Kind::Push, None) => {
             p.error("type = \"push\" needs a [push] table");
@@ -284,12 +275,8 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
         enabled: raw.enabled.unwrap_or(true),
         tags: raw.tags,
         check,
-        push_token,
-        grace: if raw.kind == Kind::Push {
-            grace.0
-        } else {
-            Duration::ZERO
-        },
+        grace: push.as_ref().map_or(Duration::ZERO, |c| c.grace),
+        push_token: push.map(|c| c.token),
     })
 }
 
@@ -524,13 +511,28 @@ mod tests {
                 "dns.name",
             ),
             (
-                "config_version = 1\ntype = \"push\"\nname = \"a\"\ngrace = \"1m\"\n[push]\n"
+                "config_version = 1\ntype = \"push\"\nname = \"a\"\n[push]\ngrace = \"1m\"\n"
                     .to_string(),
                 "gen-token",
             ),
             (
                 format!("config_version = 1\ntype = \"tcp\"\nname = \"a\"\ngrace = \"1m\"\n{tcp}"),
                 "grace",
+            ),
+            // grace belongs into [push] (moved in 0.7).
+            (
+                format!(
+                    "config_version = 1\ntype = \"push\"\nname = \"a\"\ngrace = \"1m\"\n[push]\ntoken = \"{}\"\n",
+                    "a".repeat(32)
+                ),
+                "unknown field `grace`",
+            ),
+            (
+                format!(
+                    "config_version = 1\ntype = \"push\"\nname = \"a\"\n[push]\ngrace = \"2d\"\ntoken = \"{}\"\n",
+                    "a".repeat(32)
+                ),
+                "push.grace must be at most 1d",
             ),
         ] {
             let (m, problems) = parse_text(&text);
