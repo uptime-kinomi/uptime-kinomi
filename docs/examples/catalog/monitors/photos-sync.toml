@@ -9,4 +9,6 @@ grace = "30m"
 enabled = false
 
 [push]
-token_file = "secrets/photos-sync.token"
+token = "SIjnF7PvLdyAh0aeqVvNZE2Sc-hzzsC0p0IiMbKGLk8"   # from: uptime-kinomi gen-token
+# Alternatively, read the token from a file (keeps it out of this file):
+# token_file = "secrets/photos-sync.token"

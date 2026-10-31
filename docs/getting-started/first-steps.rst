@@ -304,15 +304,17 @@ call does not come in time, the monitor goes DOWN and you get notified. This
 finds the failure nobody notices: the backup that silently stopped running
 weeks ago.
 
-First, a secret token for the URL:
+First, a random secret token for the URL:
 
 .. code-block:: sh
 
-   mkdir -p secrets
-   uptime-kinomi gen-token > secrets/backup.token
-   chmod 600 secrets/backup.token
+   uptime-kinomi gen-token
 
-Then the monitor, ``monitors/backup.toml``:
+.. code-block:: text
+
+   3T1YbhlYipY4nh5R27mMQ7DONHlW2cAJDj2cq2vyGL4
+
+Then the monitor, ``monitors/backup.toml``, with your token:
 
 .. literalinclude:: /examples/tutorial/monitors/backup.toml
    :language: toml
@@ -323,15 +325,18 @@ allows the backup to finish up to two hours later than the day before.
 ``retries = 0`` makes the monitor DOWN at the first missing call; with the
 default of one retry you would only hear about it a day later.
 
+The token is a secret, so make the file readable only for you:
+
 .. code-block:: sh
 
+   chmod 600 monitors/backup.toml
    uptime-kinomi check-config && systemctl --user restart uptime-kinomi
 
 Try the URL by hand, on the Pi:
 
 .. code-block:: sh
 
-   curl -fsS http://localhost:8080/push/$(cat ~/.config/uptime-kinomi/secrets/backup.token)
+   curl -fsS http://localhost:8080/push/3T1YbhlYipY4nh5R27mMQ7DONHlW2cAJDj2cq2vyGL4
 
 ``curl`` prints nothing (kinomi answers ``204 No Content``), and the log
 shows:
@@ -342,12 +347,12 @@ shows:
 
 Finally, add the same line **at the end of your backup script**, after the
 backup succeeded. If the backup runs on another computer, use the Pi's
-address instead of ``localhost``, and copy the token there.
+address instead of ``localhost``.
 
 .. code-block:: sh
 
    # ... the backup itself ...
-   curl -fsS -m 10 --retry 3 http://raspberrypi.local:8080/push/PASTE-THE-TOKEN-HERE
+   curl -fsS -m 10 --retry 3 http://raspberrypi.local:8080/push/3T1YbhlYipY4nh5R27mMQ7DONHlW2cAJDj2cq2vyGL4
 
 The push monitor guide shows more patterns, such as reporting failures
 right away (:doc:`/monitors/push`).
@@ -376,11 +381,9 @@ And the directory:
    │   └── website.toml
    ├── notifications/
    │   └── phone.toml
-   ├── pages/
-   │   ├── all.toml
-   │   └── home.toml
-   └── secrets/
-       └── backup.token
+   └── pages/
+       ├── all.toml
+       └── home.toml
 
 Where to go from here
 ---------------------

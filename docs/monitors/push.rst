@@ -13,7 +13,7 @@ the server was reinstalled.
 How it works
 ------------
 
-#. You create a secret token and a push monitor with an ``interval``: how
+#. You create a push monitor with a secret token and an ``interval``: how
    often a call is expected.
 #. The job calls ``http://<your-kinomi>/push/<token>`` when it has finished.
 #. Every call starts a new countdown of ``interval + grace``. If it runs
@@ -27,12 +27,17 @@ to reach it.
 The nightly backup
 ------------------
 
+First, a random token:
+
 .. code-block:: sh
 
-   cd ~/.config/uptime-kinomi
-   mkdir -p secrets
-   uptime-kinomi gen-token > secrets/backup.token
-   chmod 600 secrets/backup.token
+   uptime-kinomi gen-token
+
+.. code-block:: text
+
+   3T1YbhlYipY4nh5R27mMQ7DONHlW2cAJDj2cq2vyGL4
+
+Put it into the monitor file:
 
 .. literalinclude:: /examples/catalog/monitors/backup.toml
    :language: toml
@@ -45,6 +50,11 @@ The nightly backup
   ``retries = 1``, kinomi would tolerate one missed day and tell you only
   after the second one.
 * ``resend_interval = "12h"``: remind me twice a day while it stays DOWN.
+* ``token``: the secret part of the URL. The file now contains a secret,
+  so make it readable only for you: ``chmod 600 monitors/backup.toml``
+  (``check-config`` warns otherwise). If you prefer to keep secrets in
+  separate files, use the commented-out ``token_file`` instead (see
+  `Details`_).
 
 At the end of the backup script, after the backup succeeded:
 
@@ -56,15 +66,13 @@ At the end of the backup script, after the backup succeeded:
    # ... the backup itself, e.g.:
    restic backup /home
    # Only reached when everything above succeeded (set -e):
-   curl -fsS -m 10 --retry 3 https://status.example.org/push/PASTE-THE-TOKEN-HERE >/dev/null
+   curl -fsS -m 10 --retry 3 https://status.example.org/push/3T1YbhlYipY4nh5R27mMQ7DONHlW2cAJDj2cq2vyGL4 >/dev/null
 
 ``-m 10`` gives up after 10 seconds and ``--retry 3`` tries again on a
 network hiccup, so the backup script never hangs because of kinomi.
 
-If the script runs on the Pi itself, it can read the token from the file
-instead: ``curl -fsS http://localhost:8080/push/$(cat
-~/.config/uptime-kinomi/secrets/backup.token)``. Without ``wget`` or
-``curl``, any HTTP client works: kinomi accepts ``GET`` and ``POST``.
+Without ``curl``, any HTTP client works (``wget -q -O /dev/null URL``):
+kinomi accepts ``GET`` and ``POST``.
 
 An hourly cron job
 ------------------
@@ -162,9 +170,23 @@ same as uptime-kuma's, but kinomi tokens are longer (see below), so a
 moved job needs a new token.
 
 **Tokens** are 32 to 128 characters from ``A-Z a-z 0-9 _ -`` and must be
-unique. ``uptime-kinomi gen-token`` prints a random one. Write it inline as
-``token = "..."`` or, better, into a file referenced by ``token_file``.
-Anyone who knows the token can report "all good", so treat it like a
+unique. ``uptime-kinomi gen-token`` prints a random one. Write it into the
+monitor file as ``token = "..."`` (and ``chmod 600`` the file), or keep it
+in a file of its own and refer to it with ``token_file``:
+
+.. code-block:: sh
+
+   mkdir -p secrets
+   uptime-kinomi gen-token > secrets/backup.token
+   chmod 600 secrets/backup.token
+
+.. code-block:: toml
+
+   [push]
+   token_file = "secrets/backup.token"   # relative to the configuration directory
+
+A separate file is handy when the configuration is in Git and the secrets
+are not. Anyone who knows the token can report "all good", so treat it like a
 password.
 
 **After a restart** the countdown continues where it was, counted from the

@@ -21,11 +21,7 @@ usually through a reverse proxy (:doc:`reverse-proxy`).
 
 .. code-block:: sh
 
-   cd ~/.config/uptime-kinomi
-   mkdir -p secrets
-   uptime-kinomi gen-token > secrets/pi-a.token
-   chmod 600 secrets/pi-a.token
-   cat secrets/pi-a.token
+   uptime-kinomi gen-token
 
 .. code-block:: toml
    :caption: pi-b: monitors/pi-a.toml
@@ -37,10 +33,11 @@ usually through a reverse proxy (:doc:`reverse-proxy`).
    grace = "30s"
 
    [push]
-   token_file = "secrets/pi-a.token"
+   token = "PASTE-THE-TOKEN-HERE"
 
-**Step 2: on pi-a, send the heartbeat to it.** Use the token printed in
-step 1:
+Then run ``chmod 600 monitors/pi-a.toml``: the file contains the token.
+
+**Step 2: on pi-a, send the heartbeat to it.** Use the same token:
 
 .. code-block:: toml
    :caption: pi-a: kinomi.toml

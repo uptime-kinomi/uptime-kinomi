@@ -1,6 +1,6 @@
 # The nightly backup reports back when it is done. At the end of the backup
 # script:
-#   curl -fsS -m 10 --retry 3 https://status.example.org/push/$(cat ~/.config/uptime-kinomi/secrets/backup.token)
+#   curl -fsS -m 10 --retry 3 https://status.example.org/push/3T1YbhlYipY4nh5R27mMQ7DONHlW2cAJDj2cq2vyGL4
 config_version = 1
 type = "push"
 name = "Nightly backup"
@@ -10,4 +10,6 @@ retries = 0                # DOWN at the first missing push, not a day later
 resend_interval = "12h"    # remind me twice a day while it stays DOWN
 
 [push]
-token_file = "secrets/backup.token"   # uptime-kinomi gen-token > secrets/backup.token
+token = "3T1YbhlYipY4nh5R27mMQ7DONHlW2cAJDj2cq2vyGL4"   # from: uptime-kinomi gen-token
+# Alternatively, read the token from a file (keeps it out of this file):
+# token_file = "secrets/backup.token"

@@ -63,8 +63,14 @@ jobs:
             cross test --locked --target ${{ matrix.target }}
             exit 0
           fi
-          cross test --locked --target ${{ matrix.target }} --no-run
-          tests=$(find target/${{ matrix.target }}/debug/deps -maxdepth 1 -type f -executable -name 'uptime_kinomi-*')
+          # The unit tests of the library and the binary, as cargo reports
+          # them (deps/ also holds the program itself, built for tests/;
+          # those integration tests are target-independent and run on
+          # x86_64). cross reports paths inside its container (/target/...).
+          tests=$(cross test --locked --target ${{ matrix.target }} --no-run --message-format=json |
+            jq -r 'select(.reason == "compiler-artifact" and .profile.test and .executable != null
+                          and (.target.kind[0] == "lib" or .target.kind[0] == "bin")) | .executable' |
+            sed 's|^/target/|target/|')
           [ -n "$tests" ] || { echo "::error::no test binary found"; exit 1; }
           for t in $tests; do
             ${{ matrix.qemu }} -cpu ${{ matrix.cpu }} "$t"

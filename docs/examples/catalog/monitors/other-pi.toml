@@ -7,4 +7,6 @@ interval = "60s"
 grace = "30s"
 
 [push]
-token_file = "secrets/other-pi.token"
+token = "SwJc-TZ4eqBI3_Uc8dzgEWVZ6wEZySVxYcWq3UWSjgI"   # from: uptime-kinomi gen-token
+# Alternatively, read the token from a file (keeps it out of this file):
+# token_file = "secrets/other-pi.token"

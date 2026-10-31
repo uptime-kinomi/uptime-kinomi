@@ -7,4 +7,6 @@ interval = "1h"
 grace = "10m"
 
 [push]
-token_file = "secrets/cron-hourly.token"
+token = "SODnRpmzrUMfMoQp1NUEfZjCdSfAGUPpd76mEOPAhZg"   # from: uptime-kinomi gen-token
+# Alternatively, read the token from a file (keeps it out of this file):
+# token_file = "secrets/cron-hourly.token"
