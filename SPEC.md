@@ -1181,6 +1181,9 @@ signed release for the same platform. The uptime-kinomi binary never runs
    `X.Y.Z` must be newer than the running version (an older or equal version
    needs `--release X.Y.Z --allow-downgrade`). `SHA256SUMS` is parsed strictly
    (§12.1 format, only known asset names).
+   From 1.0 on, a new major version is only installed with `--release`
+   (§16); without it, `self-update` reports it and exits with `0`
+   (`--check`: `3`).
 4. **Download** the asset for the platform the binary was compiled for (max
    32 MiB) into a temporary file in the same directory, computing SHA-256
    while streaming. A mismatch deletes the file and aborts.
@@ -1312,3 +1315,51 @@ duration = "2h"                   # 1m to 7d; daily at most 1d
   pulse line in front, on a grey screen. A nod to the fruit-named SBCs.
   `docs/logo.py` generates `docs/logo.svg` and the favicon
   `assets/favicon.svg` (no shadow, thicker pulse for 16 px).
+
+---
+
+## 16. Compatibility and stability
+
+From 1.0.0 on, versions follow [semantic versioning](https://semver.org/):
+a 1.x release never breaks what this section lists as stable. Before 1.0,
+anything may change between minor versions (see the changelog).
+
+**Stable within a major version** (minor releases only add):
+
+- **Configuration** (`config_version = 1`): file layout (§3.1), every key,
+  its meaning and its default. A configuration that `check-config` accepts
+  without errors is accepted by every later 1.x release. Exception: a
+  security fix may reject a dangerous value; the changelog announces it
+  under "Security". New keys are optional.
+- **Command line** (§10.4): commands, options and exit codes.
+- **URLs** of the built-in server and of the generated files (§8.3, §9.2):
+  pages, `status.json`, `feed.atom`, badges, `/push/{token}`, `/healthz`,
+  `/metrics`.
+- **Push requests** (§4.6): methods, `status=up|down`, response codes.
+- **`status.json`** `schema = 1` (§8.6): fields are only added.
+- **`/metrics`** (§9.5): metric names and labels are only added.
+- **Data directory:** a release reads the log (§7.1) and the state files
+  (§7.2) of every earlier release from 0.2.0 on (`tests/compat.rs`). Log
+  lines may get new keys and new events; readers SHOULD ignore what they do
+  not know. An older release is not guaranteed to read newer state files;
+  it then rebuilds them from the log (§7.2).
+
+**Not stable** (may change in any release):
+
+- the HTML and CSS of the pages (a `custom.css` may need adjusting), the
+  wording of `msg` values, notifications, the Atom feed and error messages,
+  and the output of `check-config`;
+- the minimum supported Rust version (it only matters when building from
+  source).
+
+**Breaking changes** need a new major version (or a new `config_version`,
+which that major version reads next to the old one). A key that is going
+to be removed is deprecated first: `check-config` warns about it during at
+least one minor release before the major release that removes it. A
+release target (§12) is only dropped in a major release.
+
+**Updates:** from 1.0 on, `self-update` without `--release` (and so the
+weekly update timer, §12.3) never installs a new major version; it says
+that one is available and keeps the installed version. The new major
+version is installed with `self-update --release X.Y.Z` after reading the
+changelog.

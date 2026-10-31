@@ -132,9 +132,13 @@ pub fn run(options: &Options) -> Result<Outcome, Error> {
     }
     let expected_sha256 = checksum_for(&sums, asset)?;
 
+    let major = is_major_upgrade(current, release);
     if options.check {
         return Ok(if release > current {
             say!("update available: {current} -> {release}");
+            if major {
+                say!("{MAJOR_NOTE}");
+            }
             Outcome::UpdateAvailable
         } else {
             say!("up to date ({current}, latest signed release {release})");
@@ -150,6 +154,16 @@ pub fn run(options: &Options) -> Result<Outcome, Error> {
             "release {release} is older than the running version {current}; \
              use --release {release} --allow-downgrade to install it anyway"
         )));
+    }
+
+    // The weekly timer runs this without --release: it must not cross into a
+    // version with incompatible changes (SPEC.md §16).
+    if major && options.release.is_none() {
+        say!(
+            "{release} is available, a new major version ({current} stays installed).\n\
+             {MAJOR_NOTE}\nThen install it with: uptime-kinomi self-update --release {release}"
+        );
+        return Ok(Outcome::UpToDate);
     }
 
     say!("downloading {asset} {release}");
@@ -174,6 +188,16 @@ pub fn run(options: &Options) -> Result<Outcome, Error> {
         backup_path(&exe).display()
     );
     Ok(Outcome::Updated)
+}
+
+const MAJOR_NOTE: &str = "A new major version may need changes to the configuration; \
+     read the changelog first: https://kinomi.readthedocs.io/en/stable/reference/changelog.html";
+
+/// From 1.0 on, a new major version (`2.0.0` for `1.x`) may need
+/// configuration changes, so it is only installed with `--release`. 0.x
+/// releases promised nothing and update to anything, also 1.0.
+fn is_major_upgrade(current: Version, release: Version) -> bool {
+    current.0 >= 1 && release.0 > current.0
 }
 
 fn asset_name(target: &str) -> Option<&'static str> {
@@ -520,6 +544,16 @@ mod tests {
         assert!(Version(1, 0, 0) > Version(0, 99, 99));
         assert_eq!(Version(1, 2, 3).to_string(), "1.2.3");
         assert!(Version::current().is_ok());
+    }
+
+    #[test]
+    fn major_upgrades() {
+        assert!(is_major_upgrade(Version(1, 4, 2), Version(2, 0, 0)));
+        assert!(is_major_upgrade(Version(1, 0, 0), Version(3, 1, 0)));
+        assert!(!is_major_upgrade(Version(1, 4, 2), Version(1, 5, 0)));
+        assert!(!is_major_upgrade(Version(0, 6, 0), Version(1, 0, 0)));
+        assert!(!is_major_upgrade(Version(0, 6, 0), Version(0, 7, 0)));
+        assert!(!is_major_upgrade(Version(2, 0, 0), Version(1, 9, 0)));
     }
 
     #[test]

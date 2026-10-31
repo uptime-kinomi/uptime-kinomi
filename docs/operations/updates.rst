@@ -94,7 +94,8 @@ version, including an older one:
 
 Read the :doc:`changelog </reference/changelog>` before you go back more
 than one version: kinomi is pre-1.0, and configuration details can change
-between versions.
+between versions. From 1.0 on, the weekly update never installs a new major
+version on its own; see :doc:`/reference/stability`.
 
 System-wide installation
 ------------------------

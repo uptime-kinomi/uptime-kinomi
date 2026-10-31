@@ -99,5 +99,6 @@ Raspberry Pi 1, but configuration details may still change before 1.0. The
 
    reference/configuration
    reference/cli
+   reference/stability
    reference/specification
    reference/changelog

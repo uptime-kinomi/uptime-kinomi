@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Compatibility rules for 1.0 (SPEC.md §16, "Compatibility and updates" in
+  the documentation): what stays stable within a major version and how
+  breaking changes are announced.
+- From 1.0 on, `self-update` without `--release`, and so the weekly update
+  timer, does not install a new major version; it reports it instead.
+- Upgrade test: the logs and state files written by the releases 0.2.0 to
+  0.6.0 are read by the current version (`tests/compat.rs`).
 - Documentation at https://kinomi.readthedocs.io/en/latest/: installation with
   `install.sh`, by hand or with Ansible, a first-steps tutorial, examples
   for every monitor and notifier type, status pages, incidents and

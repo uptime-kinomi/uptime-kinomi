@@ -29,6 +29,10 @@ disagree, the spec wins until it is explicitly changed in the same PR.
    user (SPEC.md §10.6). No hard-coded absolute paths: use the config-dir
    resolution (§3.1) and default directories (§10.6). Every example, test and
    doc must work without `sudo`. A feature that needs privileges must be optional.
+10. **Compatibility.** Configuration keys, CLI, URLs, `status.json`,
+   `/metrics` and the data files follow SPEC.md §16: from 1.0 on, only
+   additions within a major version. Removing or renaming anything there
+   needs a deprecation warning first and a new major version.
 
 ## Source layout
 
@@ -150,6 +154,7 @@ cargo test
 cross build --release --target arm-unknown-linux-musleabihf
 CC_x86_64_unknown_linux_musl=gcc cargo build --release --target x86_64-unknown-linux-musl   # quick local static build
 python3 testdata/update/generate.py   # regenerate self-update test vectors (TEST keys only)
+testdata/compat/generate.sh <binary>  # data files of a release for the upgrade test
 cargo deny check
 sphinx-build -W --keep-going docs docs/_build/html   # after: pip install -r docs/requirements.txt
 cargo +nightly fuzz run <target> fuzz/corpus/<target> fuzz/seeds/<target>   # see fuzz/README.md
@@ -186,4 +191,8 @@ changes of the code and for 30 minutes weekly (`.github/workflows/fuzz.yml`).
   (`scheduler.rs`).
 - Fuzzing: `cargo test` runs the seed corpus through every fuzz target on
   stable; add a crashing input to `fuzz/seeds/<target>/` with its fix.
+- Upgrades: `tests/compat.rs` reads the log and state files that every
+  release since 0.2.0 wrote (`testdata/compat/<version>/`). After a release,
+  add its files with `testdata/compat/generate.sh <release binary>`. Never
+  change an existing directory there: it is what users have on disk.
 - Code fixes come with a test that fails without the fix.
