@@ -1072,6 +1072,9 @@ setting `net.ipv4.ping_group_range` instead of root.
 9. Runs as an unprivileged user, no capabilities required (§10.6).
 10. Releases: checksums signed with offline minisign keys, verified by
     `self-update` before anything is replaced (§12.1, §12.2).
+11. Vulnerabilities are reported privately (GitHub security advisories);
+    the process and what happens if a release key is exposed are in
+    `SECURITY.md`.
 
 ---
 

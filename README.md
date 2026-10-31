@@ -116,7 +116,8 @@ and `self-update` verify before anything is replaced (primary key
 `RWQWavktNED2FrnDC8yLcpUPBKv4JeUoguh4zMF2wCBxwRJKVs3vRZu3`; both keys are in
 [keys/](keys/)). See
 [Updates](https://kinomi.readthedocs.io/en/latest/operations/updates.html)
-and [SPEC.md](SPEC.md) §11-12.
+and [SPEC.md](SPEC.md) §11-12. To report a vulnerability, see
+[SECURITY.md](SECURITY.md).
 
 ## Contributing
 

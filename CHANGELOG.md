@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   breaking changes are announced.
 - From 1.0 on, `self-update` without `--release`, and so the weekly update
   timer, does not install a new major version; it reports it instead.
+- `SECURITY.md`: how to report a vulnerability privately, supported
+  versions, and what happens if a release key is exposed.
 - Upgrade test: the logs and state files written by the releases 0.2.0 to
   0.6.0 are read by the current version (`tests/compat.rs`).
 - Documentation at https://kinomi.readthedocs.io/en/latest/: installation with
