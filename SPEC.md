@@ -127,7 +127,7 @@ installation uses `/etc/uptime-kinomi`. The directory structure is the same:
   points to a file whose content (trimmed) is the secret. kinomi warns at startup
   and in `check-config` if a file containing secrets is world-readable: secret
   files, config files with inline secrets, `kinomi.toml` with a
-  `[heartbeat]` URL, the htpasswd file, and monitor files with an
+  `[heartbeat]` URL, the htpasswd file, and monitor files with a
   credential header in `headers` (a name containing `auth`, `cookie`,
   `key`, `token` or `secret`, ignoring case).
 - `check-config` warns if `data_dir`, `log_dir` or `output_dir` is inside
@@ -229,7 +229,7 @@ at least 1, at most `retries`; a bar shorter than the row counts less). If
 
 A disabled monitor (`enabled = false`) is shown as `PAUSED` (also inside a
 maintenance window) and counts in nothing. This is unrelated to
-`event=PAUSED` and `msg="paused"` (§10.1), which mean that the kinomi
+`event=PAUSED` and `msg=paused` (§10.1), which mean that the kinomi
 process itself did not run. A **skipped** check (§6) is not a state. It is logged as `result=SKIPPED`,
 shown as a grey gap, and excluded from uptime percentages.
 
@@ -249,7 +249,7 @@ headers = { "User-Agent" = "uptime-kinomi" }   # optional; names max 64, values 
 basic_auth_user = "..."               # optional (not together with an Authorization header)
 basic_auth_password_file = "..."      # or basic_auth_password = "..."
 tls_verify = true                     # false warns; tls_* keys only with https://
-tls_expiry_warn = "14d"               # WARN when certificate expires within this time; "0s" off
+tls_expiry_warn = "14d"               # default; WARN when certificate expires within this time; "0s" off
 tls_expiry_fail = "0s"                # the check fails (DOWN after retries) when the certificate expires within this time; "0s" off
 slow_warn = "0s"                      # WARN if response slower than this (< timeout); "0s" off
 ```
@@ -514,16 +514,16 @@ All timestamps stored are **UTC, RFC 3339, second precision**.
 2026-10-22T14:00:00Z event=START version=0.5.0 monitors=42
 2026-10-22T14:00:00Z event=DISABLED monitor=old-nas
 2026-10-22T14:03:11Z monitor=blog result=UP latency_ms=123 cert_expires=2026-12-01 msg="HTTP 200"
-2026-10-22T14:04:11Z monitor=shop result=FAIL latency_ms=10000 msg="timeout"
-2026-10-22T14:05:11Z monitor=shop result=DOWN latency_ms=10000 msg="timeout"
+2026-10-22T14:04:11Z monitor=shop result=FAIL latency_ms=10000 msg=timeout
+2026-10-22T14:05:11Z monitor=shop result=DOWN latency_ms=10000 msg=timeout
 2026-10-22T14:05:12Z event=NOTIFY monitor=shop notifier=phone kind=down ok=true
 2026-10-22T14:06:00Z monitor=nas result=SKIPPED count=1 msg="queue full"
-2026-10-22T14:06:02Z monitor=backup-job result=UP msg="push"
+2026-10-22T14:06:02Z monitor=backup-job result=UP msg=push
 2026-10-22T14:07:30Z event=AUTH_FAIL count=3 throttled=0
-2026-10-22T14:08:00Z event=HEARTBEAT ok=false msg="timeout"
+2026-10-22T14:08:00Z event=HEARTBEAT ok=false msg=timeout
 2026-10-22T14:30:00Z event=CLOCK_JUMP delta_s=-75
 2026-10-22T18:26:13Z event=PAUSED duration_s=11756
-2026-10-22T18:26:13Z monitor=nas result=SKIPPED count=196 msg="paused"
+2026-10-22T18:26:13Z monitor=nas result=SKIPPED count=196 msg=paused
 2026-10-22T22:00:00Z event=STOP
 ```
 
@@ -604,12 +604,12 @@ changes = [
 config_version = 1
 title = "Family services"     # 1-100 characters
 public = true                 # false: requires HTTP Basic Auth (§9.3)
-description = "Is the internet broken, or just our Wi-Fi?"   # shown on the page, also if public
+description = "Is the internet broken, or just our Wi-Fi?"   # max 1000 characters, shown on the page, also if public
 show_incidents = true         # default true
 show_badges = true            # generate SVG badges for monitors on this page; default false
 
 [[groups]]
-name = "Internet"
+name = "Internet"            # 1-100 characters
 monitors = ["router", "dns-cloudflare"]
 
 [[groups]]
@@ -700,8 +700,6 @@ duration, last log flush).
   so rendering does not delay checks. The shipped systemd unit additionally
   sets `Nice=10`.
 
----
-
 ### 8.5 Visibility of all generated files
 
 Every file of a page has the page's visibility. For a private page
@@ -784,6 +782,8 @@ page, in the style of shields.io: plain SVG, no scripts, no external
 resources, text XML-escaped, names cut at 40 characters. For embedding in READMEs
 and wikis; badges of private pages need Basic Auth like everything else.
 
+---
+
 ## 9. Built-in HTTP server
 
 ### 9.1 Purpose and deployment modes
@@ -855,8 +855,6 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 - `X-Forwarded-*` headers are ignored (not needed: rate limits are per push token
   and global for auth).
 
----
-
 ### 9.5 `/metrics`
 
 With `server.metrics = true` (needs `server.htpasswd_file`), `/metrics`
@@ -901,7 +899,7 @@ kinomi runs on Linux only (§1), with the static musl binaries of §12.
 - A pause of the whole process (standby of a VM host, frozen system: the
   dispatcher, which wakes at least once per second, did not run for more
   than 30 s) is logged once as `event=PAUSED duration_s=N`; the checks missed
-  meanwhile are logged as `result=SKIPPED msg="paused"` instead of
+  meanwhile are logged as `result=SKIPPED msg=paused` instead of
   `"queue full"`. Where the monotonic clock stops during suspend (bare
   metal), the wall-clock jump is logged as `event=CLOCK_JUMP` instead.
 
@@ -1273,7 +1271,7 @@ The router is being updated. Internet will be unavailable for a few minutes.
 ```toml
 # maintenance/weekly-backup.toml
 config_version = 1
-title = "Weekly NAS backup"
+title = "Weekly NAS backup"        # 1-200 characters
 monitors = ["nas", "nextcloud"]   # monitor IDs, or ["*"]
 tags = ["backup"]                 # optional: also all monitors with these tags (monitors or tags needed)
 schedule = "weekly"               # once | daily | weekly

@@ -25,8 +25,8 @@ only adds HTTPS.
 
 **Mode B**: the proxy serves the generated page files directly from disk
 and checks passwords itself, with kinomi's htpasswd file. Only push requests
-(``/push/``) are forwarded to kinomi; without push monitors, kinomi's server
-can be switched off. Choose this if you do not want any request from the
+(``/push/``) and, if enabled, ``/metrics`` are forwarded to kinomi; without
+both, kinomi's server can be switched off. Choose this if you do not want any request from the
 internet to reach kinomi's own server.
 
 kinomi's settings for both

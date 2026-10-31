@@ -24,7 +24,7 @@ Commands:
   rebuild-state        Regenerate state files from the logs
   gen-token            Print a new random push token
   hash-password USER   Print an htpasswd line (bcrypt) for USER
-  self-update          Install the latest signed release
+  self-update          Install the latest signed release (same major version)
   version              Print the version
   help                 Print this help
 

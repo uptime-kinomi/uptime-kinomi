@@ -85,7 +85,8 @@ docs/                      user documentation (Sphinx, Read the Docs), its teste
 fuzz/                      cargo-fuzz targets and seed corpus
 ci/                        QEMU smoke test of the release binaries
 keys/                      the two public release keys (minisign)
-testdata/                  generated test vectors (with their generator scripts)
+tests/                     integration tests: documented configurations, upgrades from old releases
+testdata/                  generated test vectors and old releases' data (with their generator scripts)
 ```
 
 ## How to add a monitor type
@@ -110,7 +111,9 @@ testdata/                  generated test vectors (with their generator scripts)
    `Kind::name` arm, an `Option<<Type>File>` field to `MonitorFile`, the
    field in the "which table is present" list, and the parameter and arm in
    `build_check`. The compiler points to every place you missed.
-3. Document the type in SPEC.md §4 and add an example to `contrib/examples/`.
+3. Document the type in SPEC.md §4 and in a page in `docs/monitors/`, with
+   its examples as files in `docs/examples/catalog/monitors/` (checked by
+   `cargo test`).
 4. If it parses network data: add an entry point to `src/fuzzing.rs` and a
    target in `fuzz/` (see fuzz/README.md).
 

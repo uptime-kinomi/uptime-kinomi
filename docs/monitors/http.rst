@@ -74,11 +74,11 @@ pages. Let it warn you in time:
    :caption: monitors/certificate.toml
 
 * ``tls_expiry_warn = "14d"``: ⚠ WARN, and a notification, 14 days before
-  the certificate expires. Let's Encrypt certificates are renewed 30 days
+  the certificate expires (the default). Let's Encrypt certificates are renewed 30 days
   before they expire, so a warning means the renewal has failed for two
   weeks.
-* ``tls_expiry_fail = "3d"``: the check fails 3 days before. "0s" (the
-  default for both) switches a limit off.
+* ``tls_expiry_fail = "3d"``: the check fails 3 days before (default
+  ``"0s"``, off). ``"0s"`` switches either limit off.
 * ``method = "HEAD"`` asks only for the headers, not the page: less traffic
   for a check that does not need the content. A keyword needs ``GET``.
 
@@ -188,7 +188,7 @@ All keys
      - ``true``
      - ``false`` accepts any certificate (warns).
    * - ``tls_expiry_warn``
-     - ``"0s"`` (off)
+     - ``"14d"``
      - WARN when the certificate expires within this time.
    * - ``tls_expiry_fail``
      - ``"0s"`` (off)

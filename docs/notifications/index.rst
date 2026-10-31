@@ -90,7 +90,8 @@ To receive only some events on a channel, list them in the notifier file:
 For example: everything to your phone, but only ``down`` and ``up`` to the
 family chat.
 
-There are no notifications during maintenance windows, and a monitor that
+There are no notifications during maintenance windows (except ``up`` from
+a push with ``status=up``), and a monitor that
 was already DOWN before a restart does not notify again.
 
 Did it arrive?

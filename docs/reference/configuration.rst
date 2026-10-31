@@ -8,7 +8,8 @@ complete, normative description is the :doc:`specification`.
 ---------------
 
 The global file. Every section and key is optional except
-``config_version``. All of them, with their defaults:
+``config_version``. All of them; the comments mark example values, the
+rest are the defaults:
 
 .. literalinclude:: /examples/catalog/kinomi.toml
    :language: toml

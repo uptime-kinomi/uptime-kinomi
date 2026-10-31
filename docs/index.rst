@@ -34,7 +34,7 @@ What can it do for me?
 .. code-block:: text
 
    2026-10-22T14:03:11Z monitor=blog result=UP latency_ms=123 msg="HTTP 200"
-   2026-10-22T14:05:11Z monitor=blog result=DOWN latency_ms=10000 msg="timeout"
+   2026-10-22T14:05:11Z monitor=blog result=DOWN latency_ms=10000 msg=timeout
    2026-10-22T14:05:11Z event=NOTIFY monitor=blog notifier=phone kind=down ok=true
 
 Everything kinomi does is written to plain log files like the one above,

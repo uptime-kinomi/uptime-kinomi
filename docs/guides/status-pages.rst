@@ -74,7 +74,8 @@ At the top, a banner with the overall state of the page's monitors:
    * - ✗ Major outage
      - Every monitor with data is DOWN.
    * - ⚙ Maintenance
-     - All monitors are in a maintenance window.
+     - No monitor has data outside a maintenance window, and at least one
+       is in one.
    * - ? No data yet
      - No monitor has a result yet.
 
@@ -278,7 +279,8 @@ Page keys
      - ``true``: open to everyone; ``false``: needs a password.
    * - ``description``
      - none
-     - Text under the title (also on public pages).
+     - Text under the title (also on public pages), at most 1000
+       characters.
    * - ``show_incidents``
      - ``true``
      - Show incidents (:doc:`incidents-and-maintenance`).
@@ -287,7 +289,7 @@ Page keys
      - Generate badges for the page's monitors.
    * - ``[[groups]]``
      - (at least one)
-     - ``name``, and ``monitors`` and/or ``tags``.
+     - ``name`` (1-100 characters), and ``monitors`` and/or ``tags``.
 
 And in ``kinomi.toml``, section ``[pages]``:
 

@@ -1,8 +1,8 @@
 Compatibility and updates
 =========================
 
-kinomi updates itself every week (:doc:`/operations/updates`), so an update
-must never break a working setup. From version 1.0 on, kinomi follows
+With the weekly update timer (:doc:`/operations/updates`), kinomi updates
+itself, so an update must never break a working setup. From version 1.0 on, kinomi follows
 `semantic versioning <https://semver.org/>`_: within a major version
 (1.x), updates only add things. Before 1.0, configuration details can still
 change between versions; the :doc:`changelog` says what to adapt.
@@ -19,6 +19,8 @@ What stays the same within 1.x
 * **Addresses**: the page URLs, ``status.json``, ``feed.atom``, badges,
   ``/push/<token>``, ``/healthz`` and ``/metrics``. Push URLs in your
   scripts and badges in your README keep working.
+* **Push requests**: ``GET``/``POST``, ``status=up|down`` and the response
+  codes.
 * **Machine-readable output**: ``status.json`` (``"schema": 1``) and the
   ``/metrics`` names only get new fields, never lose or rename one.
 * **Your data**: every version reads the logs and state files of all
@@ -47,7 +49,9 @@ writes into its log that one is available:
 
    2.0.0 is available, a new major version (1.4.2 stays installed).
 
-Read the changelog, adapt your configuration, then install it yourself:
+It stays at the last 1.x version: fixes released after that, also security
+fixes, only come with the new major version. Read the changelog, adapt your
+configuration, then install it yourself:
 
 .. code-block:: sh
 

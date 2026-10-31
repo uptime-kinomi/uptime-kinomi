@@ -1,23 +1,27 @@
-# A complete kinomi.toml with every section. Most keys are optional:
-# the values shown here are the defaults unless the comment says otherwise.
+# A complete kinomi.toml with every section. Every key is optional. Values
+# marked "example" are made up; all others are the defaults.
 config_version = 1
 
 [server]
+# enabled = true                           # false: no built-in server
 listen = "127.0.0.1:8080"                  # behind a reverse proxy
-hostnames = ["status.example.org", "localhost"]
-base_url = "https://status.example.org"    # absolute links in the Atom feed
-htpasswd_file = "htpasswd"                 # needed for private pages
+hostnames = ["status.example.org", "localhost"]   # example; default [] (any, warns)
+base_url = "https://status.example.org"    # example: absolute links in the Atom feed
+htpasswd_file = "htpasswd"                 # example: needed for private pages
 metrics = false                            # true: Prometheus /metrics
 
 [pages]
-timezone = "Europe/Berlin"                 # default "UTC"
-default_page = "home"                      # "/" redirects here
+# output_dir = "..."                       # default: /run/user/<uid>/uptime-kinomi/www
+timezone = "Europe/Berlin"                 # example; default "UTC"
+default_page = "home"                      # example: "/" redirects here
 render_interval = "60s"
 auto_refresh = "60s"
 recent_checks = 50                         # length of the heartbeat bar
-custom_css = "custom.css"                  # optional
+custom_css = "custom.css"                  # example; default none
 
 [storage]
+# data_dir = "..."                         # default: ~/.local/state/uptime-kinomi ($XDG_STATE_HOME)
+# log_dir = "..."                          # default: <data_dir>/log
 flush_interval = "30s"
 state_interval = "10m"
 log_retention = "90d"
@@ -27,7 +31,7 @@ history_retention = "400d"
 workers = 4
 max_queue = 32
 
-[heartbeat]                                # optional: "I am alive" to another kinomi
+[heartbeat]                                # example: "I am alive" to another kinomi; default none
 url = "https://other-pi.example.org/push/Rk3wWv0p2qJ7mXyQe9sLbT4uN8cZa1HdGfVjKoPi"
 interval = "60s"
 
@@ -35,4 +39,4 @@ interval = "60s"
 interval = "60s"
 timeout = "10s"
 retries = 1
-notifications = ["phone"]
+notifications = ["phone"]                  # example; default [] (none)

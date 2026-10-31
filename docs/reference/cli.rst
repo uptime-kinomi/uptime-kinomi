@@ -28,7 +28,8 @@ Command line
    first line of stdin.
 
 ``self-update``
-   Install the latest signed release (:doc:`/operations/updates`). Options:
+   Install the latest signed release (from 1.0 on: not a new major version
+   without ``--release``; :doc:`/reference/stability`; :doc:`/operations/updates`). Options:
 
    ``--check``
       Only check; exit code 3 if a newer release exists, 0 if not.

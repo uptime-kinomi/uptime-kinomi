@@ -46,11 +46,11 @@ One file per day, named after the date in UTC
    2026-11-01T14:00:00Z event=START version=0.6.0 monitors=42
    2026-11-01T14:00:00Z event=DISABLED monitor=old-nas
    2026-11-01T14:03:11Z monitor=blog result=UP latency_ms=123 cert_expires=2026-12-01 msg="HTTP 200"
-   2026-11-01T14:04:11Z monitor=shop result=FAIL latency_ms=10000 msg="timeout"
-   2026-11-01T14:05:11Z monitor=shop result=DOWN latency_ms=10000 msg="timeout"
+   2026-11-01T14:04:11Z monitor=shop result=FAIL latency_ms=10000 msg=timeout
+   2026-11-01T14:05:11Z monitor=shop result=DOWN latency_ms=10000 msg=timeout
    2026-11-01T14:05:12Z event=NOTIFY monitor=shop notifier=phone kind=down ok=true
    2026-11-01T14:06:00Z monitor=nas result=SKIPPED count=1 msg="queue full"
-   2026-11-01T14:06:02Z monitor=backup-job result=UP msg="push"
+   2026-11-01T14:06:02Z monitor=backup-job result=UP msg=push
    2026-11-01T14:07:30Z event=AUTH_FAIL count=3 throttled=0
    2026-11-01T22:00:00Z event=STOP
 
@@ -77,7 +77,8 @@ Lines with ``event=`` are kinomi's own events: ``START`` and ``STOP``,
 ``NOTIFY`` (a notification and whether it arrived), ``AUTH_FAIL`` (wrong
 passwords, summed up), ``HEARTBEAT`` (the outgoing heartbeat),
 ``CLOCK_JUMP`` (the system clock was changed), ``PAUSED`` (the system was
-suspended), ``DISABLED`` (a disabled monitor at startup).
+suspended), ``DISABLED`` (a disabled monitor at startup), and
+``LOG_LINES_DROPPED`` (more than 10 000 lines were waiting to be written).
 
 kinomi collects lines in memory and writes them every 30 seconds
 (``flush_interval``), to spare the SD card. A line can therefore appear up

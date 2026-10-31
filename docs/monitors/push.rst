@@ -158,7 +158,8 @@ Details
    * - ``429 Too Many Requests``
      - More than one call per second for this token.
    * - ``400 Bad Request``
-     - ``status`` is neither ``up`` nor ``down``.
+     - ``status`` is neither ``up`` nor ``down``, or the query string is
+       longer than 256 bytes.
    * - ``405 Method Not Allowed``
      - ``HEAD`` or another method. This keeps link previews in chat apps
        from counting as a push.

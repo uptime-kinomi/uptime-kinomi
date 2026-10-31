@@ -20,9 +20,10 @@ not to be.
 
 Only the latest release gets security fixes. With the weekly update timer
 (enabled by `install.sh` and the Ansible roles), installations get a fix
-within a week of its release. When 2.0 comes out, the last 1.x release
-keeps getting security fixes for at least six months, since the update
-timer does not move to a new major version on its own.
+within a week of its release. From 1.0 on, the update timer does not move
+to a new major version on its own (SPEC.md §16): after 2.0, a 1.x
+installation is told that 2.0 exists and has to be updated by hand, with
+`uptime-kinomi self-update --release 2.x.y`.
 
 ## What counts
 

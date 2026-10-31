@@ -97,7 +97,8 @@ What the script did
    * ``monitors/example-web.toml``: checks that https://example.org/ is
      reachable;
    * ``monitors/internet-dns.toml``: checks that name resolution works;
-   * ``pages/home.toml``: a public status page with all monitors.
+   * ``pages/home.toml``: a public status page with all monitors;
+   * ``README.txt``: where to find the documentation.
 
    An existing configuration is never overwritten.
 #. It installed the program as ``~/.local/bin/uptime-kinomi``.
@@ -195,6 +196,10 @@ installation. It keeps your configuration, checks it with the newly
 downloaded version **before** replacing anything, and restarts the service.
 If your configuration does not work with the new version, it stops and
 changes nothing.
+
+The script always installs the latest release, also a new major version
+(unlike the weekly update, see :doc:`/reference/stability`). Use
+``--version X.Y.Z`` to stay on a specific version.
 
 No minisign and no OpenSSL 3?
 -----------------------------

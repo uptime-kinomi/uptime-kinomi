@@ -163,7 +163,7 @@ Usually some checks take very long (timeouts). Options:
 * raise the ``interval`` of monitors that do not need to be checked every
   minute.
 
-``msg="paused"`` instead means that the whole Pi was suspended or frozen
+``msg=paused`` instead means that the whole Pi was suspended or frozen
 for a while, e.g. a virtual machine that was paused.
 
 Still stuck?

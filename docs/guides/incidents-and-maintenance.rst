@@ -8,7 +8,7 @@ down on Saturday for an upgrade". kinomi has two kinds of files for that.
 * **Incidents** are announcements written by you. They appear on the pages
   and in the feeds, but change nothing about the monitors.
 * **Maintenance windows** are planned times when monitors may fail. During
-  a window, failures do not count and nobody gets notified.
+  a window, failures do not count and nobody gets notified of them.
 
 Incidents
 ---------
@@ -59,7 +59,8 @@ and that's fine." During the window the monitors show ⚙ MAINTENANCE:
 * checks still run and are written to the log (as ``result=MAINT``), so you
   can see what happened;
 * the results count neither as up nor as down in the uptime;
-* no notifications are sent;
+* no notifications are sent (except ``up`` from a push with
+  ``status=up``, see below);
 * after the window, the monitor continues from its state before the
   window. If it was DOWN before and is UP after, you get the ``up``
   notification.
@@ -106,7 +107,8 @@ Push monitors in a window
 
 A missed push and a ``status=down`` push are logged as ``MAINT`` and do not
 count. A push with ``status=up`` (or no status) is the job saying "done", so
-it always counts, even in a window, and can bring the monitor back UP.
+it always counts, even in a window, and can bring the monitor back UP (with
+the ``up`` notification).
 
 Keys
 ----
@@ -150,7 +152,7 @@ Keys
      - Meaning
    * - ``title``
      - (required)
-     - Shown on the pages.
+     - Shown on the pages, 1-200 characters.
    * - ``monitors``
      - none
      - Monitor IDs, or ``["*"]`` for all. ``monitors`` or ``tags`` is

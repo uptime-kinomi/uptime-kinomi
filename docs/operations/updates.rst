@@ -108,5 +108,5 @@ The service cannot write ``/usr/local/bin``, so an administrator updates:
    sudo -u kinomi uptime-kinomi check-config --config-dir /etc/uptime-kinomi
    sudo systemctl restart uptime-kinomi
 
-``self-update`` refuses to replace programs in ``/usr/bin`` or ``/bin``:
+``self-update`` refuses to replace programs in ``/usr/bin``, ``/bin``, ``/usr/sbin`` or ``/sbin``:
 those belong to the package manager.

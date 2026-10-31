@@ -146,7 +146,8 @@ A monitor sends a notification to each channel listed in its
 * it is still DOWN after ``resend_interval``, if you set one (a
   **reminder**).
 
-There are no notifications during maintenance windows. After a restart,
+There are no notifications during maintenance windows (except ``up`` from
+a push with ``status=up``). After a restart,
 kinomi remembers which monitors were DOWN and does not notify again.
 
 How checks are scheduled

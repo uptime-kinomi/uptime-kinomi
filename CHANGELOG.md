@@ -50,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Documentation: the default of `tls_expiry_warn` is `14d` (it said `0s`),
+  log examples show single-word `msg` values without quotes as they are
+  written, and a push with `status=up` sends `up` also in a maintenance
+  window. Limits of page descriptions, group names and maintenance titles
+  are documented.
 - The first heartbeat was sent before the built-in server listened, so a
   heartbeat to the same machine logged `ok=false msg="connection refused"`
   at every start.

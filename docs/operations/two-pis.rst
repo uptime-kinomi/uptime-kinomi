@@ -57,7 +57,7 @@ Restart both. In each log you see the heartbeat's first result:
 
    2026-11-01T10:00:03Z event=HEARTBEAT ok=true
 
-and later only changes, e.g. ``ok=false msg="timeout"`` when the other Pi
+and later only changes, e.g. ``ok=false msg=timeout`` when the other Pi
 is unreachable, so a long outage does not fill the log.
 
 With a hosted service
