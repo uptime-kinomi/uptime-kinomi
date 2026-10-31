@@ -224,6 +224,17 @@ pub fn route(req: &Request, options: &Options, site: &crate::render::Site) -> Re
     r
 }
 
+/// The 421 body. It explains the fix to the owner, who usually sees it after
+/// the machine got a new IP address. The rejected host is not echoed back.
+const MISDIRECTED: &str = "Misdirected Request
+
+This kinomi does not answer to the name or address used in the request.
+If this is your kinomi, add that name or address to `hostnames` in the
+[server] section of kinomi.toml, then restart kinomi. This often happens
+after the computer got a new IP address.
+https://kinomi.readthedocs.io/en/latest/operations/troubleshooting.html
+";
+
 fn route_inner(req: &Request, options: &Options, site: &crate::render::Site) -> Response {
     // Decode first: every decision below is about the decoded path, so
     // e.g. /%70ush/ is a push path too.
@@ -244,7 +255,7 @@ fn route_inner(req: &Request, options: &Options, site: &crate::render::Site) -> 
         return r;
     }
     if !host_allowed(req.host.as_deref(), &options.hostnames) {
-        return Response::text(421, "Misdirected Request\n");
+        return Response::text(421, MISDIRECTED);
     }
 
     if path == "/" {
@@ -552,7 +563,11 @@ mod tests {
         req.path = "/home/".into();
         req.method = "GET".into();
         req.host = Some("evil.example.com".into());
-        assert_eq!(route(&req, &options(), &site()).status, 421);
+        let r = route(&req, &options(), &site());
+        assert_eq!(r.status, 421);
+        let body = String::from_utf8_lossy(&r.body);
+        assert!(body.contains("hostnames"));
+        assert!(!body.contains("evil"));
         req.host = None;
         assert_eq!(route(&req, &options(), &site()).status, 421);
     }

@@ -323,12 +323,13 @@ grace = "1m"               # push only: extra time before the monitor fails (def
 token_file = "secrets/backup-job.token"   # relative to the config dir; or token = "..."
 ```
 
-- URL: `GET` or `POST` `{base_url}/push/{token}`. Compatible with uptime-kuma push URLs.
+- URL: `GET` or `POST` `{base_url}/push/{token}`. uptime-kuma tokens are valid kinomi
+  tokens, but kinomi does not serve uptime-kuma's `/api/push/{token}` path.
   `HEAD` gets `405`, so link previews and probes never count as a push.
 - Tokens MUST be 32 to 128 characters from `[A-Za-z0-9_-]` and unique across monitors.
   `uptime-kinomi gen-token` prints a new random token.
 - Query parameters: `status=up|down` (default `up`). `msg` and `ping` are
-  accepted for uptime-kuma compatibility but **ignored and never stored**.
+  accepted (they appear in uptime-kuma push URLs) but **ignored and never stored**.
   Any other parameter is ignored. Values are not percent-decoded. A query
   string over 256 bytes gets `400`.
 - The request body is never read.
@@ -836,7 +837,8 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
   further connection is closed at once.
 - Methods: `GET` and `HEAD`; on `/push/` `GET` and `POST` only. Anything else
   gets `405` with the right `Allow` header. Routing uses the decoded path.
-- `Host` header must match `hostnames` → otherwise `421`.
+- `Host` header must match `hostnames` → otherwise `421`, with a short text that
+  explains the fix (add the name to `hostnames`). The rejected host is not echoed.
 - Paths: percent-decoding once, reject (`400`) `..`, `//`, `\`, control
   characters, paths over 512 bytes, and serve nothing outside the generated
   file set (lookup in an in-memory index of generated files, not a file

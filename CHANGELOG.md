@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (`token`), with `token_file` as a commented-out alternative.
 - Logo and favicon: grey screen without grid, and the pulse line without
   its dark outline.
+- `421 Misdirected Request` explains the fix: add the name or address to
+  `hostnames` (typically needed after the machine got a new IP address).
+- Specification: push URLs are not "uptime-kuma compatible". uptime-kuma
+  tokens are valid, but kinomi serves `/push/<token>`, not
+  `/api/push/<token>`.
 
 ## [0.6.0] - 2026-10-29
 

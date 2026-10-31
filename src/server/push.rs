@@ -1,7 +1,7 @@
 //! `/push/<token>` for push monitors (SPEC.md §4.6).
 //!
 //! Only acknowledged: the request body is never read, `msg` and `ping`
-//! (uptime-kuma compatibility) and unknown parameters are ignored, and only
+//! (sent by jobs written for uptime-kuma) and unknown parameters are ignored, and only
 //! `status=up|down` is evaluated. Responses have no body.
 
 use std::collections::HashMap;

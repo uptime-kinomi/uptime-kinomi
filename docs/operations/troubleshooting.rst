@@ -32,8 +32,9 @@ the default. To open the page from your network, set in ``kinomi.toml``:
 and restart. Test on the Pi itself first: ``curl -sI http://localhost:8080/``.
 
 **The page says "Misdirected Request" (HTTP 421).** kinomi only answers for
-the names in ``hostnames``, to protect against DNS rebinding attacks. Add
-the name or address you typed into the browser:
+the names in ``hostnames``, to protect against DNS rebinding attacks. The
+page itself says what to do: add the name or address you typed into the
+browser:
 
 .. code-block:: toml
 
