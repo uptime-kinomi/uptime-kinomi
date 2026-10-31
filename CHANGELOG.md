@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-01
+
+Preparation for 1.0: the compatibility rules, two configuration keys
+renamed before they are frozen, the documentation at
+https://kinomi.readthedocs.io/, and `SECURITY.md`.
+
+**Before you update:** move `grace` of push monitors into their `[push]`
+table, and rename `tls_expiry_down` to `tls_expiry_fail`. The weekly update
+timer checks the configuration with the new version and stays on 0.6.0
+until you have done this (see `systemctl --user --failed`).
+
 ### Changed (breaking)
 
 - Push monitors: `grace` moved into the `[push]` table. A top-level
@@ -425,7 +436,8 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.3.0...v0.4.0
