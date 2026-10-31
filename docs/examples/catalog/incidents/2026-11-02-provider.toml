@@ -1,0 +1,12 @@
+# An ongoing incident: no end yet. Add "end" when it is over; it then
+# shows as resolved for 7 days.
+config_version = 1
+title = "Internet provider outage"
+severity = "major"             # info | minor | major
+start = "2026-11-02T07:40:00+01:00"
+pages = ["home"]               # default: all pages
+text = """
+Our provider has a regional outage. They expect it to be fixed by noon.
+
+Mobile data works, so phones are fine.
+"""

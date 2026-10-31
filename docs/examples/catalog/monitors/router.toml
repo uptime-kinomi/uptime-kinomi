@@ -1,0 +1,12 @@
+# The web interface of a router or NAS in your LAN, with a self-signed
+# certificate. tls_verify = false accepts any certificate (check-config
+# warns about it, on purpose). A login page that redirects counts as up.
+config_version = 1
+type = "http"
+name = "Router web interface"
+tags = ["home"]
+
+[http]
+url = "https://192.168.1.1/"
+tls_verify = false
+expected_status = ["200-399"]

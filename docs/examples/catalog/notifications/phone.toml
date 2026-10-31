@@ -1,0 +1,7 @@
+# ntfy.sh: install the ntfy app on your phone and subscribe to the topic.
+# Anyone who knows the topic name can read it: make it long and random.
+config_version = 1
+type = "ntfy"
+
+[ntfy]
+topic = "kinomi-7f3a9c2e81d4b6"

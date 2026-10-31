@@ -1,0 +1,11 @@
+# invert_keyword: the check fails if the text IS on the page, e.g. when a
+# CMS was left in maintenance mode after an update.
+config_version = 1
+type = "http"
+name = "Blog (not in maintenance mode)"
+tags = ["web"]
+
+[http]
+url = "https://blog.example.org/"
+keyword = "Briefly unavailable for scheduled maintenance"
+invert_keyword = true

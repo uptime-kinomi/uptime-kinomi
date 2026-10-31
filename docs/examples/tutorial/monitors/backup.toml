@@ -1,0 +1,9 @@
+config_version = 1
+type = "push"
+name = "Nightly backup"
+interval = "1d"
+grace = "2h"
+retries = 0
+
+[push]
+token_file = "secrets/backup.token"

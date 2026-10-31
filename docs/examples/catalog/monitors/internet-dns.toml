@@ -1,0 +1,10 @@
+# "Is the internet down?" Ask a public resolver for a well-known name.
+# If this fails while your router is UP, your connection is the problem.
+config_version = 1
+type = "dns"
+name = "Internet (DNS)"
+interval = "5m"
+
+[dns]
+name = "example.org"
+server = "9.9.9.9"

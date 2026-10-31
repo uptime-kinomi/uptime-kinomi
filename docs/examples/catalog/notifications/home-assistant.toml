@@ -1,0 +1,8 @@
+# Any program that accepts a JSON POST, e.g. a Home Assistant automation
+# with a webhook trigger (in your LAN, so http:// is fine).
+config_version = 1
+type = "webhook"
+
+[webhook]
+url = "http://homeassistant.local:8123/api/webhook/kinomi-status-7c1e"
+format = "json"

@@ -1,0 +1,17 @@
+# /etc/uptime-kinomi/kinomi.toml for the system unit
+# (contrib/systemd/system/uptime-kinomi.service). systemd creates these
+# directories for the service; setting them here makes a manual run as the
+# kinomi user use the same ones.
+config_version = 1
+
+[server]
+listen = "127.0.0.1:8080"
+hostnames = ["status.example.org"]
+
+[pages]
+timezone = "Europe/Berlin"
+output_dir = "/run/uptime-kinomi/www"
+
+[storage]
+data_dir = "/var/lib/uptime-kinomi"
+log_dir = "/var/log/uptime-kinomi"

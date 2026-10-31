@@ -1,0 +1,11 @@
+# A mail server greets with "220 ...". Checking the banner catches a
+# server that accepts connections but is not ready to deliver mail.
+config_version = 1
+type = "tcp"
+name = "Mail server (SMTP)"
+interval = "5m"
+
+[tcp]
+host = "mail.example.org"
+port = 25
+expect_banner = "220"

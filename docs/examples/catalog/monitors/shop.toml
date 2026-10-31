@@ -1,0 +1,11 @@
+# A page can answer "200 OK" and still be broken: an empty page, a PHP
+# error, a "database connection failed" message. A keyword that only a
+# working page contains catches that.
+config_version = 1
+type = "http"
+name = "Web shop"
+tags = ["web"]
+
+[http]
+url = "https://shop.example.org/"
+keyword = "Add to cart"        # case-sensitive; kinomi reads at most 64 KiB

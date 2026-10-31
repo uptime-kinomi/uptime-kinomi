@@ -1,0 +1,10 @@
+# A public page for the customers of the shop, with badges for a README.
+config_version = 1
+title = "Shop status"
+public = true
+show_badges = true
+show_incidents = true          # the default
+
+[[groups]]
+name = "Shop"
+monitors = ["shop", "api-health"]

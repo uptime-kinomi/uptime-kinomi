@@ -1,0 +1,10 @@
+# An hourly cron job. With retries = 1 (the default), one missed run is
+# tolerated (PENDING) and the second one makes it DOWN.
+config_version = 1
+type = "push"
+name = "Hourly import"
+interval = "1h"
+grace = "10m"
+
+[push]
+token_file = "secrets/cron-hourly.token"

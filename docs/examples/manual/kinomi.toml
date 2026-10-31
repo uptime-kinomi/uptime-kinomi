@@ -1,0 +1,8 @@
+config_version = 1
+
+[server]
+listen = "0.0.0.0:8080"                       # whole LAN; "127.0.0.1:8080" behind a proxy
+hostnames = ["raspberrypi", "raspberrypi.local", "192.168.1.50", "localhost"]
+
+[pages]
+timezone = "Europe/Berlin"

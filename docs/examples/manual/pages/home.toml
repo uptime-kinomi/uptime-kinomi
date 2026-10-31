@@ -1,0 +1,7 @@
+config_version = 1
+title = "Status"
+public = true
+
+[[groups]]
+name = "Everything"
+monitors = ["*"]

@@ -1,0 +1,12 @@
+# A TXT record exists and has the right content. Long TXT records split
+# into several strings are compared as one.
+config_version = 1
+type = "dns"
+name = "DMARC policy"
+interval = "1d"
+
+[dns]
+name = "_dmarc.example.org"
+record_type = "TXT"
+server = "1.1.1.1"
+expected = ["v=DMARC1; p=reject; rua=mailto:dmarc@example.org"]

@@ -1,0 +1,8 @@
+# Gotify: create an "application" in the Gotify web interface and copy its
+# token.
+config_version = 1
+type = "gotify"
+
+[gotify]
+url = "https://gotify.example.org"
+token_file = "secrets/gotify.token"

@@ -1,0 +1,38 @@
+# A complete kinomi.toml with every section. Most keys are optional:
+# the values shown here are the defaults unless the comment says otherwise.
+config_version = 1
+
+[server]
+listen = "127.0.0.1:8080"                  # behind a reverse proxy
+hostnames = ["status.example.org", "localhost"]
+base_url = "https://status.example.org"    # absolute links in the Atom feed
+htpasswd_file = "htpasswd"                 # needed for private pages
+metrics = false                            # true: Prometheus /metrics
+
+[pages]
+timezone = "Europe/Berlin"                 # default "UTC"
+default_page = "home"                      # "/" redirects here
+render_interval = "60s"
+auto_refresh = "60s"
+recent_checks = 50                         # length of the heartbeat bar
+custom_css = "custom.css"                  # optional
+
+[storage]
+flush_interval = "30s"
+state_interval = "10m"
+log_retention = "90d"
+history_retention = "400d"
+
+[scheduler]
+workers = 4
+max_queue = 32
+
+[heartbeat]                                # optional: "I am alive" to another kinomi
+url = "https://other-pi.example.org/push/Rk3wWv0p2qJ7mXyQe9sLbT4uN8cZa1HdGfVjKoPi"
+interval = "60s"
+
+[defaults]                                 # for all monitors, overridable per monitor
+interval = "60s"
+timeout = "10s"
+retries = 1
+notifications = ["phone"]

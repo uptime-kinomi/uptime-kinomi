@@ -1,0 +1,8 @@
+# Slack, Mattermost and Rocket.Chat incoming webhooks all take {"text": ...}.
+config_version = 1
+type = "webhook"
+events = ["down", "up", "reminder"]
+
+[webhook]
+url_file = "secrets/mattermost.url"
+format = "slack"

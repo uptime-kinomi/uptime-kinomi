@@ -56,6 +56,18 @@ jobs:
           persist-credentials: false
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
 
+  # The same build as on Read the Docs (.readthedocs.yaml). The examples in
+  # docs/examples/ are checked by "cargo test" (tests/docs_examples.rs).
+  docs:
+    name: documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 -m venv /tmp/venv && /tmp/venv/bin/pip install -q -r docs/requirements.txt
+      - run: /tmp/venv/bin/sphinx-build -W --keep-going -q docs docs/_build/html
+
   build:
     needs: check
     uses: ./.github/workflows/build.yml

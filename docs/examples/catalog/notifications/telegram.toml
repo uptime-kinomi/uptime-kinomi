@@ -1,0 +1,8 @@
+# Telegram: create a bot with @BotFather, send it a message, then find your
+# chat ID (see the docs).
+config_version = 1
+type = "telegram"
+
+[telegram]
+bot_token_file = "secrets/telegram.token"
+chat_id = "123456789"

@@ -1,0 +1,10 @@
+# Follow redirects, e.g. from http:// to https:// or from an old domain to
+# the new one. Without max_redirects, a redirect (301, 302, ...) is the
+# answer that is compared with expected_status.
+config_version = 1
+type = "http"
+name = "Old domain still redirects"
+
+[http]
+url = "http://example.org/"
+max_redirects = 3              # redirects to http:// after https:// fail the check

@@ -1,0 +1,9 @@
+# Is name resolution working? (asks the public resolver 9.9.9.9)
+config_version = 1
+type = "dns"
+name = "Internet (DNS)"
+interval = "5m"
+
+[dns]
+name = "example.org"
+server = "9.9.9.9"

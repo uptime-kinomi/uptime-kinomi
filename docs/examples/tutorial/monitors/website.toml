@@ -1,0 +1,8 @@
+config_version = 1
+type = "http"
+name = "Our website"
+
+[http]
+url = "https://www.example.org/"
+keyword = "Welcome"
+tls_expiry_warn = "14d"

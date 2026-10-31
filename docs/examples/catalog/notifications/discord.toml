@@ -1,0 +1,8 @@
+# Discord: Server settings, Integrations, Webhooks, New webhook, Copy URL.
+# The URL is the secret, so it lives in a file.
+config_version = 1
+type = "webhook"
+
+[webhook]
+url_file = "secrets/discord.url"
+format = "discord"

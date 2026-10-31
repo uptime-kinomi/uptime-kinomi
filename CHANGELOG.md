@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Documentation at https://kinomi.readthedocs.io: installation with
+  `install.sh`, by hand or with Ansible, a first-steps tutorial, examples
+  for every monitor and notifier type, status pages, incidents and
+  maintenance, reverse proxies, updates, logs, troubleshooting, and the
+  specification. Every configuration example in it is a file in
+  `docs/examples/` that `cargo test` runs through `check-config`.
+
+### Changed
+
+- Logo and favicon: grey screen without grid, and the pulse line without
+  its dark outline.
+
 ## [0.6.0] - 2026-10-29
 
 ### Security

@@ -1,0 +1,9 @@
+# A private page with everything, including targets and error messages.
+# It needs a password (server.htpasswd_file).
+config_version = 1
+title = "Everything"
+public = false
+
+[[groups]]
+name = "All monitors"
+monitors = ["*"]

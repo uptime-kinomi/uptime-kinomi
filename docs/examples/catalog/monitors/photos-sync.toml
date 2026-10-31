@@ -1,0 +1,12 @@
+# A job that runs every 6 hours and may be paused for a while without
+# anyone noticing: enabled = false keeps it on the pages as PAUSED,
+# without checks or notifications.
+config_version = 1
+type = "push"
+name = "Photo sync"
+interval = "6h"
+grace = "30m"
+enabled = false
+
+[push]
+token_file = "secrets/photos-sync.token"

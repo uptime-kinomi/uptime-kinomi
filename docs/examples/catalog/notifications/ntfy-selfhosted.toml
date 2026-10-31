@@ -1,0 +1,10 @@
+# Your own ntfy server with access control, and only the important events.
+config_version = 1
+type = "ntfy"
+events = ["down", "up"]
+
+[ntfy]
+url = "https://ntfy.example.org"
+topic = "homelab"
+token_file = "secrets/ntfy.token"      # an access token (tk_...) of a user
+priority = 5                           # 1-5; overrides the default per event

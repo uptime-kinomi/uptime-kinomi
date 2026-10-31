@@ -1,0 +1,11 @@
+# A script that reports good AND bad news: status=down fails at once,
+# status=up (or no status) is a success. See the docs for the script.
+config_version = 1
+type = "push"
+name = "Disk space on the NAS"
+interval = "1h"
+grace = "15m"
+retries = 0
+
+[push]
+token_file = "secrets/disk-space.token"

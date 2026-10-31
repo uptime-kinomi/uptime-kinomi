@@ -1,0 +1,14 @@
+# A health endpoint of an API: it must answer 200, contain "ok", and do it
+# within one second (WARN if slower, the check still counts as up).
+config_version = 1
+type = "http"
+name = "API"
+interval = "30s"
+timeout = "5s"
+
+[http]
+url = "https://api.example.org/health"
+expected_status = [200]
+keyword = '"status":"ok"'      # single quotes: no escaping of " needed
+headers = { "Accept" = "application/json" }
+slow_warn = "1s"

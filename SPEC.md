@@ -1162,7 +1162,7 @@ the matching public keys are compiled into kinomi.
 signed release for the same platform. The uptime-kinomi binary never runs
 `self-update` automatically. Regular updates come from a systemd timer
 (enabled by `install.sh` and the Ansible roles unless switched off): see
-[`contrib/systemd/user/`](contrib/systemd/user/) and §12.3.
+[`contrib/systemd/user/`](https://github.com/uptime-kinomi/uptime-kinomi/tree/main/contrib/systemd/user/) and §12.3.
 
 1. **Preconditions:** the binary's own directory must be writable by the
    current user (e.g. `~/.local/bin`). kinomi refuses to update binaries in
@@ -1306,6 +1306,6 @@ duration = "2h"                   # 1m to 7d; daily at most 1d
   uptime-kuma (熊, "bear") and to fruit-named SBCs.
 - Logo: a blackberry as a round sticker, its drupelets as half-spheres in
   shades of purple (at the face centres of a soccer ball), with a white
-  pulse line in front, on a dark grid like a monitoring screen. A nod to the
-  fruit-named SBCs. `docs/logo.py` generates `docs/logo.svg` and the favicon
-  `assets/favicon.svg` (no shadow or grid, thicker pulse for 16 px).
+  pulse line in front, on a grey screen. A nod to the fruit-named SBCs.
+  `docs/logo.py` generates `docs/logo.svg` and the favicon
+  `assets/favicon.svg` (no shadow, thicker pulse for 16 px).

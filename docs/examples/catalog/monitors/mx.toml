@@ -1,0 +1,11 @@
+# The mail records of your domain: "<preference> <host>", in any order.
+config_version = 1
+type = "dns"
+name = "Mail records of example.org"
+interval = "1h"
+
+[dns]
+name = "example.org"
+record_type = "MX"
+server = "1.1.1.1"
+expected = ["10 mail.example.org", "20 backup-mail.example.org"]

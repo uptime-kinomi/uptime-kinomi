@@ -1,0 +1,13 @@
+# Your domain points where it should. expected makes the check fail when
+# the answer is different, e.g. after a DNS change at your provider or a
+# hijacked account.
+config_version = 1
+type = "dns"
+name = "www.example.org points to the server"
+interval = "15m"
+
+[dns]
+name = "www.example.org"
+record_type = "A"
+server = "1.1.1.1"
+expected = ["203.0.113.10"]

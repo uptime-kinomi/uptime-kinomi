@@ -1,0 +1,7 @@
+config_version = 1
+type = "tcp"
+name = "Router"
+
+[tcp]
+host = "192.168.1.1"
+port = 80

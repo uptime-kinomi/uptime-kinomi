@@ -1,0 +1,12 @@
+# Is SSH on the NAS answering? An SSH server greets every client with a
+# line starting with "SSH-"; checking it proves more than an open port.
+config_version = 1
+type = "tcp"
+name = "NAS (SSH)"
+description = "The NAS in the basement"   # shown on private pages only
+tags = ["home"]
+
+[tcp]
+host = "192.168.1.10"
+port = 22
+expect_banner = "SSH-"

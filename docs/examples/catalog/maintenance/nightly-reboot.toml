@@ -1,0 +1,8 @@
+# Every night: the router reboots, and everything at home with it.
+config_version = 1
+title = "Nightly router reboot"
+tags = ["home"]
+monitors = ["internet-dns"]
+schedule = "daily"
+start = "2026-11-01T04:30:00"
+duration = "15m"

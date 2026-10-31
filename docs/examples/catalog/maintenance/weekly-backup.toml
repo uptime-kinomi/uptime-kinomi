@@ -1,0 +1,7 @@
+# Every Sunday at 03:00 local time, the NAS is busy with its backup.
+config_version = 1
+title = "Weekly NAS backup"
+monitors = ["nas-ssh", "database"]
+schedule = "weekly"
+start = "2026-11-01T03:00:00"  # a Sunday; local time in pages.timezone
+duration = "2h"

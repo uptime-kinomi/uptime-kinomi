@@ -12,6 +12,9 @@ static status page generator written in Rust, built to run on a
 > Pi 1 and with all parsers fuzzed ([fuzz/](fuzz/)). Before 1.0: polishing.
 > Expect configuration details to change until then.
 
+📖 **Documentation: [kinomi.readthedocs.io](https://kinomi.readthedocs.io)**,
+with a step-by-step tutorial and examples for every monitor.
+
 ---
 
 ## What can I use my Raspberry Pi 1 for?

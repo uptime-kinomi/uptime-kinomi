@@ -1,0 +1,10 @@
+# A database port that only has to accept connections. Databases do not
+# greet first, so there is no expect_banner.
+config_version = 1
+type = "tcp"
+name = "PostgreSQL"
+interval = "2m"
+
+[tcp]
+host = "db.example.org"
+port = 5432

@@ -1,0 +1,16 @@
+# uptime-kinomi configuration (created by install.sh). Documentation:
+# https://github.com/uptime-kinomi/uptime-kinomi/blob/main/SPEC.md
+# After changes: uptime-kinomi check-config && systemctl --user restart uptime-kinomi
+config_version = 1
+
+[server]
+listen = "0.0.0.0:8080"
+hostnames = ["localhost", "127.0.0.1", "raspberrypi", "raspberrypi.local", "192.168.1.50"]
+htpasswd_file = "htpasswd"
+
+[pages]
+timezone = "Europe/Berlin"
+default_page = "home"
+
+[defaults]
+notifications = ["phone"]

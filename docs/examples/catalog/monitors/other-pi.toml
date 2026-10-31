@@ -1,0 +1,10 @@
+# Two Pis watch each other: the other kinomi's [heartbeat] calls this URL
+# every 60 s. Its own token goes into ITS kinomi.toml.
+config_version = 1
+type = "push"
+name = "Second Pi"
+interval = "60s"
+grace = "30s"
+
+[push]
+token_file = "secrets/other-pi.token"

@@ -1,0 +1,7 @@
+# One window, once: a planned update.
+config_version = 1
+title = "Shop software update"
+monitors = ["shop", "api-health"]
+schedule = "once"
+start = "2026-11-14T22:00:00"
+duration = "3h"

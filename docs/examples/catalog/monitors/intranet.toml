@@ -1,0 +1,11 @@
+# A page behind HTTP Basic Auth. The password comes from a file that only
+# you can read (chmod 600 secrets/intranet.password).
+config_version = 1
+type = "http"
+name = "Intranet wiki"
+
+[http]
+url = "https://wiki.example.org/"
+basic_auth_user = "monitor"
+basic_auth_password_file = "secrets/intranet.password"
+keyword = "Main page"

@@ -1,0 +1,8 @@
+# The simplest monitor: is the website there?
+# UP for any status code from 200 to 299.
+config_version = 1
+type = "http"
+name = "My website"
+
+[http]
+url = "https://www.example.org/"

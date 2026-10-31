@@ -1,0 +1,10 @@
+# The MQTT broker of your home automation, on the same Pi: kinomi can watch
+# its own neighbours.
+config_version = 1
+type = "tcp"
+name = "MQTT broker"
+tags = ["home"]
+
+[tcp]
+host = "127.0.0.1"
+port = 1883

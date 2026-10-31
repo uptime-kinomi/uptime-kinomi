@@ -1,0 +1,10 @@
+# Your own resolver (Pi-hole, AdGuard Home, the router) answers. When it
+# fails, the whole family "has no internet", even though the line is fine.
+config_version = 1
+type = "dns"
+name = "Pi-hole"
+tags = ["home"]
+
+[dns]
+name = "example.org"
+server = "192.168.1.2"
