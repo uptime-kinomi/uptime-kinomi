@@ -139,9 +139,6 @@ pub fn run(mut config: Config) -> Result<(), String> {
         notifiers::spawn(notifier_list, job_rx, tx.clone());
         service.notify_tx = Some(job_tx);
     }
-    if let Some((url, interval)) = heartbeat {
-        crate::heartbeat::spawn(url, interval, tx.clone());
-    }
     let enabled = service
         .monitors
         .iter()
@@ -192,6 +189,11 @@ pub fn run(mut config: Config) -> Result<(), String> {
         let listen = options.listen;
         server::start(options, published)?;
         eprintln!("  server: http://{listen}/");
+    }
+    // After the server: a heartbeat to this kinomi's own push URL (or to a
+    // second instance on the same machine) must not fail at every start.
+    if let Some((url, interval)) = heartbeat {
+        crate::heartbeat::spawn(url, interval, tx.clone());
     }
 
     let scheduler = Scheduler::start(

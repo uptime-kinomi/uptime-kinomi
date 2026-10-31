@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   tokens are valid, but kinomi serves `/push/<token>`, not
   `/api/push/<token>`.
 
+### Fixed
+
+- The first heartbeat was sent before the built-in server listened, so a
+  heartbeat to the same machine logged `ok=false msg="connection refused"`
+  at every start.
+
 ## [0.6.0] - 2026-10-29
 
 ### Security
