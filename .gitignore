@@ -25,3 +25,5 @@ rustc-ice-*.txt
 
 # Sphinx output (docs/)
 docs/_build
+
+*.minisig
