@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/uptime-kinomi/uptime-kinomi/security/advisories/new
+    about: Please report vulnerabilities privately, not as an issue (see SECURITY.md).
+  - name: Documentation
+    url: https://kinomi.readthedocs.io/en/stable/
+    about: Installation, configuration and troubleshooting.

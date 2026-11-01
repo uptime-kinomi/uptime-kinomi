@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Issue templates for bug reports (asking for the version, the system and
+  the `check-config` output) and feature requests; security reports are
+  pointed to private reporting.
+
+### Changed
+
+- Links to the documentation (README, `install.sh`, the 421 response,
+  `contrib/`) point to the documentation of the latest release
+  (`/en/stable/`) instead of the development version.
+- Documentation built from `main` is labelled "(development)".
+
 ## [0.7.0] - 2026-11-01
 
 Preparation for 1.0: the compatibility rules, two configuration keys

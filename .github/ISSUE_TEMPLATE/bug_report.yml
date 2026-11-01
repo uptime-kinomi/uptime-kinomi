@@ -1,0 +1,54 @@
+name: Bug report
+description: kinomi does something wrong, crashes, or does not start.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please check the
+        [troubleshooting page](https://kinomi.readthedocs.io/en/stable/operations/troubleshooting.html)
+        first. **Remove tokens, passwords and private URLs** from everything you paste.
+        Security problems go to a [private report](https://github.com/uptime-kinomi/uptime-kinomi/security/advisories/new) instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `uptime-kinomi version`
+      placeholder: uptime-kinomi 0.7.0 (arm-unknown-linux-musleabihf)
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Hardware and operating system, and how kinomi was installed.
+      placeholder: Raspberry Pi 1 B+, Raspberry Pi OS 13, install.sh
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      description: The monitor or page file involved, and what you did.
+      render: toml
+  - type: textarea
+    id: check-config
+    attributes:
+      label: Output of `uptime-kinomi check-config`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log lines
+      description: |
+        The relevant lines from `~/.local/state/uptime-kinomi/log/` and, for
+        crashes or start problems, `journalctl --user -u uptime-kinomi -n 50`.
+      render: text

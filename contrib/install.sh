@@ -62,7 +62,7 @@ detect_asset() {
         aarch64 | arm64) echo aarch64 ;;
         x86_64 | amd64) echo x86_64 ;;
         riscv64) echo riscv64 ;;
-        *) die "no release binary for this CPU ($(uname -m)); build from source: https://kinomi.readthedocs.io/en/latest/installation/manual.html" ;;
+        *) die "no release binary for this CPU ($(uname -m)); build from source: https://kinomi.readthedocs.io/en/stable/installation/manual.html" ;;
     esac
 }
 
@@ -216,7 +216,7 @@ write_starter_config() {
     chmod 700 "$dir"
     new_file "$dir/kinomi.toml" <<EOF
 # uptime-kinomi configuration (created by install.sh). Documentation:
-# https://kinomi.readthedocs.io/en/latest/
+# https://kinomi.readthedocs.io/en/stable/
 # After changes: uptime-kinomi check-config && systemctl --user restart uptime-kinomi
 config_version = 1
 
@@ -260,7 +260,7 @@ EOF
     new_file "$dir/README.txt" <<'EOF'
 One file per monitor in monitors/, per notifier in notifications/, per
 status page in pages/. Documentation, with examples of every file type:
-https://kinomi.readthedocs.io/en/latest/
+https://kinomi.readthedocs.io/en/stable/
 EOF
 }
 

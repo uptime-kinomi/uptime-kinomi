@@ -1,5 +1,5 @@
 # uptime-kinomi configuration (created by install.sh). Documentation:
-# https://kinomi.readthedocs.io/en/latest/
+# https://kinomi.readthedocs.io/en/stable/
 # After changes: uptime-kinomi check-config && systemctl --user restart uptime-kinomi
 config_version = 1
 

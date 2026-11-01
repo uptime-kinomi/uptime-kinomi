@@ -232,7 +232,7 @@ This kinomi does not answer to the name or address used in the request.
 If this is your kinomi, add that name or address to `hostnames` in the
 [server] section of kinomi.toml, then restart kinomi. This often happens
 after the computer got a new IP address.
-https://kinomi.readthedocs.io/en/latest/operations/troubleshooting.html
+https://kinomi.readthedocs.io/en/stable/operations/troubleshooting.html
 ";
 
 fn route_inner(req: &Request, options: &Options, site: &crate::render::Site) -> Response {

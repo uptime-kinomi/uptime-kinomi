@@ -2,7 +2,7 @@
 
 # uptime-kinomi
 
-**📖 Documentation: [kinomi.readthedocs.io](https://kinomi.readthedocs.io/en/latest/)**
+**📖 Documentation: [kinomi.readthedocs.io](https://kinomi.readthedocs.io/en/stable/)**
 
 **The lightweight cousin of uptime-kuma.** A self-hosted uptime monitor and
 static status page generator written in Rust, configured with plain **TOML
@@ -65,8 +65,8 @@ The script verifies the release signature, installs kinomi to
 `~/.local/bin`, creates a starter configuration, starts a systemd user
 service and enables weekly signed self-updates. Manual and Ansible
 installations are described in the
-[installation guide](https://kinomi.readthedocs.io/en/latest/installation/).
-Then follow [First steps](https://kinomi.readthedocs.io/en/latest/getting-started/first-steps.html).
+[installation guide](https://kinomi.readthedocs.io/en/stable/installation/).
+Then follow [First steps](https://kinomi.readthedocs.io/en/stable/getting-started/first-steps.html).
 
 ## A taste
 
@@ -94,16 +94,16 @@ kinomi does ends up in plain log files, one per day:
 
 ## Documentation
 
-- [Installation](https://kinomi.readthedocs.io/en/latest/installation/):
+- [Installation](https://kinomi.readthedocs.io/en/stable/installation/):
   `install.sh`, manual, Ansible, and which binary you need
-- [First steps](https://kinomi.readthedocs.io/en/latest/getting-started/first-steps.html):
+- [First steps](https://kinomi.readthedocs.io/en/stable/getting-started/first-steps.html):
   a 30-minute tutorial
-- [Monitors](https://kinomi.readthedocs.io/en/latest/monitors/) and
-  [notifications](https://kinomi.readthedocs.io/en/latest/notifications/),
+- [Monitors](https://kinomi.readthedocs.io/en/stable/monitors/) and
+  [notifications](https://kinomi.readthedocs.io/en/stable/notifications/),
   with examples for every type
-- [HTTPS and a reverse proxy](https://kinomi.readthedocs.io/en/latest/operations/reverse-proxy.html),
-  [updates](https://kinomi.readthedocs.io/en/latest/operations/updates.html),
-  [troubleshooting](https://kinomi.readthedocs.io/en/latest/operations/troubleshooting.html)
+- [HTTPS and a reverse proxy](https://kinomi.readthedocs.io/en/stable/operations/reverse-proxy.html),
+  [updates](https://kinomi.readthedocs.io/en/stable/operations/updates.html),
+  [troubleshooting](https://kinomi.readthedocs.io/en/stable/operations/troubleshooting.html)
 - The [specification](SPEC.md): the complete, normative description
 
 ## Security
@@ -115,7 +115,7 @@ hardened systemd unit, and no root. Releases are signed with offline
 and `self-update` verify before anything is replaced (primary key
 `RWQWavktNED2FrnDC8yLcpUPBKv4JeUoguh4zMF2wCBxwRJKVs3vRZu3`; both keys are in
 [keys/](keys/)). See
-[Updates](https://kinomi.readthedocs.io/en/latest/operations/updates.html)
+[Updates](https://kinomi.readthedocs.io/en/stable/operations/updates.html)
 and [SPEC.md](SPEC.md) §11-12. To report a vulnerability, see
 [SECURITY.md](SECURITY.md).
 

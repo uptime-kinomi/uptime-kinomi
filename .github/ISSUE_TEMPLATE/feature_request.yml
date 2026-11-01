@@ -1,0 +1,23 @@
+name: Feature request
+description: A new monitor type, notifier, or other idea.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        kinomi stays small on purpose (it must run on a Raspberry Pi 1, without
+        JavaScript and without root). Planned features are listed in the
+        [specification](https://github.com/uptime-kinomi/uptime-kinomi/blob/main/SPEC.md#13-roadmap).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to monitor or achieve?
+      description: The problem, not only the solution. How do you solve it today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How it could look, e.g. the configuration you have in mind.
+      render: toml
