@@ -3,6 +3,7 @@
     pip install -r docs/requirements.txt
     sphinx-build -W --keep-going docs docs/_build/html
 """
+import os
 import pathlib
 import re
 
@@ -26,7 +27,12 @@ myst_heading_anchors = 3
 
 highlight_language = "none"
 html_theme = "furo"
-html_title = f"kinomi {release}"
+# Read the Docs builds "latest" from main, where Cargo.toml already has the
+# next version: only builds of a tag (and "stable") show the bare version.
+if os.environ.get("READTHEDOCS_VERSION_TYPE") == "tag":
+    html_title = f"kinomi {release}"
+else:
+    html_title = f"kinomi {release} (development)"
 html_logo = "logo.svg"
 html_favicon = "../assets/favicon.svg"
 html_static_path = ["_static"]
