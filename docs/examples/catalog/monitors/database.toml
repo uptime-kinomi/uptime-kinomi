@@ -1,5 +1,5 @@
 # A database port that only has to accept connections. Databases do not
-# greet first, so there is no expect_banner.
+# greet first, so there is no expected_banner.
 config_version = 1
 type = "tcp"
 name = "PostgreSQL"

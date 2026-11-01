@@ -279,7 +279,7 @@ type = "tcp"
 [tcp]
 host = "192.168.1.10"     # IP or host name
 port = 22
-expect_banner = "SSH-"    # optional: bytes the server sends first must start with this (max 256 bytes read)
+expected_banner = "SSH-"    # optional: bytes the server sends first must start with this (max 256 bytes read)
 ```
 
 ### 4.5 `dns` — DNS record
@@ -866,19 +866,20 @@ kinomi_build_info{version="0.5.0"} 1
 kinomi_start_time_seconds 1792656000
 kinomi_queue_length 0
 kinomi_skipped_checks_24h 3
-kinomi_check_response_ms_24h 95
+kinomi_check_response_24h_seconds 0.095
 kinomi_last_log_flush_timestamp_seconds 1792743291
 kinomi_monitor_up{monitor="blog",type="http"} 1
 kinomi_monitor_uptime_ratio{monitor="blog",window="24h"} 0.9998
 kinomi_monitor_uptime_ratio{monitor="blog",window="30d"} 0.9995
-kinomi_monitor_response_ms_24h{monitor="blog"} 120
+kinomi_monitor_response_24h_seconds{monitor="blog"} 0.120
 kinomi_monitor_cert_expiry_timestamp_seconds{monitor="blog"} 1796083200
 ```
 
 `kinomi_monitor_up` is the current health: 1 for UP and WARN, 0 for PENDING
 and DOWN (a failure is in progress, even if retries are left; the uptime
 ratio counts PENDING as up). Monitors without data or in maintenance are
-left out of it. Disabled monitors are
+left out of it. Response times are averages over successful checks in
+seconds (base unit, millisecond precision). Disabled monitors are
 left out of all per-monitor metrics, and values without data are left out.
 
 ---

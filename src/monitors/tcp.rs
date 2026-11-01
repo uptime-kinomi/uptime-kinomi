@@ -18,7 +18,7 @@ const MAX_BANNER_BYTES: usize = 256;
 pub struct TcpFile {
     host: String,
     port: u16,
-    expect_banner: Option<String>,
+    expected_banner: Option<String>,
 }
 
 pub struct TcpCheck {
@@ -38,17 +38,17 @@ pub fn build(file: TcpFile, timeout: Duration, p: &mut FileProblems) -> Option<T
     if file.port == 0 {
         p.error("tcp.port must be between 1 and 65535");
     }
-    if let Some(b) = &file.expect_banner {
+    if let Some(b) = &file.expected_banner {
         if b.is_empty() || b.len() > MAX_BANNER_BYTES {
             p.error(format!(
-                "tcp.expect_banner must be 1 to {MAX_BANNER_BYTES} bytes"
+                "tcp.expected_banner must be 1 to {MAX_BANNER_BYTES} bytes"
             ));
         }
     }
     Some(TcpCheck {
         host: file.host,
         port: file.port,
-        banner: file.expect_banner.map(String::into_bytes),
+        banner: file.expected_banner.map(String::into_bytes),
         timeout,
     })
 }

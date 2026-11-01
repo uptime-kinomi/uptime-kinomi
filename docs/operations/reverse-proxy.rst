@@ -174,8 +174,8 @@ Prometheus
 
 With ``metrics = true`` in ``[server]``, kinomi serves ``/metrics`` in the
 Prometheus text format, behind the same password as private pages. It
-contains each monitor's state, uptime, response time and certificate
-expiry, and kinomi's own health. Give Prometheus its own user:
+contains each monitor's state, uptime, response time (in seconds, as
+Prometheus expects) and certificate expiry, and kinomi's own health. Give Prometheus its own user:
 
 .. code-block:: sh
 

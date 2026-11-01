@@ -8,4 +8,4 @@ interval = "5m"
 [tcp]
 host = "mail.example.org"
 port = 25
-expect_banner = "220"
+expected_banner = "220"

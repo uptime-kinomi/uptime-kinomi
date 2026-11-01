@@ -14,6 +14,11 @@ fn label(value: &str) -> String {
         .replace('\n', "\\n")
 }
 
+/// Milliseconds as seconds: Prometheus uses base units.
+fn seconds(ms: u32) -> String {
+    format!("{}.{:03}", ms / 1000, ms % 1000)
+}
+
 pub fn metrics(monitors: &[Monitor], snap: &Snapshot) -> String {
     let mut out = String::with_capacity(4096);
     let mut metric = |name: &str, help: &str, lines: Vec<String>| {
@@ -49,9 +54,9 @@ pub fn metrics(monitors: &[Monitor], snap: &Snapshot) -> String {
     );
     if let Some(ms) = s.avg_check_ms_24h {
         metric(
-            "kinomi_check_response_ms_24h",
+            "kinomi_check_response_24h_seconds",
             "Average response time of all successful checks in the last 24 hours.",
-            vec![format!(" {ms}")],
+            vec![format!(" {}", seconds(ms))],
         );
     }
     if let Some(t) = s.last_flush {
@@ -112,11 +117,11 @@ pub fn metrics(monitors: &[Monitor], snap: &Snapshot) -> String {
         .filter(|(m, _)| m.enabled)
         .filter_map(|(m, v)| {
             v.avg_ms_24h
-                .map(|ms| format!("{{monitor=\"{}\"}} {ms}", label(&m.id)))
+                .map(|ms| format!("{{monitor=\"{}\"}} {}", label(&m.id), seconds(ms)))
         })
         .collect();
     metric(
-        "kinomi_monitor_response_ms_24h",
+        "kinomi_monitor_response_24h_seconds",
         "Average response time of successful checks in the last 24 hours.",
         response,
     );
@@ -145,5 +150,13 @@ mod tests {
     #[test]
     fn label_escaping() {
         assert_eq!(label("a\"b\\c\nd"), "a\\\"b\\\\c\\nd");
+    }
+
+    #[test]
+    fn response_times_in_seconds() {
+        assert_eq!(seconds(0), "0.000");
+        assert_eq!(seconds(5), "0.005");
+        assert_eq!(seconds(120), "0.120");
+        assert_eq!(seconds(10_000), "10.000");
     }
 }

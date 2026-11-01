@@ -9,4 +9,4 @@ tags = ["home"]
 [tcp]
 host = "192.168.1.10"
 port = 22
-expect_banner = "SSH-"
+expected_banner = "SSH-"

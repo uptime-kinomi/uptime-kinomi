@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+- TCP monitors: `expect_banner` is renamed to `expected_banner`, like
+  `expected_status` (http) and `expected` (dns). The old name is an error.
+- `/metrics`: response times are in seconds, as Prometheus expects:
+  `kinomi_check_response_ms_24h` is now `kinomi_check_response_24h_seconds`
+  and `kinomi_monitor_response_ms_24h` is now
+  `kinomi_monitor_response_24h_seconds`. Adapt dashboards and alerts.
+
 ### Added
 
 - Issue templates for bug reports (asking for the version, the system and

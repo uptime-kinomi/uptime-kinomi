@@ -74,7 +74,7 @@ Keys
    * - ``port``
      - (required)
      - Port number, 1-65535.
-   * - ``expect_banner``
+   * - ``expected_banner``
      - none
      - Text the server's first bytes must start with (1-256 bytes).
 

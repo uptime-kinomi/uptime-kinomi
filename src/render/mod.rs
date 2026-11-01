@@ -682,7 +682,10 @@ mod tests {
         let site = r.build(&busy_snapshot(1_792_678_991));
         let m = text(&site, "/metrics");
         assert!(site.files["/metrics"].private);
-        assert!(m.contains("kinomi_check_response_ms_24h 42\n"), "{m}");
+        assert!(
+            m.contains("kinomi_check_response_24h_seconds 0.042\n"),
+            "{m}"
+        );
         assert!(
             m.contains("kinomi_last_log_flush_timestamp_seconds 1792678991\n"),
             "{m}"
