@@ -30,7 +30,7 @@ disagree, the spec wins until it is explicitly changed in the same PR.
    resolution (§3.1) and default directories (§10.6). Every example, test and
    doc must work without `sudo`. A feature that needs privileges must be optional.
 10. **Compatibility.** Configuration keys, CLI, URLs, `status.json`,
-   `/metrics` and the data files follow SPEC.md §16: from 1.0 on, only
+   `/metrics` and the data files follow SPEC.md §16: since 1.0, only
    additions within a major version. Removing or renaming anything there
    needs a deprecation warning first and a new major version.
 

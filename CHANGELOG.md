@@ -6,6 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-02
+
+The first stable release. From now on, updates within 1.x never break a
+working configuration, the command line, URLs, `status.json`, `/metrics`
+or the data files (SPEC.md §16, "Compatibility and updates" in the
+documentation). The weekly update timer will not move to 2.0 on its own.
+
+**Before you update:** nothing to do when you come from 0.8.0. From an
+older version, read the "Before you update" notes of 0.7.0 and 0.8.0.
+
+### Added
+
+- Troubleshooting: why `journalctl --user` shows nothing on Raspberry Pi
+  OS (the journal is kept only in RAM there) and how to keep it on disk.
+
+### Changed
+
+- The specification's status is "stable"; README and documentation no
+  longer call kinomi pre-1.0.
+- Upgrade test: also reads the data written by 0.8.0.
+
+### Fixed
+
+- Documentation: the `status.json` shell check matched `"overall":"up"`
+  without the space kinomi writes, so it never succeeded; the `output_dir`
+  default and the number formats in the `status.json` and `/metrics`
+  examples now match the real output; the downgrade example no longer
+  suggests a version that rejects today's configuration.
+
 ## [0.8.0] - 2026-11-02
 
 The last renames before the configuration is frozen for 1.0.
@@ -468,7 +497,8 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.8.0...v1.0.0
 [0.8.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.5.0...v0.6.0

@@ -32,7 +32,8 @@ To change them, set ``data_dir`` and ``log_dir`` in ``[storage]`` and
 ``output_dir`` in ``[pages]`` of ``kinomi.toml``.
 
 kinomi's own messages (startup, errors) go to the journal:
-``journalctl --user -u uptime-kinomi``.
+``journalctl --user -u uptime-kinomi`` (empty on Raspberry Pi OS by default,
+see :ref:`empty-journal`).
 
 The check log
 -------------
@@ -43,7 +44,7 @@ One file per day, named after the date in UTC
 
 .. code-block:: text
 
-   2026-11-01T14:00:00Z event=START version=0.8.0 monitors=42
+   2026-11-01T14:00:00Z event=START version=1.0.0 monitors=42
    2026-11-01T14:00:00Z event=DISABLED monitor=old-nas
    2026-11-01T14:03:11Z monitor=blog result=UP latency_ms=123 cert_expires=2026-12-01 msg="HTTP 200"
    2026-11-01T14:04:11Z monitor=shop result=FAIL latency_ms=10000 msg=timeout

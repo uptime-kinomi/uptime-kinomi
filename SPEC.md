@@ -1,6 +1,6 @@
 # uptime-kinomi — Specification
 
-Status: **draft**, milestones M0 to M4 and fuzzing done, tested on a Raspberry Pi 1 (see §13)
+Status: **stable** (1.0), compatibility rules in §16, tested on a Raspberry Pi 1
 License: MIT
 
 uptime-kinomi is a self-hosted uptime monitor in the spirit of
@@ -511,7 +511,7 @@ All timestamps stored are **UTC, RFC 3339, second precision**.
 - One line per event in [logfmt](https://brandur.org/logfmt) format, timestamp first:
 
 ```
-2026-10-22T14:00:00Z event=START version=0.5.0 monitors=42
+2026-10-22T14:00:00Z event=START version=1.0.0 monitors=42
 2026-10-22T14:00:00Z event=DISABLED monitor=old-nas
 2026-10-22T14:03:11Z monitor=blog result=UP latency_ms=123 cert_expires=2026-12-01 msg="HTTP 200"
 2026-10-22T14:04:11Z monitor=shop result=FAIL latency_ms=10000 msg=timeout
@@ -721,7 +721,7 @@ page.
 ```json
 {
   "schema": 1,
-  "kinomi_version": "0.5.0",
+  "kinomi_version": "1.0.0",
   "page": "home",
   "title": "Our services",
   "generated": "2026-10-23T08:15:00Z",
@@ -733,8 +733,8 @@ page.
       "group": "Web",
       "state": "UP",
       "since": "2026-10-22T18:52:27Z",
-      "uptime_24h": 99.98,
-      "uptime_30d": 99.95,
+      "uptime_24h": 99.980,
+      "uptime_30d": 99.950,
       "avg_ms_24h": 120,
       "cert_expires": "2026-12-01",
 
@@ -857,20 +857,20 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 
 ### 9.5 `/metrics`
 
-With `server.metrics = true` (needs `server.htpasswd_file`), `/metrics`
-serves the [Prometheus text format](https://prometheus.io/docs/instrumenting/exposition_formats/)
+With `server.metrics = true` (needs `server.htpasswd_file` while the
+server is enabled), `/metrics` serves the [Prometheus text format](https://prometheus.io/docs/instrumenting/exposition_formats/)
 behind Basic Auth, regenerated with the pages:
 
 ```
-kinomi_build_info{version="0.5.0"} 1
+kinomi_build_info{version="1.0.0"} 1
 kinomi_start_time_seconds 1792656000
 kinomi_queue_length 0
 kinomi_skipped_checks_24h 3
 kinomi_check_response_24h_seconds 0.095
 kinomi_last_log_flush_timestamp_seconds 1792743291
 kinomi_monitor_up{monitor="blog",type="http"} 1
-kinomi_monitor_uptime_ratio{monitor="blog",window="24h"} 0.9998
-kinomi_monitor_uptime_ratio{monitor="blog",window="30d"} 0.9995
+kinomi_monitor_uptime_ratio{monitor="blog",window="24h"} 0.99980
+kinomi_monitor_uptime_ratio{monitor="blog",window="30d"} 0.99950
 kinomi_monitor_response_24h_seconds{monitor="blog"} 0.120
 kinomi_monitor_cert_expiry_timestamp_seconds{monitor="blog"} 1796083200
 ```
@@ -1237,7 +1237,7 @@ enable the timer by default (`--no-auto-update`, `kinomi_auto_update: false`).
 | ✅ **M3** | `push` and `dns` monitors, notifiers (webhook, ntfy, gotify, telegram) |
 | ✅ **M4** | Incidents, maintenance, badges, Atom feed, status.json, `/metrics`, contrib files |
 | ✅ Fuzzing | cargo-fuzz targets for every parser of network data and of config, log and state files (`fuzz/`), in CI |
-| **v1.0** | Hardening, documentation, first stable release |
+| ✅ **v1.0** | Hardening, documentation, compatibility policy (§16), first stable release |
 | later | `ping`, `smtp` notifier, `.deb` packages, uptime-kuma config importer |
 
 ---
@@ -1323,8 +1323,8 @@ duration = "2h"                   # 1m to 7d; daily at most 1d
 ## 16. Compatibility and stability
 
 From 1.0.0 on, versions follow [semantic versioning](https://semver.org/):
-a 1.x release never breaks what this section lists as stable. Before 1.0,
-anything may change between minor versions (see the changelog).
+a 1.x release never breaks what this section lists as stable. Versions
+before 1.0 could change anything between minor versions (see the changelog).
 
 **Stable within a major version** (minor releases only add):
 

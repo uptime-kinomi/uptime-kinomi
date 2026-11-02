@@ -28,8 +28,9 @@ Command line
    first line of stdin.
 
 ``self-update``
-   Install the latest signed release (from 1.0 on: not a new major version
-   without ``--release``; :doc:`/reference/stability`; :doc:`/operations/updates`). Options:
+   Install the latest signed release of the same major version (a new major
+   version only with ``--release``; :doc:`/reference/stability`;
+   :doc:`/operations/updates`). Options:
 
    ``--check``
       Only check; exit code 3 if a newer release exists, 0 if not.
@@ -41,7 +42,7 @@ Command line
       Restore the version that the last update replaced.
 
 ``version`` (also ``-V``, ``--version``)
-   Print the version and the platform, e.g. ``uptime-kinomi 0.8.0
+   Print the version and the platform, e.g. ``uptime-kinomi 1.0.0
    (arm-unknown-linux-musleabihf)``.
 
 ``help`` (also ``-h``, ``--help``)

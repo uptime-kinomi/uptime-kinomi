@@ -195,7 +195,7 @@ scripts, dashboards or another kinomi:
 
    {
      "schema": 1,
-     "kinomi_version": "0.8.0",
+     "kinomi_version": "1.0.0",
      "page": "home",
      "title": "Is the internet down?",
      "generated": "2026-11-01T08:15:00Z",
@@ -207,8 +207,8 @@ scripts, dashboards or another kinomi:
          "group": "Internet",
          "state": "UP",
          "since": "2026-10-30T11:51:57Z",
-         "uptime_24h": 100.0,
-         "uptime_30d": 99.95,
+         "uptime_24h": 100.000,
+         "uptime_30d": 99.950,
          "avg_ms_24h": 14,
          "cert_expires": null
        }
@@ -225,7 +225,7 @@ A quick check from a shell script:
 
 .. code-block:: sh
 
-   curl -fsS https://status.example.org/home/status.json | grep -q '"overall":"up"' && echo all good
+   curl -fsS https://status.example.org/home/status.json | grep -q '"overall": "up"' && echo all good
 
 The feed
 --------
@@ -320,5 +320,6 @@ And in ``kinomi.toml``, section ``[pages]``:
      - none
      - Your style sheet.
    * - ``output_dir``
-     - in memory
+     - ``/run/user/<uid>/uptime-kinomi/www`` (in memory) if it exists,
+       else ``www`` in the data directory
      - Where the files are written (:doc:`/operations/logs-and-data`).

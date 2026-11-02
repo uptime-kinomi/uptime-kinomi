@@ -51,9 +51,10 @@ Where do I start?
 #. Look up what you need in the guides: :doc:`monitors/index`,
    :doc:`notifications/index`, :doc:`guides/status-pages`.
 
-kinomi is pre-1.0: everything described here works and is tested on a real
-Raspberry Pi 1, but configuration details may still change before 1.0. The
-:doc:`changelog <reference/changelog>` lists every change.
+kinomi is stable: within 1.x, updates never break a working configuration
+(:doc:`reference/stability`). Everything described here is tested on a real
+Raspberry Pi 1. The :doc:`changelog <reference/changelog>` lists every
+change.
 
 .. toctree::
    :maxdepth: 2

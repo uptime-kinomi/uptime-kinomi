@@ -10,9 +10,9 @@ files** and producing **JavaScript-free HTML + CSS status pages**. It runs
 on any Linux machine, and even on low-end hardware such as a
 **Raspberry Pi 1**.
 
-> ⚠️ **Status: pre-1.0.** All features described here are implemented,
-> tested on a real Raspberry Pi 1 and with all parsers fuzzed. Before 1.0:
-> polishing. Expect configuration details to change until then.
+**Status: stable (1.0).** Tested on a real Raspberry Pi 1, with all
+parsers fuzzed. Within 1.x, updates never break a working configuration:
+see [compatibility and updates](https://kinomi.readthedocs.io/en/stable/reference/stability.html).
 
 <p align="center"><img src="docs/_static/status-page.png" width="600" alt="A kinomi status page: the banner 'All systems operational', then groups of monitors with heartbeat bars, uptime percentages and their state"></p>
 

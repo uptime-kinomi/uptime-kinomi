@@ -15,6 +15,40 @@ and the check log shows what kinomi saw:
 
    tail -n 30 ~/.local/state/uptime-kinomi/log/$(date -u +%F).log
 
+.. _empty-journal:
+
+The journal is empty
+--------------------
+
+``journalctl --user -u uptime-kinomi`` (or ``-u uptime-kinomi-update``)
+says "No journal files were found" or shows nothing. Raspberry Pi OS keeps
+the journal only in RAM, to spare the SD card: it is small, its oldest
+messages are dropped after a few hours, all of it is gone after a reboot,
+and ``journalctl --user`` finds nothing at all, because separate journals
+for each user only exist on disk. Messages that are still in RAM show up
+with ``--user-unit`` instead:
+
+.. code-block:: sh
+
+   journalctl --user-unit uptime-kinomi-update -n 20
+
+To keep the journal on disk, which most other Linux distributions do
+anyway (an administrator; the file name must sort after Raspberry Pi OS's
+``40-rpi-volatile-storage.conf``):
+
+.. code-block:: sh
+
+   sudo mkdir -p /etc/systemd/journald.conf.d
+   printf '[Journal]\nStorage=persistent\nSystemMaxUse=50M\n' |
+     sudo tee /etc/systemd/journald.conf.d/50-persistent.conf
+   sudo systemctl restart systemd-journald
+
+From then on, ``journalctl --user -u ...`` works, including for messages
+from before a reboot. The journal writes a few KB per hour to the SD card;
+``SystemMaxUse`` limits its size. The check log
+(``~/.local/state/uptime-kinomi/log/``) is not affected: kinomi always
+writes it to disk.
+
 .. _page-does-not-open:
 
 The status page does not open

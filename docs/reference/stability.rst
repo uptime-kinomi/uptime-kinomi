@@ -2,10 +2,11 @@ Compatibility and updates
 =========================
 
 With the weekly update timer (:doc:`/operations/updates`), kinomi updates
-itself, so an update must never break a working setup. From version 1.0 on, kinomi follows
-`semantic versioning <https://semver.org/>`_: within a major version
-(1.x), updates only add things. Before 1.0, configuration details can still
-change between versions; the :doc:`changelog` says what to adapt.
+itself, so an update must never break a working setup. Since version 1.0,
+kinomi follows `semantic versioning <https://semver.org/>`_: within a major
+version (1.x), updates only add things. Versions before 1.0 still renamed
+configuration keys; the :doc:`changelog` says what to adapt when you come
+from one of them.
 
 What stays the same within 1.x
 ------------------------------

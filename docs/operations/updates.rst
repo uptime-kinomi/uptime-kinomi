@@ -33,9 +33,11 @@ What happened at the last update:
 
    journalctl --user -u uptime-kinomi-update
 
+(On Raspberry Pi OS, see :ref:`empty-journal` if this shows nothing.)
+
 .. code-block:: text
 
-   updated 0.7.0 -> 0.8.0 (/home/pi/.local/bin/uptime-kinomi). The previous version is kept as /home/pi/.local/bin/uptime-kinomi.old.
+   updated 0.8.0 -> 1.0.0 (/home/pi/.local/bin/uptime-kinomi). The previous version is kept as /home/pi/.local/bin/uptime-kinomi.old.
 
 A failed update shows up in ``systemctl --user --failed``.
 
@@ -90,12 +92,12 @@ version, including an older one:
 
 .. code-block:: sh
 
-   uptime-kinomi self-update --release 0.5.0 --allow-downgrade
+   uptime-kinomi self-update --release 1.0.0 --allow-downgrade
 
-Read the :doc:`changelog </reference/changelog>` before you go back more
-than one version: kinomi is pre-1.0, and configuration details can change
-between versions. From 1.0 on, the weekly update never installs a new major
-version on its own; see :doc:`/reference/stability`.
+Read the :doc:`changelog </reference/changelog>` before you go back to an
+older version: before 0.8.0, some configuration keys had other names.
+The weekly update never installs a new major version on its own; see
+:doc:`/reference/stability`.
 
 System-wide installation
 ------------------------
