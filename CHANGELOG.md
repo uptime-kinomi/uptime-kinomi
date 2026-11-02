@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-02
+
+The last renames before the configuration is frozen for 1.0.
+
+**Before you update:** rename `expect_banner` in TCP monitors to
+`expected_banner`. The weekly update timer checks the configuration with
+the new version and stays on 0.7.0 until you have done this. If you scrape
+`/metrics`, adapt dashboards and alerts to the new response time metrics.
+
 ### Changed (breaking)
 
 - TCP monitors: `expect_banner` is renamed to `expected_banner`, like
@@ -27,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `contrib/`) point to the documentation of the latest release
   (`/en/stable/`) instead of the development version.
 - Documentation built from `main` is labelled "(development)".
+- Upgrade test: also reads the data written by 0.7.0.
 
 ## [0.7.0] - 2026-11-01
 
@@ -458,7 +468,8 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.4.0...v0.5.0

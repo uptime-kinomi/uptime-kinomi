@@ -43,7 +43,7 @@ One file per day, named after the date in UTC
 
 .. code-block:: text
 
-   2026-11-01T14:00:00Z event=START version=0.7.0 monitors=42
+   2026-11-01T14:00:00Z event=START version=0.8.0 monitors=42
    2026-11-01T14:00:00Z event=DISABLED monitor=old-nas
    2026-11-01T14:03:11Z monitor=blog result=UP latency_ms=123 cert_expires=2026-12-01 msg="HTTP 200"
    2026-11-01T14:04:11Z monitor=shop result=FAIL latency_ms=10000 msg=timeout
