@@ -255,7 +255,7 @@ slow_warn = "0s"                      # WARN if response slower than this (< tim
 ```
 
 Security requirements:
-- Without `keyword` the body is not read at all. With it, the body is read
+- Without `keyword` (or a JSON check, below) the body is not read at all. With it, the body is read
   up to `max_body_bytes` and then the connection is closed.
   The body is never decoded beyond what keyword search needs (byte search,
   no HTML parsing, no decompression bombs: `Accept-Encoding: identity`).
@@ -271,6 +271,98 @@ Security requirements:
   date is logged as `cert_expires=YYYY-MM-DD`. If that handshake fails while
   the request succeeded, the result is `WARN` (`HTTP 200, certificate check
   failed`).
+
+#### JSON checks (planned for 1.1, not implemented yet)
+
+An `http` monitor can check one value in a JSON response instead of a
+keyword. Example: fail when the latest release of a GitHub repository is
+older than 80 days.
+
+```toml
+type = "http"
+interval = "6h"
+[http]
+url = "https://api.github.com/repos/uptime-kinomi/uptime-kinomi/releases/latest"
+max_body_bytes = 262144
+json_path = "published_at"   # 1-256 characters, see below
+json_max_age = "80d"         # exactly one check: json_max_age | json_equals | json_min/json_max
+# json_equals = "ok"         # string (max 256 bytes), integer or boolean
+# json_min = 0.0             # number; json_min and/or json_max, json_min <= json_max
+# json_max = 100.0
+```
+
+- **Path:** object keys and array indices separated by `.`, at most 16
+  segments, each 1-64 characters from `[A-Za-z0-9_$@-]`
+  (`assets.0.name`). A segment made only of digits is an index on an array
+  and a key on an object. Nothing else: no wildcards, filters, recursive
+  descent or regular expressions. Keys with other characters cannot be
+  addressed. If a key occurs twice in an object, the first one counts.
+- **Checks:**
+  - `json_max_age` (1m to 3650d): the value is an RFC 3339 string with
+    offset or `Z` (max 64 bytes), or an integer number of Unix seconds.
+    It fails when the value is older than `json_max_age`, or more than 5
+    minutes in the future (a future date must not hide a missing update).
+  - `json_equals`: a string equals a JSON string (after unescaping, byte by
+    byte), an integer equals a JSON number with the same integer value,
+    a boolean equals `true`/`false`. Different types fail.
+  - `json_min`, `json_max`: the value is a JSON number (max 64 characters),
+    compared as `f64`; both bounds inclusive.
+- **Order:** the status code is checked first (`expected_status`); the JSON
+  check only runs for an expected status, and only then is the body read.
+  `slow_warn` and the certificate checks apply as usual.
+- **Errors in `check-config`:** a check without `json_path` or `json_path`
+  without exactly one check; `json_*` together with `keyword`; `method =
+  "HEAD"`; values out of range.
+
+**Parsing.** The body is read up to `max_body_bytes` (as for `keyword`) and
+must be one complete JSON document (RFC 8259) in UTF-8, without BOM, with
+nothing but whitespace after it; a longer body fails. `Content-Type` is not
+checked. kinomi's own parser walks the bytes once, without recursion and
+without building a tree: memory is the body buffer, a stack of at most 64
+nesting levels, and the matched value (at most 1 KiB, longer values fail as
+`wrong type`). It validates the whole document (strings, escapes including
+surrogate pairs, numbers, nesting) even after the value was found, so a
+check never passes on a broken response. No new dependency. A fuzz target
+(`json`) compares it with `serde_json` (only in `fuzz/`, never in the
+binary) and checks that it never panics.
+
+**Results.** Fixed messages only; nothing from the body appears in the
+log, on pages, in `status.json` or in notifications (§11):
+
+| Result | `msg` |
+|---|---|
+| UP | `HTTP 200, json ok` |
+| FAIL | `json: invalid` (not JSON, bad UTF-8, nesting over 64, trailing data) |
+| FAIL | `json: body too large` (longer than `max_body_bytes`) |
+| FAIL | `json: not found` (path does not exist) |
+| FAIL | `json: wrong type` (e.g. a number where a date is expected, value over 1 KiB) |
+| FAIL | `json: not a date` |
+| FAIL | `json: date in the future` |
+| FAIL | `json: too old (83d)` (the age in whole days, computed by kinomi) |
+| FAIL | `json: value differs` |
+| FAIL | `json: out of range` |
+
+The age in `too old` is the only number derived from the response: an
+integer kinomi computes, so it cannot carry text.
+
+**Threat model.** The monitored server is untrusted (it may be compromised,
+or someone may be in the middle when `tls_verify = false`).
+
+- It can make the check pass or fail wrongly, as with `keyword`. Nothing
+  else: it cannot change kinomi's state, files or messages.
+- A crafted body (deep nesting, long strings or numbers, invalid escapes,
+  huge documents) costs at most `max_body_bytes` of memory and one linear
+  pass; there is no recursion to overflow the stack and no tree to blow up.
+  With 8 workers and the 1 MiB maximum, that is at most about 8 MiB more
+  memory, briefly; with the 64 KiB default, 0.5 MiB.
+- `json_max_age` uses the system clock; kinomi already waits for NTP at
+  startup (§10.1).
+- API tokens go into `headers` (e.g. `Authorization`), which are only sent
+  to the origin of `url` (see above). Rate limits are the user's concern: the
+  GitHub API allows 60 unauthenticated requests per hour and IP address.
+
+**Compatibility.** New optional keys in `[http]`, so a 1.x minor release
+(§16). The planned `json` monitor type (§4.7) is replaced by these keys.
 
 ### 4.4 `tcp` — TCP port open
 
@@ -363,8 +455,7 @@ grace = "1m"               # extra time before the monitor fails (default 1m, ma
 
 ### 4.7 Planned for later versions
 `ping` (ICMP; needs `CAP_NET_RAW` or `net.ipv4.ping_group_range`), `smtp`,
-`command` (local script, exit code), `mqtt`, `json` (HTTP + JSON path check),
-`tls` (certificate check without HTTP), `udp`.
+`command` (local script, exit code), `mqtt`, `tls` (certificate check without HTTP), `udp`.
 
 ---
 
