@@ -199,3 +199,33 @@ changes of the code and for 30 minutes weekly (`.github/workflows/fuzz.yml`).
   add its files with `testdata/compat/generate.sh <release binary>`. Never
   change an existing directory there: it is what users have on disk.
 - Code fixes come with a test that fails without the fix.
+
+## Maintenance
+
+kinomi bundles its dependencies and the Mozilla root certificates
+(`webpki-roots`) into the binary, so installations only get their updates
+through a release.
+
+- **Weekly, automatic:** CI runs on a schedule (cargo-deny advisories,
+  clippy on the latest stable Rust, all tests), and so does fuzzing. A failed
+  scheduled run is a task: fix it on `main`. GitHub disables scheduled
+  workflows after 60 days without commits; re-enable them in the Actions tab.
+- **Monthly:** merge Dependabot's PRs (Cargo, `fuzz/`, Actions pins) once
+  CI passes. A new dependency or a new major version of one follows the
+  dependency policy above.
+- **Security advisory for a dependency:** if kinomi uses the affected code,
+  make a patch release right away (SECURITY.md); otherwise update with the
+  next release. An advisory that does not apply can be ignored in
+  `deny.toml` with the reason, never without one.
+- **Every ~3 months:** a patch release, even without features, so that
+  dependencies and root certificates on installations stay current:
+  `cargo update` (and in `fuzz/`), all checks of "Commands", a consistency
+  check of SPEC.md, README.md and `docs/` against the code, CHANGELOG,
+  version bump, tag `vX.Y.Z`; the maintainer signs it
+  (`contrib/release/sign-release.sh`). Then add its compat data
+  (Testing).
+- **MSRV:** raise `rust-version` when a dependency update needs it, in a
+  minor release, with a CHANGELOG note (not stable, SPEC.md §16).
+- **Yearly, or with a new Debian / Raspberry Pi OS release:** check that all
+  release targets are still Rust tier 2, run a release on a real Pi 1,
+  and test `install.sh` and the Ansible roles on the new OS.

@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Weekly, also without changes: new advisories (cargo-deny) and new lints
+  # or breakage on the latest stable Rust.
+  schedule:
+    - cron: "41 4 * * 1"
 
 permissions:
   contents: read
