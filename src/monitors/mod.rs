@@ -7,6 +7,7 @@
 
 pub mod dns;
 pub mod http;
+pub mod json;
 pub mod push;
 pub mod tcp;
 pub mod tls;

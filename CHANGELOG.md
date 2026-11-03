@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- HTTP monitors: JSON checks. `json_path` picks one value of a JSON answer,
+  and `json_max_age` (a date not older than this), `json_equals` or
+  `json_min`/`json_max` checks it. For example: fail when the latest
+  release of a GitHub repository is older than 80 days. kinomi's own
+  parser reads the answer in one pass without recursion; it is fuzzed and
+  compared with `serde_json`. The value itself is never logged or shown.
+
 ### Changed
 
 - CI also runs weekly without changes, so new advisories for dependencies

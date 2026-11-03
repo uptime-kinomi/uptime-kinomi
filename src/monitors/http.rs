@@ -3,8 +3,8 @@
 //!
 //! Redirects are followed by hand so that every hop is checked (http(s)
 //! only, never from https to http). The body is read up to
-//! `max_body_bytes` and only searched for the keyword; nothing received is
-//! kept or reported.
+//! `max_body_bytes` and only searched for the keyword or given to the JSON
+//! check (`json.rs`); nothing received is kept or reported.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -14,6 +14,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use serde::Deserialize;
 
+use super::json::{self, Expect, Segment};
 use super::{Check, CheckResult, Context, Status, contains_bytes, tls};
 use crate::clock;
 use crate::config::duration::Dur;
@@ -70,6 +71,17 @@ pub struct HttpFile {
     tls_expiry_warn: Option<Dur>,
     tls_expiry_fail: Option<Dur>,
     slow_warn: Option<Dur>,
+    json_path: Option<String>,
+    json_max_age: Option<Dur>,
+    json_equals: Option<toml::Value>,
+    json_min: Option<toml::Value>,
+    json_max: Option<toml::Value>,
+}
+
+/// The JSON check of the body (SPEC.md §4.3, "JSON checks").
+struct JsonCheck {
+    path: Vec<Segment>,
+    expect: Expect,
 }
 
 pub struct HttpCheck {
@@ -83,6 +95,7 @@ pub struct HttpCheck {
     headers: Vec<(String, String)>,
     authorization: Option<String>,
     slow_warn: Option<Duration>,
+    json: Option<JsonCheck>,
     cert: Option<CertCheck>,
     agent: ureq::Agent,
     /// For the whole check, all redirect hops together.
@@ -145,6 +158,8 @@ pub fn build(
     } else if file.invert_keyword {
         p.error("http.invert_keyword needs http.keyword");
     }
+
+    let json = build_json(&file, p);
 
     let max_body = file.max_body_bytes.unwrap_or(DEFAULT_MAX_BODY);
     if max_body == 0 || max_body > MAX_BODY {
@@ -281,9 +296,79 @@ pub fn build(
         headers,
         authorization,
         slow_warn,
+        json,
         cert,
         agent,
         timeout,
+    })
+}
+
+fn build_json(file: &HttpFile, p: &mut FileProblems) -> Option<JsonCheck> {
+    let range = file.json_min.is_some() || file.json_max.is_some();
+    let checks = [
+        file.json_max_age.is_some(),
+        file.json_equals.is_some(),
+        range,
+    ]
+    .iter()
+    .filter(|&&c| c)
+    .count();
+    let Some(path_text) = &file.json_path else {
+        if checks > 0 {
+            p.error("http.json_max_age, json_equals, json_min and json_max need http.json_path");
+        }
+        return None;
+    };
+    if checks != 1 {
+        p.error("http.json_path needs exactly one check: json_max_age, json_equals, or json_min/json_max");
+    }
+    if file.keyword.is_some() {
+        p.error("http.keyword and http.json_path cannot be used together");
+    }
+    if file.method == Method::Head {
+        p.error("http.json_path needs method = \"GET\" (HEAD responses have no body)");
+    }
+    let path = json::parse_path(path_text).map_err(|e| p.error(e)).ok();
+
+    let expect = if let Some(max) = file.json_max_age {
+        if max.0 < Duration::from_secs(60) {
+            p.error("http.json_max_age must be at least 1m");
+        }
+        Expect::MaxAge(max.0)
+    } else if let Some(value) = &file.json_equals {
+        match value {
+            toml::Value::String(s) if !s.is_empty() && s.len() <= 256 => Expect::Str(s.clone()),
+            toml::Value::Integer(i) => Expect::Int(*i),
+            toml::Value::Boolean(b) => Expect::Bool(*b),
+            _ => {
+                p.error(
+                    "http.json_equals must be a string of 1 to 256 bytes, an integer or true/false",
+                );
+                Expect::Bool(true)
+            }
+        }
+    } else {
+        let mut number = |key: &str, value: &Option<toml::Value>| match value {
+            None => None,
+            Some(toml::Value::Integer(i)) => Some(*i as f64),
+            Some(toml::Value::Float(f)) if f.is_finite() => Some(*f),
+            Some(_) => {
+                p.error(format!("http.{key} must be a number"));
+                None
+            }
+        };
+        let min = number("json_min", &file.json_min);
+        let max = number("json_max", &file.json_max);
+        if let (Some(lo), Some(hi)) = (min, max) {
+            if lo > hi {
+                p.error("http.json_min must not be greater than http.json_max");
+            }
+        }
+        Expect::Range { min, max }
+    };
+    Some(JsonCheck {
+        path: path?,
+        expect,
     })
 }
 
@@ -444,6 +529,35 @@ impl HttpCheck {
                 .any(|(lo, hi)| (*lo..=*hi).contains(&status))
             {
                 return CheckResult::fail(Some(start.elapsed()), format!("HTTP {status}"));
+            }
+
+            if let Some(check) = &self.json {
+                let mut body = Vec::new();
+                // One byte more than allowed tells a body that is too long.
+                let read = response
+                    .body_mut()
+                    .as_reader()
+                    .take(self.max_body + 1)
+                    .read_to_end(&mut body);
+                let elapsed = Some(start.elapsed());
+                if read.is_err() {
+                    return CheckResult::fail(elapsed, format!("HTTP {status}, body read failed"));
+                }
+                if body.len() as u64 > self.max_body {
+                    return CheckResult::fail(elapsed, "json: body too large");
+                }
+                let now = clock::unix_seconds(SystemTime::now());
+                if let Err(msg) = json::evaluate(&body, &check.path, &check.expect, now) {
+                    return CheckResult::fail(elapsed, msg);
+                }
+                let latency = start.elapsed();
+                if self.slow_warn.is_some_and(|slow| latency > slow) {
+                    return CheckResult::warn(
+                        latency,
+                        format!("HTTP {status}, json ok, slow response"),
+                    );
+                }
+                return CheckResult::up(latency, format!("HTTP {status}, json ok"));
             }
 
             if let Some(keyword) = &self.keyword {
@@ -747,6 +861,115 @@ mod tests {
             "{url}\nkeyword = \"Error\"\ninvert_keyword = true"
         ));
         assert_eq!(present.msg, "HTTP 200, keyword present");
+    }
+
+    #[test]
+    fn json_checks() {
+        let release =
+            r#"{"tag_name": "v1.0.0", "published_at": "2026-11-02T13:10:13Z", "draft": false}"#;
+        let base = server(vec![
+            response("200 OK", "", release),
+            response("200 OK", "", release),
+            response("200 OK", "", "<html>not json</html>"),
+            response("200 OK", "", release),
+            response("503 Service Unavailable", "", "{}"),
+        ]);
+        let url = format!("url = \"{base}/\"");
+        let ok = run(&format!(
+            "{url}\njson_path = \"draft\"\njson_equals = false"
+        ));
+        assert_eq!(
+            (ok.status, ok.msg.as_str()),
+            (Status::Up, "HTTP 200, json ok")
+        );
+        let differs = run(&format!(
+            "{url}\njson_path = \"tag_name\"\njson_equals = \"v2.0.0\""
+        ));
+        assert_eq!(
+            (differs.status, differs.msg.as_str()),
+            (Status::Fail, "json: value differs")
+        );
+        let invalid = run(&format!("{url}\njson_path = \"a\"\njson_equals = 1"));
+        assert_eq!(invalid.msg, "json: invalid");
+        let missing = run(&format!(
+            "{url}\njson_path = \"assets.0.name\"\njson_equals = \"x\""
+        ));
+        assert_eq!(missing.msg, "json: not found");
+        // The status code is checked first.
+        let status = run(&format!("{url}\njson_path = \"a\"\njson_equals = 1"));
+        assert_eq!(status.msg, "HTTP 503");
+    }
+
+    #[test]
+    fn json_body_over_the_limit_fails() {
+        let body = format!(r#"{{"a": 1, "pad": "{}"}}"#, "x".repeat(100));
+        let base = server(vec![
+            response("200 OK", "", &body),
+            response("200 OK", "", &body),
+        ]);
+        let table = |limit: usize| {
+            format!(
+                "url = \"{base}/\"\njson_path = \"a\"\njson_equals = 1\nmax_body_bytes = {limit}"
+            )
+        };
+        assert_eq!(run(&table(50)).msg, "json: body too large");
+        assert_eq!(run(&table(body.len())).status, Status::Up);
+    }
+
+    #[test]
+    fn json_config_errors() {
+        let url = "url = \"http://127.0.0.1:1/\"";
+        for (table, error) in [
+            ("json_path = \"a\"", "exactly one check"),
+            ("json_equals = 1", "need http.json_path"),
+            (
+                "json_path = \"a\"\njson_equals = 1\njson_max = 2",
+                "exactly one check",
+            ),
+            (
+                "json_path = \"a\"\njson_equals = 1\nkeyword = \"x\"",
+                "cannot be used together",
+            ),
+            (
+                "json_path = \"a\"\njson_equals = 1\nmethod = \"HEAD\"",
+                "needs method",
+            ),
+            ("json_path = \"a[0]\"\njson_equals = 1", "json_path must be"),
+            (
+                "json_path = \"a\"\njson_equals = 1.5",
+                "json_equals must be",
+            ),
+            (
+                "json_path = \"a\"\njson_equals = \"\"",
+                "json_equals must be",
+            ),
+            ("json_path = \"a\"\njson_max_age = \"30s\"", "at least 1m"),
+            (
+                "json_path = \"a\"\njson_min = \"1\"",
+                "json_min must be a number",
+            ),
+            (
+                "json_path = \"a\"\njson_min = nan",
+                "json_min must be a number",
+            ),
+            (
+                "json_path = \"a\"\njson_min = 2\njson_max = 1",
+                "not be greater",
+            ),
+        ] {
+            let err = build_text(&format!("{url}\n{table}"))
+                .err()
+                .unwrap_or_default();
+            assert!(err.contains(error), "{table}: {err}");
+        }
+        for table in [
+            "json_path = \"published_at\"\njson_max_age = \"80d\"",
+            "json_path = \"a.0.b\"\njson_equals = true",
+            "json_path = \"load\"\njson_max = 0.8",
+            "json_path = \"n\"\njson_min = 1\njson_max = 1",
+        ] {
+            assert!(build_text(&format!("{url}\n{table}")).is_ok(), "{table}");
+        }
     }
 
     #[test]

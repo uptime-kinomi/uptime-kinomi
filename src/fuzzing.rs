@@ -15,6 +15,7 @@ use crate::config::{Problems, duration, global, incidents, maintenance, pages};
 use crate::encoding::{base64, base64_decode, bcrypt_decode, bcrypt_encode};
 use crate::history::History;
 use crate::monitors::dns::{RecordType, parse_response};
+use crate::monitors::json::{self, Expect, Found};
 use crate::monitors::{self, Monitor};
 use crate::render::{File, Site};
 use crate::server::auth::{Auth, htpasswd_line};
@@ -336,6 +337,57 @@ pub fn encodings(data: &[u8]) {
     }
 }
 
+/// JSON checks of the http monitor: the first line is the path, the rest
+/// the response body. Messages are fixed text, never the value.
+pub fn json(data: &[u8]) {
+    let (path, body) = split_json_input(data);
+    let Ok(path) = json::parse_path(path) else {
+        return;
+    };
+    if let Ok(Some(Found::Str(s) | Found::Num(s))) = json::find(body, &path) {
+        assert!(s.len() <= json::MAX_VALUE, "value over the limit kept");
+    }
+    let range = Expect::Range {
+        min: Some(0.0),
+        max: Some(100.0),
+    };
+    let expects = [
+        Expect::MaxAge(std::time::Duration::from_secs(80 * 86400)),
+        Expect::Str("ok".into()),
+        Expect::Int(1),
+        Expect::Bool(true),
+        range,
+    ];
+    let fixed = [
+        "json: invalid",
+        "json: not found",
+        "json: wrong type",
+        "json: not a date",
+        "json: date in the future",
+        "json: value differs",
+        "json: out of range",
+    ];
+    for expect in &expects {
+        if let Err(msg) = json::evaluate(body, &path, expect, 1_793_000_000) {
+            let computed = msg
+                .strip_prefix("json: too old (")
+                .and_then(|m| m.strip_suffix("d)"))
+                .is_some_and(|d| d.bytes().all(|b| b.is_ascii_digit()));
+            assert!(
+                fixed.contains(&msg.as_str()) || computed,
+                "message: {msg:?}"
+            );
+        }
+    }
+}
+
+/// `path\nbody` (a path without newline: an empty body).
+pub fn split_json_input(data: &[u8]) -> (&str, &[u8]) {
+    let split = data.iter().position(|&b| b == b'\n').unwrap_or(data.len());
+    let path = std::str::from_utf8(&data[..split]).unwrap_or("");
+    (path, data.get(split + 1..).unwrap_or(&[]))
+}
+
 /// A fuzz entry point.
 pub type Target = fn(&[u8]);
 
@@ -350,6 +402,7 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("config", config),
     ("storage", storage),
     ("encodings", encodings),
+    ("json", json),
 ];
 
 #[cfg(test)]

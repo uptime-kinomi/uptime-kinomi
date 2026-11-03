@@ -1,0 +1,15 @@
+# Remind me to release: fails when the latest release of a GitHub
+# repository is older than 80 days. Checked four times a day, well within
+# GitHub's 60 requests per hour without a token.
+config_version = 1
+type = "http"
+name = "Release less than 80 days old"
+interval = "6h"
+retries = 0
+
+[http]
+url = "https://api.github.com/repos/uptime-kinomi/uptime-kinomi/releases/latest"
+expected_status = [200]
+max_body_bytes = 262144        # the answer lists every download, so 64 KiB can be too little
+json_path = "published_at"
+json_max_age = "80d"

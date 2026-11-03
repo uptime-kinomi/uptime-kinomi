@@ -19,7 +19,7 @@ see [compatibility and updates](https://kinomi.readthedocs.io/en/stable/referenc
 ## What it does
 
 - 🌐 **Watches websites and servers:** HTTP(S) status codes, keywords,
-  response time, TCP ports, DNS records.
+  values in JSON answers, response time, TCP ports, DNS records.
 - 🔒 **Warns before your certificate expires.**
 - 💾 **Checks that your nightly backup actually ran:** the backup script
   calls a push URL, and kinomi alerts you if it doesn't.

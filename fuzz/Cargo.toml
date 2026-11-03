@@ -11,6 +11,9 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 uptime-kinomi = { path = ".." }
+# Reference for the differential json target; never part of kinomi itself.
+serde = "1"
+serde_json = "1"
 
 # Not part of the main build.
 [workspace]
@@ -78,6 +81,13 @@ bench = false
 [[bin]]
 name = "http_redirect"
 path = "fuzz_targets/http_redirect.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json"
+path = "fuzz_targets/json.rs"
 test = false
 doc = false
 bench = false

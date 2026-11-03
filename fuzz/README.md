@@ -17,6 +17,7 @@ trips, redirect scheme rules) and fail when one breaks.
 | `config` | all configuration file types (first byte picks the type) | disk |
 | `storage` | log lines and state files replayed at startup | disk |
 | `encodings` | base64 variants, timestamps, durations | both |
+| `json` | JSON response of an http monitor (first line: `json_path`); also compared with `serde_json` | network |
 
 ## Running
 

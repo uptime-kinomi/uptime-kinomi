@@ -2,8 +2,8 @@ HTTP(S) monitors
 ================
 
 An ``http`` monitor requests a URL, like a browser, and checks the answer:
-the status code, optionally a keyword on the page, the response time and
-the HTTPS certificate.
+the status code, optionally a keyword on the page or a value in a JSON
+answer, the response time and the HTTPS certificate.
 
 The simplest one
 ----------------
@@ -62,6 +62,42 @@ must contain ``"status":"ok"``, and should answer within a second:
 * ``slow_warn`` turns an answer slower than one second into ⚠ WARN. It
   still counts as up, and you get a ``warn`` notification (at most once a
   day). It must be shorter than ``timeout``.
+
+A value in a JSON answer
+------------------------
+
+APIs answer with JSON. Instead of a keyword, kinomi can check one value in
+it: that a date is recent enough, that a value equals what you expect, or
+that a number is within limits. This one fails when the latest release of
+a GitHub repository is older than 80 days:
+
+.. literalinclude:: /examples/catalog/monitors/github-release.toml
+   :language: toml
+   :caption: monitors/github-release.toml
+
+``json_path`` names the value: object keys and array positions separated
+by dots, e.g. ``assets.0.name`` for the ``name`` of the first entry in
+``assets``. Positions count from 0. Wildcards and filters are not
+supported. Then exactly one check:
+
+* ``json_max_age``: the value is a date (``"2026-11-02T13:10:13Z"``, with
+  ``Z`` or an offset) or a number of seconds since 1970. It fails when the
+  date is older, or more than 5 minutes in the future.
+* ``json_equals``: the value must be exactly this text, integer or
+  ``true``/``false``:
+
+  .. literalinclude:: /examples/catalog/monitors/nas-health.toml
+     :language: toml
+     :caption: monitors/nas-health.toml
+
+* ``json_min`` and/or ``json_max``: the value is a number within these
+  limits, e.g. ``json_path = "load"`` and ``json_max = 0.8``.
+
+The whole answer must be valid JSON within ``max_body_bytes``; a cut-off
+answer fails as ``json: body too large``, so raise ``max_body_bytes`` for
+large answers. As with the keyword, kinomi never stores or shows the value
+itself: the log says ``json: value differs``, not what the value was. A
+JSON check cannot be combined with ``keyword``.
 
 The certificate
 ---------------
@@ -171,7 +207,21 @@ All keys
      - ``true``: the keyword must **not** be on the page.
    * - ``max_body_bytes``
      - ``65536``
-     - How much of the page to search, at most 1 MiB.
+     - How much of the page to search, or the largest JSON answer; at
+       most 1 MiB.
+   * - ``json_path``
+     - none
+     - The value to check in a JSON answer (``a.0.b``); needs exactly one
+       of the next three. Not together with ``keyword``.
+   * - ``json_max_age``
+     - none
+     - The value is a date not older than this (at least ``"1m"``).
+   * - ``json_equals``
+     - none
+     - The value equals this text (1-256 bytes), integer or ``true``/``false``.
+   * - ``json_min`` / ``json_max``
+     - none
+     - The value is a number within these limits (inclusive).
    * - ``max_redirects``
      - ``0``
      - How many redirects to follow, at most 10.
@@ -211,6 +261,19 @@ These appear in the log and on private pages:
      - The status code is not in ``expected_status``.
    * - ``HTTP 200, keyword missing`` / ``keyword present``
      - The keyword check failed.
+   * - ``HTTP 200, json ok``
+     - The JSON check passed.
+   * - ``json: too old (83d)``
+     - The date in the answer is older than ``json_max_age`` (here 83
+       days).
+   * - ``json: invalid``, ``json: body too large``
+     - The answer is not valid JSON, or longer than ``max_body_bytes``.
+   * - ``json: not found``, ``json: wrong type``, ``json: not a date``
+     - ``json_path`` does not exist in the answer, or points to another
+       kind of value (e.g. text where a number is expected).
+   * - ``json: value differs``, ``json: out of range``, ``json: date in the future``
+     - The value does not pass ``json_equals``, ``json_min``/``json_max``
+       or ``json_max_age``.
    * - ``HTTP 200, slow response``
      - Slower than ``slow_warn`` (WARN).
    * - ``HTTP 200, certificate expires in 10 days``

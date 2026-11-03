@@ -272,7 +272,7 @@ Security requirements:
   the request succeeded, the result is `WARN` (`HTTP 200, certificate check
   failed`).
 
-#### JSON checks (planned for 1.1, not implemented yet)
+#### JSON checks (since 1.1)
 
 An `http` monitor can check one value in a JSON response instead of a
 keyword. Example: fail when the latest release of a GitHub repository is
@@ -331,7 +331,7 @@ log, on pages, in `status.json` or in notifications (§11):
 
 | Result | `msg` |
 |---|---|
-| UP | `HTTP 200, json ok` |
+| UP | `HTTP 200, json ok` (WARN `HTTP 200, json ok, slow response` with `slow_warn`) |
 | FAIL | `json: invalid` (not JSON, bad UTF-8, nesting over 64, trailing data) |
 | FAIL | `json: body too large` (longer than `max_body_bytes`) |
 | FAIL | `json: not found` (path does not exist) |
@@ -1149,7 +1149,7 @@ setting `net.ipv4.ping_group_range` instead of root.
 2. Every byte from the network is size-limited before parsing; every parser
    of network data is fuzzed in CI (`fuzz/`): HTTP requests and routing,
    Basic Auth, push, redirect targets, DNS responses, certificates, release
-   metadata. So are the parsers of configuration, log and state files. HTTP
+   metadata, JSON responses (compared with `serde_json`). So are the parsers of configuration, log and state files. HTTP
    responses are parsed by ureq.
 3. Nothing fetched from monitored targets is stored, displayed or forwarded,
    only kinomi's own summary.

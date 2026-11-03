@@ -1,0 +1,10 @@
+# A JSON status endpoint: one value must be exactly true.
+config_version = 1
+type = "http"
+name = "NAS RAID"
+interval = "5m"
+
+[http]
+url = "http://nas.lan:8080/api/status"
+json_path = "storage.raid.healthy"
+json_equals = true
