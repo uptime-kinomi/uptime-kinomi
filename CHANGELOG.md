@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade test: also reads the data written by 1.1.0.
+
 ## [1.1.0] - 2026-11-04
 
 JSON checks for HTTP monitors, and fixes from a review of spec, code and

@@ -1,0 +1,24 @@
+2026-11-04T16:25:02Z event=START version=1.1.0 monitors=4
+2026-11-04T16:25:02Z event=DISABLED monitor=old
+2026-11-04T16:25:02Z monitor=closed result=DOWN latency_ms=0 msg="connection refused"
+2026-11-04T16:25:05Z monitor=port result=UP latency_ms=0 msg=connected
+2026-11-04T16:25:08Z monitor=web result=UP latency_ms=6 msg="HTTP 200"
+2026-11-04T16:25:12Z monitor=closed result=DOWN latency_ms=0 msg="connection refused"
+2026-11-04T16:25:15Z monitor=port result=UP latency_ms=0 msg=connected
+2026-11-04T16:25:17Z monitor=job result=UP msg=push
+2026-11-04T16:25:18Z monitor=web result=UP latency_ms=2 msg="HTTP 200"
+2026-11-04T16:25:19Z monitor=job result=DOWN msg="push: status=down"
+2026-11-04T16:25:22Z monitor=closed result=DOWN latency_ms=0 msg="connection refused"
+2026-11-04T16:25:25Z monitor=port result=UP latency_ms=0 msg=connected
+2026-11-04T16:25:28Z monitor=web result=UP latency_ms=2 msg="HTTP 200"
+2026-11-04T16:25:32Z monitor=closed result=DOWN latency_ms=0 msg="connection refused"
+2026-11-04T16:25:35Z monitor=port result=UP latency_ms=0 msg=connected
+2026-11-04T16:25:38Z monitor=web result=UP latency_ms=2 msg="HTTP 200"
+2026-11-04T16:25:42Z monitor=closed result=DOWN latency_ms=0 msg="connection refused"
+2026-11-04T16:25:45Z monitor=port result=UP latency_ms=0 msg=connected
+2026-11-04T16:25:48Z monitor=web result=UP latency_ms=2 msg="HTTP 200"
+2026-11-04T16:25:52Z monitor=closed result=DOWN latency_ms=0 msg="connection refused"
+2026-11-04T16:25:55Z monitor=port result=UP latency_ms=0 msg=connected
+2026-11-04T16:25:58Z monitor=web result=UP latency_ms=2 msg="HTTP 200"
+2026-11-04T16:26:02Z monitor=closed result=DOWN latency_ms=0 msg="connection refused"
+2026-11-04T16:26:04Z event=STOP
