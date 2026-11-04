@@ -37,7 +37,7 @@ What happened at the last update:
 
 .. code-block:: text
 
-   updated 0.8.0 -> 1.0.0 (/home/pi/.local/bin/uptime-kinomi). The previous version is kept as /home/pi/.local/bin/uptime-kinomi.old.
+   updated 1.0.0 -> 1.1.0 (/home/pi/.local/bin/uptime-kinomi). The previous version is kept as /home/pi/.local/bin/uptime-kinomi.old.
 
 A failed update shows up in ``systemctl --user --failed``.
 

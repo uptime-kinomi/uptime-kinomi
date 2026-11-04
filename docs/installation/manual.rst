@@ -44,7 +44,7 @@ Both must succeed:
 .. code-block:: text
 
    Signature and comment signature verified
-   Trusted comment: uptime-kinomi 1.0.0
+   Trusted comment: uptime-kinomi 1.1.0
    uptime-kinomi-armv6: OK
 
 The key above is the primary release key (ID ``16F640342DF96A16``). If a
@@ -75,7 +75,7 @@ Step 3: install the program
 
 .. code-block:: text
 
-   uptime-kinomi 1.0.0 (arm-unknown-linux-musleabihf)
+   uptime-kinomi 1.1.0 (arm-unknown-linux-musleabihf)
 
 Raspberry Pi OS and Debian put ``~/.local/bin`` into your ``PATH`` at login
 if it exists. Log out and in again once, then ``uptime-kinomi`` works

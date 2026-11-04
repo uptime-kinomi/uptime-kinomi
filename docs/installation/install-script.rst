@@ -60,7 +60,7 @@ The output on a Raspberry Pi 1 looks like this:
 
    ==> Downloading uptime-kinomi-armv6
    ==> Checking the signature and the checksum
-       uptime-kinomi 1.0.0 (arm-unknown-linux-musleabihf), signed release 1.0.0
+       uptime-kinomi 1.1.0 (arm-unknown-linux-musleabihf), signed release 1.1.0
    ==> Creating a starter configuration in /home/pi/.config/uptime-kinomi
    ==> Installing to /home/pi/.local/bin
    ==> Installing the systemd user service
@@ -135,7 +135,7 @@ shows ``active (running)``. kinomi writes every check into its log:
 
 .. code-block:: text
 
-   2026-11-01T10:00:02Z event=START version=1.0.0 monitors=2
+   2026-11-01T10:00:02Z event=START version=1.1.0 monitors=2
    2026-11-01T10:00:05Z monitor=example-web result=UP latency_ms=234 cert_expires=2026-12-25 msg="HTTP 200"
    2026-11-01T10:00:07Z monitor=internet-dns result=UP latency_ms=12 msg="2 A records"
 

@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-04
+
+JSON checks for HTTP monitors, and fixes from a review of spec, code and
+documentation. Existing configurations work unchanged.
+
 ### Added
 
 - HTTP monitors: JSON checks. `json_path` picks one value of a JSON answer,
@@ -525,7 +530,8 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.8.0...v1.0.0
 [0.8.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.6.0...v0.7.0

@@ -112,7 +112,7 @@ into its log, one file per day:
 
 .. code-block:: text
 
-   2026-11-01T10:12:20Z event=START version=1.0.0 monitors=2
+   2026-11-01T10:12:20Z event=START version=1.1.0 monitors=2
    2026-11-01T10:12:20Z monitor=internet-dns result=UP latency_ms=38 msg="2 A records"
    2026-11-01T10:12:27Z monitor=website result=UP latency_ms=120 cert_expires=2026-12-25 msg="HTTP 200"
 

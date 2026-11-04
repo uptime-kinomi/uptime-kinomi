@@ -66,8 +66,8 @@ must contain ``"status":"ok"``, and should answer within a second:
 A value in a JSON answer
 ------------------------
 
-APIs answer with JSON. Instead of a keyword, kinomi can check one value in
-it: that a date is recent enough, that a value equals what you expect, or
+APIs answer with JSON. Instead of a keyword, kinomi (since 1.1) can check
+one value in it: that a date is recent enough, that a value equals what you expect, or
 that a number is within limits. This one fails when the latest release of
 a GitHub repository is older than 80 days:
 

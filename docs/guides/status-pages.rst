@@ -195,7 +195,7 @@ scripts, dashboards or another kinomi:
 
    {
      "schema": 1,
-     "kinomi_version": "1.0.0",
+     "kinomi_version": "1.1.0",
      "page": "home",
      "title": "Is the internet down?",
      "generated": "2026-11-01T08:15:00Z",

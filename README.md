@@ -10,7 +10,7 @@ files** and producing **JavaScript-free HTML + CSS status pages**. It runs
 on any Linux machine, and even on low-end hardware such as a
 **Raspberry Pi 1**.
 
-**Status: stable (1.0).** Tested on a real Raspberry Pi 1, with all
+**Status: stable (1.1).** Tested on a real Raspberry Pi 1, with all
 parsers fuzzed. Within 1.x, updates never break a working configuration:
 see [compatibility and updates](https://kinomi.readthedocs.io/en/stable/reference/stability.html).
 

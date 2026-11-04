@@ -42,7 +42,7 @@ Command line
       Restore the version that the last update replaced.
 
 ``version`` (also ``-V``, ``--version``)
-   Print the version and the platform, e.g. ``uptime-kinomi 1.0.0
+   Print the version and the platform, e.g. ``uptime-kinomi 1.1.0
    (arm-unknown-linux-musleabihf)``.
 
 ``help`` (also ``-h``, ``--help``)

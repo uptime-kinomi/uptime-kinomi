@@ -1,6 +1,6 @@
 # uptime-kinomi — Specification
 
-Status: **stable** (1.0), compatibility rules in §16, tested on a Raspberry Pi 1
+Status: **stable** (1.1), compatibility rules in §16, tested on a Raspberry Pi 1
 License: MIT
 
 uptime-kinomi is a self-hosted uptime monitor in the spirit of
@@ -609,7 +609,7 @@ All timestamps stored are **UTC, RFC 3339, second precision**.
 - One line per event in [logfmt](https://brandur.org/logfmt) format, timestamp first:
 
 ```
-2026-10-22T14:00:00Z event=START version=1.0.0 monitors=42
+2026-10-22T14:00:00Z event=START version=1.1.0 monitors=42
 2026-10-22T14:00:00Z event=DISABLED monitor=old-nas
 2026-10-22T14:03:11Z monitor=blog result=UP latency_ms=123 cert_expires=2026-12-01 msg="HTTP 200"
 2026-10-22T14:04:11Z monitor=shop result=FAIL latency_ms=10000 msg=timeout
@@ -819,7 +819,7 @@ page.
 ```json
 {
   "schema": 1,
-  "kinomi_version": "1.0.0",
+  "kinomi_version": "1.1.0",
   "page": "home",
   "title": "Our services",
   "generated": "2026-10-23T08:15:00Z",
@@ -1341,6 +1341,7 @@ enable the timer by default (`--no-auto-update`, `kinomi_auto_update: false`).
 | ✅ **M4** | Incidents, maintenance, badges, Atom feed, status.json, `/metrics`, contrib files |
 | ✅ Fuzzing | cargo-fuzz targets for every parser of network data and of config, log and state files (`fuzz/`), in CI |
 | ✅ **v1.0** | Hardening, documentation, compatibility policy (§16), first stable release |
+| ✅ **v1.1** | JSON checks for `http` monitors (§4.3) |
 | later | `ping`, `smtp` notifier, `.deb` packages, uptime-kuma config importer |
 
 ---
