@@ -80,9 +80,11 @@ by dots, e.g. ``assets.0.name`` for the ``name`` of the first entry in
 ``assets``. Positions count from 0. Wildcards and filters are not
 supported. Then exactly one check:
 
-* ``json_max_age``: the value is a date (``"2026-11-02T13:10:13Z"``, with
-  ``Z`` or an offset) or a number of seconds since 1970. It fails when the
-  date is older, or more than 5 minutes in the future.
+* ``json_max_age``: the value is a date in RFC 3339 form
+  (``"2026-11-02T13:10:13Z"``, with ``Z`` or an offset like ``+02:00``) or
+  a whole number of seconds since 1970 (not milliseconds: those look like a
+  date far in the future). It fails when the date is older, or more than 5
+  minutes in the future.
 * ``json_equals``: the value must be exactly this text, integer or
   ``true``/``false``:
 
@@ -116,7 +118,8 @@ pages. Let it warn you in time:
 * ``tls_expiry_fail = "3d"``: the check fails 3 days before (default
   ``"0s"``, off). ``"0s"`` switches either limit off.
 * ``method = "HEAD"`` asks only for the headers, not the page: less traffic
-  for a check that does not need the content. A keyword needs ``GET``.
+  for a check that does not need the content. A keyword or JSON check
+  needs ``GET``.
 
 To keep checks cheap on slow hardware, kinomi reads the certificate in an extra connection at
 most every 6 hours. The ``tls_*`` keys can also be added to any other
@@ -194,7 +197,7 @@ All keys
        user name and password in it.
    * - ``method``
      - ``"GET"``
-     - ``"GET"`` or ``"HEAD"``. A keyword needs ``GET``.
+     - ``"GET"`` or ``"HEAD"``. A keyword or JSON check needs ``GET``.
    * - ``expected_status``
      - ``["200-299"]``
      - Accepted status codes: numbers and ranges like ``"200-399"``.
@@ -262,15 +265,17 @@ These appear in the log and on private pages:
    * - ``HTTP 200, keyword missing`` / ``keyword present``
      - The keyword check failed.
    * - ``HTTP 200, json ok``
-     - The JSON check passed.
+     - The JSON check passed (``HTTP 200, json ok, slow response``: but
+       slower than ``slow_warn``).
    * - ``json: too old (83d)``
      - The date in the answer is older than ``json_max_age`` (here 83
-       days).
+       days; under a day in hours, ``5h``, under an hour in minutes).
    * - ``json: invalid``, ``json: body too large``
      - The answer is not valid JSON, or longer than ``max_body_bytes``.
    * - ``json: not found``, ``json: wrong type``, ``json: not a date``
      - ``json_path`` does not exist in the answer, or points to another
-       kind of value (e.g. text where a number is expected).
+       kind of value (e.g. text where a number is expected, or a value
+       longer than 1 KiB).
    * - ``json: value differs``, ``json: out of range``, ``json: date in the future``
      - The value does not pass ``json_equals``, ``json_min``/``json_max``
        or ``json_max_age``.
@@ -278,6 +283,9 @@ These appear in the log and on private pages:
      - Slower than ``slow_warn`` (WARN).
    * - ``HTTP 200, certificate expires in 10 days``
      - Within ``tls_expiry_warn`` (WARN) or ``tls_expiry_fail`` (failure).
+   * - ``HTTP 200, body read failed``
+     - The connection broke, or ``timeout`` passed, while kinomi read the
+       answer for a keyword or JSON check.
    * - ``timeout``
      - No complete answer within ``timeout``.
    * - ``connection refused``

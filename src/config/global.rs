@@ -200,7 +200,9 @@ pub fn parse(
         }
         if let Some(url) = &s.base_url {
             if !(url.starts_with("https://") || url.starts_with("http://")) || url.len() > 2048 {
-                p.error("server.base_url must start with https:// or http://");
+                p.error(
+                    "server.base_url must start with https:// or http:// (max 2048 characters)",
+                );
             }
         }
         let enabled = s.enabled.unwrap_or(true);
@@ -214,6 +216,9 @@ pub fn parse(
                     "server.htpasswd_file {} does not exist",
                     f.display()
                 ));
+            } else if let Err(e) = crate::server::auth::Auth::load(f) {
+                // The same parsing as at startup, so `run` does not fail later.
+                p.error(format!("server.htpasswd_file {e}"));
             }
         }
         Server {

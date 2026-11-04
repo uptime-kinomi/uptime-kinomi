@@ -150,15 +150,16 @@ config_version = 1
 enabled = true                       # built-in HTTP server (§9)
 listen = "127.0.0.1:8080"            # default; behind a reverse proxy
 hostnames = ["status.example.org"]   # allowed Host headers (port ignored; IPv6 as "::1", no brackets); empty = any (warns)
-base_url = "https://status.example.org"  # absolute links in the Atom feed (§8.7)
-htpasswd_file = "htpasswd"           # relative to the config dir; needed if any page is private
+base_url = "https://status.example.org"  # absolute links in the Atom feed (§8.7); max 2048 characters
+htpasswd_file = "htpasswd"           # relative to the config dir; needed if any page is private; check-config parses it (§9.3)
 metrics = false                      # /metrics (§9.5); needs htpasswd_file
 
 [pages]
 # output_dir = "..."                 # default: see §10.6; may be a tmpfs, see §10.2
 render_interval = "60s"              # min 10s
 timezone = "Europe/Berlin"           # IANA name, default "UTC"; for display and maintenance
-                                     # windows (§14.2); storage is always UTC
+                                     # windows (§14.2); storage is always UTC. A name missing
+                                     # from the system tz database warns, and UTC is used
 custom_css = "custom.css"            # optional, appended after default CSS
 auto_refresh = "60s"                 # <meta http-equiv="refresh">, "0s" disables, else min 10s
 default_page = "home"                # "/" redirects to it (may be private); default: the
@@ -239,11 +240,11 @@ shown as a grey gap, and excluded from uptime percentages.
 type = "http"
 [http]
 url = "https://blog.example.org/"     # http:// or https:// only, max 2048 characters, no user:password@
-method = "GET"                        # GET | HEAD (keyword needs GET)
+method = "GET"                        # GET | HEAD (keyword and JSON checks need GET)
 expected_status = [200]               # list; ranges allowed as "200-299"; default ["200-299"]
 keyword = "Welcome"                   # optional, 1-256 bytes; must appear in body (case-sensitive)
 invert_keyword = false                # true: keyword must NOT appear (needs keyword)
-max_body_bytes = 65536                # body read limit for keyword (default 64 KiB, max 1 MiB)
+max_body_bytes = 65536                # body read limit for keyword and JSON (default 64 KiB, max 1 MiB)
 max_redirects = 0                     # 0 = do not follow, max 10
 headers = { "User-Agent" = "uptime-kinomi" }   # optional; names max 64, values max 1024 printable ASCII
 basic_auth_user = "..."               # optional (not together with an Authorization header)
@@ -257,8 +258,9 @@ slow_warn = "0s"                      # WARN if response slower than this (< tim
 Security requirements:
 - Without `keyword` (or a JSON check, below) the body is not read at all. With it, the body is read
   up to `max_body_bytes` and then the connection is closed.
-  The body is never decoded beyond what keyword search needs (byte search,
-  no HTML parsing, no decompression bombs: `Accept-Encoding: identity`).
+  The body is never decoded beyond what the check needs (byte search for
+  `keyword`, kinomi's own JSON parser below; no HTML parsing, no
+  decompression bombs: `Accept-Encoding: identity`).
 - Only the *fact* of a keyword match is recorded, never body content.
 - Redirect targets must be `http(s)://`. A redirect from `https` to `http` fails the check.
 - Credentials (`basic_auth_*`) and custom `headers` are only sent to the
@@ -286,27 +288,31 @@ url = "https://api.github.com/repos/uptime-kinomi/uptime-kinomi/releases/latest"
 max_body_bytes = 262144
 json_path = "published_at"   # 1-256 characters, see below
 json_max_age = "80d"         # exactly one check: json_max_age | json_equals | json_min/json_max
-# json_equals = "ok"         # string (max 256 bytes), integer or boolean
+# json_equals = "ok"         # string (1-256 bytes), integer or boolean
 # json_min = 0.0             # number; json_min and/or json_max, json_min <= json_max
 # json_max = 100.0
 ```
 
 - **Path:** object keys and array indices separated by `.`, at most 16
   segments, each 1-64 characters from `[A-Za-z0-9_$@-]`
-  (`assets.0.name`). A segment made only of digits is an index on an array
+  (`assets.0.name`). A segment made only of digits is an index on an array (`00` is index 0)
   and a key on an object. Nothing else: no wildcards, filters, recursive
   descent or regular expressions. Keys with other characters cannot be
   addressed. If a key occurs twice in an object, the first one counts.
 - **Checks:**
-  - `json_max_age` (1m to 3650d): the value is an RFC 3339 string with
-    offset or `Z` (max 64 bytes), or an integer number of Unix seconds.
+  - `json_max_age` (1m to 3650d): the value is an RFC 3339 `date-time`
+    string with offset or `Z` (max 64 bytes; strictly RFC 3339, no other
+    ISO 8601 forms such as a space instead of `T`, `+0200` or week dates),
+    or an integer number of Unix seconds.
     It fails when the value is older than `json_max_age`, or more than 5
     minutes in the future (a future date must not hide a missing update).
   - `json_equals`: a string equals a JSON string (after unescaping, byte by
-    byte), an integer equals a JSON number with the same integer value,
+    byte), an integer equals a JSON number with exactly the same integer
+    value (`42`, `42.0`, `4.2e1`; computed on the digits, not via `f64`),
     a boolean equals `true`/`false`. Different types fail.
   - `json_min`, `json_max`: the value is a JSON number (max 64 characters),
-    compared as `f64`; both bounds inclusive.
+    compared as `f64`; both bounds inclusive (a number beyond the `f64`
+    range counts as infinite).
 - **Order:** the status code is checked first (`expected_status`); the JSON
   check only runs for an expected status, and only then is the body read.
   `slow_warn` and the certificate checks apply as usual.
@@ -332,13 +338,14 @@ log, on pages, in `status.json` or in notifications (§11):
 | Result | `msg` |
 |---|---|
 | UP | `HTTP 200, json ok` (WARN `HTTP 200, json ok, slow response` with `slow_warn`) |
+| FAIL | `HTTP 200, body read failed` (connection broken or `timeout` while reading the body; as for `keyword`) |
 | FAIL | `json: invalid` (not JSON, bad UTF-8, nesting over 64, trailing data) |
 | FAIL | `json: body too large` (longer than `max_body_bytes`) |
 | FAIL | `json: not found` (path does not exist) |
-| FAIL | `json: wrong type` (e.g. a number where a date is expected, value over 1 KiB) |
+| FAIL | `json: wrong type` (e.g. a boolean where a date is expected, text where a number is expected, value over 1 KiB) |
 | FAIL | `json: not a date` |
 | FAIL | `json: date in the future` |
-| FAIL | `json: too old (83d)` (the age in whole days, computed by kinomi) |
+| FAIL | `json: too old (83d)` (the age computed by kinomi: whole days, under a day whole hours `5h`, under an hour whole minutes `12m`) |
 | FAIL | `json: value differs` |
 | FAIL | `json: out of range` |
 
@@ -352,7 +359,7 @@ or someone may be in the middle when `tls_verify = false`).
   else: it cannot change kinomi's state, files or messages.
 - A crafted body (deep nesting, long strings or numbers, invalid escapes,
   huge documents) costs at most `max_body_bytes` of memory and one linear
-  pass; there is no recursion to overflow the stack and no tree to blow up.
+  pass (the buffer is reserved once, at the limit); there is no recursion to overflow the stack and no tree to blow up.
   With 8 workers and the 1 MiB maximum, that is at most about 8 MiB more
   memory, briefly; with the 64 KiB default, 0.5 MiB.
 - `json_max_age` uses the system clock; kinomi already waits for NTP at
@@ -694,7 +701,7 @@ changes = [
 ```toml
 config_version = 1
 title = "Family services"     # 1-100 characters
-public = true                 # false: requires HTTP Basic Auth (§9.3)
+public = true                 # required; false: requires HTTP Basic Auth (§9.3)
 description = "Is the internet broken, or just our Wi-Fi?"   # max 1000 characters, shown on the page, also if public
 show_incidents = true         # default true
 show_badges = true            # generate SVG badges for monitors on this page; default false
@@ -713,7 +720,7 @@ tags = ["family"]             # alternatively select by tag
 # monitors = ["*"]
 ```
 
-All monitors listed must exist (`check-config`). Without any page,
+A page needs at least one `[[groups]]`. All monitors listed must exist (`check-config`). Without any page,
 `check-config` warns that no status pages will be generated.
 
 ### 8.2 Content (similar to uptime-kuma)
@@ -895,7 +902,7 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 | `GET/HEAD /` | – | redirect to `default_page` (default: the public page with the alphabetically first ID; none: `404`) |
 | `GET/HEAD /{page}/...` | public pages | files from `public/` |
 | `GET/HEAD /private/{page}/...` | Basic Auth | files from `private/` |
-| `GET/HEAD /assets/...` | – | style sheet and favicon (also below `/private/`) |
+| `GET/HEAD /assets/...` | – (below `/private/`: Basic Auth) | style sheet and favicon (also below `/private/`) |
 | `GET/POST /push/{token}` | token | §4.6 |
 | `GET/HEAD /healthz` | – | `200 ok` while the dispatcher and the event loop run (each seen within 10 s), else `503` |
 | `GET/HEAD /metrics` | Basic Auth | Prometheus text format (optional, `server.metrics = true`, §9.5) |
@@ -907,7 +914,10 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
   terminal, the password is read from stdin; otherwise a random password is
   generated and printed once to stderr (no terminal handling needed, so no
   extra dependency). The `htpasswd` tool (package `apache2-utils`, needs
-  root to install) is not required.
+  root to install) is not required. `USER` is 1-64 characters without `:`, a
+  password from stdin 1-72 bytes (bcrypt's limit); otherwise exit code 2.
+- The file is at most 64 KiB; `check-config` parses it as at startup (bcrypt
+  only, no empty or duplicate users, at least one user).
 - Successful verifications are cached in memory for 10 minutes (key: SHA-256 of
   the `Authorization` header). A Pi 1 needs about 0.8 s per bcrypt check
   (cost 10), and the cache avoids paying that on every request.
@@ -915,7 +925,8 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
   second (global; other attempts get `429`), until a login succeeds. They
   are logged in sums at every log flush, so an attack cannot flood the log:
   `event=AUTH_FAIL count=N throttled=M` (requests without credentials, such
-  as a browser's first request, do not count).
+  as a browser's first request, do not count). An `Authorization` header
+  longer than 1024 bytes gets `401` without a check and does not count either.
 - If `listen` is not a loopback address and private pages exist, kinomi warns
   at startup that passwords would travel unencrypted without a TLS proxy.
 
@@ -1016,7 +1027,7 @@ kinomi runs on Linux only (§1), with the static musl binaries of §12.
 
 ### 10.3 Self-monitoring
 - Optional outbound heartbeat (`[heartbeat]`): a `GET` of `url` (15 s
-  timeout), then a pause of `interval` (so the period is the request time
+  timeout, at most 3 redirects), then a pause of `interval` (so the period is the request time
   plus `interval`). The URL is given inline only (kinomi warns if
   `kinomi.toml` is readable by all users), e.g. the push URL of a second kinomi
   (two Pis monitoring each other) or of a service like healthchecks.io. The
@@ -1273,7 +1284,8 @@ signed release for the same platform. The uptime-kinomi binary never runs
    keys. The trusted comment must be exactly `uptime-kinomi X.Y.Z` and
    `X.Y.Z` must be newer than the running version (an older or equal version
    needs `--release X.Y.Z --allow-downgrade`). `SHA256SUMS` is parsed strictly
-   (§12.1 format, only known asset names).
+   (§12.1 line format, only known asset names, no duplicates; the order is
+   not checked).
    From 1.0 on, a new major version is only installed with `--release`
    (§16); without it, `self-update` reports it and exits with `0`
    (`--check`: `3`).

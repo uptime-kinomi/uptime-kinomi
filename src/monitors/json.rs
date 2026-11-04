@@ -107,7 +107,7 @@ pub fn evaluate(body: &[u8], path: &[Segment], expect: &Expect, now: i64) -> Res
     let wrong_type = || Err("json: wrong type".to_string());
     match (expect, found) {
         (Expect::MaxAge(max), Found::Str(s)) => {
-            let ts = (s.len() <= MAX_DATE)
+            let ts = (s.len() <= MAX_DATE && rfc3339_shape(&s))
                 .then(|| s.parse::<jiff::Timestamp>().ok())
                 .flatten()
                 .map(|t| t.as_second());
@@ -122,13 +122,7 @@ pub fn evaluate(body: &[u8], path: &[Segment], expect: &Expect, now: i64) -> Res
         },
         (Expect::Str(want), Found::Str(s)) => equal(*want == s),
         (Expect::Bool(want), Found::Bool(b)) => equal(*want == b),
-        (Expect::Int(want), Found::Num(n)) => equal(match integer(&n) {
-            Some(i) => i == *want,
-            // 42.0 or 4.2e1: equal if exactly that integer.
-            None => n
-                .parse::<f64>()
-                .is_ok_and(|f| want.unsigned_abs() <= 1 << 53 && f == *want as f64),
-        }),
+        (Expect::Int(want), Found::Num(n)) => equal(exact_integer(&n) == Some(i128::from(*want))),
         (Expect::Range { min, max }, Found::Num(n)) if n.len() <= MAX_NUMBER => {
             let Ok(v) = n.parse::<f64>() else {
                 return wrong_type();
@@ -159,9 +153,92 @@ fn age(ts: i64, max: Duration, now: i64) -> Result<(), String> {
     let age = now.saturating_sub(ts);
     if age > i64::try_from(max.as_secs()).unwrap_or(i64::MAX) {
         // Only a number kinomi computed goes into the message.
-        return Err(format!("json: too old ({}d)", age / 86400));
+        let (n, unit) = match age {
+            ..3600 => (age / 60, 'm'),
+            3600..86400 => (age / 3600, 'h'),
+            _ => (age / 86400, 'd'),
+        };
+        return Err(format!("json: too old ({n}{unit})"));
     }
     Ok(())
+}
+
+/// RFC 3339 `date-time` (`2026-10-16T02:00:00Z`, optional fraction,
+/// `Z` or `+hh:mm`); jiff alone would also take other ISO 8601 forms.
+/// Ranges (month 13, hour 24) are left to jiff.
+fn rfc3339_shape(s: &str) -> bool {
+    let b = s.as_bytes();
+    let digits =
+        |r: std::ops::Range<usize>| b.get(r).is_some_and(|d| d.iter().all(u8::is_ascii_digit));
+    let at = |i: usize, c: &[u8]| b.get(i).is_some_and(|x| c.contains(x));
+    if !(digits(0..4)
+        && at(4, b"-")
+        && digits(5..7)
+        && at(7, b"-")
+        && digits(8..10)
+        && at(10, b"Tt")
+        && digits(11..13)
+        && at(13, b":")
+        && digits(14..16)
+        && at(16, b":")
+        && digits(17..19))
+    {
+        return false;
+    }
+    let mut i = 19;
+    if at(i, b".") {
+        i += 1;
+        let start = i;
+        while at(i, b"0123456789") {
+            i += 1;
+        }
+        if i == start {
+            return false;
+        }
+    }
+    match b.get(i) {
+        Some(b'Z' | b'z') => i + 1 == b.len(),
+        Some(b'+' | b'-') => {
+            i + 6 == b.len() && digits(i + 1..i + 3) && at(i + 3, b":") && digits(i + 4..i + 6)
+        }
+        _ => false,
+    }
+}
+
+/// The exact value of a JSON number if it is an integer within i64
+/// (`42`, `42.0`, `4.2e1`), computed on the digits, not through f64.
+fn exact_integer(n: &str) -> Option<i128> {
+    let (negative, n) = match n.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, n),
+    };
+    let (mantissa, exp) = match n.find(['e', 'E']) {
+        Some(i) => (n.get(..i)?, n.get(i + 1..)?),
+        None => (n, "0"),
+    };
+    let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let digits: String = int.chars().chain(frac.chars()).collect();
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        return Some(0);
+    }
+    let significant = digits.trim_end_matches('0');
+    // value = significant * 10^shift
+    let exp: i64 = exp.parse().ok()?;
+    let shift = exp
+        .checked_sub(i64::try_from(frac.len()).ok()?)?
+        .checked_add(i64::try_from(digits.len() - significant.len()).ok()?)?;
+    if shift < 0 || significant.len() as i64 + shift > 20 {
+        return None;
+    }
+    let value = significant
+        .parse::<i128>()
+        .ok()?
+        .checked_mul(10i128.checked_pow(u32::try_from(shift).ok()?)?)?;
+    let value = if negative { -value } else { value };
+    (i128::from(i64::MIN)..=i128::from(i64::MAX))
+        .contains(&value)
+        .then_some(value)
 }
 
 /// A JSON number without fraction or exponent, as i64.
@@ -706,7 +783,50 @@ mod tests {
             eval(&doc(&(NOW + 60).to_string()), "published_at", max_age(80)),
             Ok(())
         );
-        for not_a_date in ["\"yesterday\"", "\"2026-10-16\"", "1.5", "1e9"] {
+        assert_eq!(
+            eval(
+                &doc(&(NOW - 3 * 3600).to_string()),
+                "published_at",
+                Expect::MaxAge(Duration::from_secs(3600))
+            ),
+            Err("json: too old (3h)".into())
+        );
+        assert_eq!(
+            eval(
+                &doc(&(NOW - 150).to_string()),
+                "published_at",
+                Expect::MaxAge(Duration::from_secs(60))
+            ),
+            Err("json: too old (2m)".into())
+        );
+        for date in [
+            "\"2026-10-16t02:00:00z\"",
+            "\"2026-10-16T02:00:00.5Z\"",
+            "\"2026-10-16T02:00:00-00:00\"",
+        ] {
+            assert_eq!(
+                eval(&doc(date), "published_at", max_age(80)),
+                Ok(()),
+                "{date}"
+            );
+        }
+        for not_a_date in [
+            "\"yesterday\"",
+            "\"2026-10-16\"",
+            "\"2026-10-16 02:00:00Z\"",
+            "\"2026-10-16T02:00Z\"",
+            "\"20261016T020000Z\"",
+            "\"2026-10-16T02:00:00+0200\"",
+            "\"2026-10-16T02:00:00+02\"",
+            "\"2026-10-16T02:00:00Z[Europe/Berlin]\"",
+            "\"2026-10-16T02:00:00,5Z\"",
+            "\"2026-10-16T02:00:00.Z\"",
+            "\"+002026-10-16T02:00:00Z\"",
+            "\"2026-10-16T02:00:00\"",
+            "\"2026-13-16T02:00:00Z\"",
+            "1.5",
+            "1e9",
+        ] {
             assert_eq!(
                 eval(&doc(not_a_date), "published_at", max_age(80)),
                 Err("json: not a date".into()),
@@ -730,7 +850,9 @@ mod tests {
 
     #[test]
     fn equals() {
-        let doc = r#"{"s": "ok", "i": 42, "f": 42.0, "e": 4.2e1, "b": false}"#;
+        let doc = r#"{"s": "ok", "i": 42, "f": 42.0, "e": 4.2e1, "x": 4200e-2, "b": false,
+            "near": 42.0000000000000001, "z": -0.0e5, "min": -9223372036854775808,
+            "huge": 1e400, "tiny": 1e-400}"#;
         assert_eq!(eval(doc, "s", Expect::Str("ok".into())), Ok(()));
         assert_eq!(
             eval(doc, "s", Expect::Str("OK".into())),
@@ -740,9 +862,22 @@ mod tests {
             eval(doc, "i", Expect::Str("42".into())),
             Err("json: wrong type".into())
         );
-        for p in ["i", "f", "e"] {
+        for p in ["i", "f", "e", "x"] {
             assert_eq!(eval(doc, p, Expect::Int(42)), Ok(()), "{p}");
         }
+        for p in ["near", "huge", "tiny"] {
+            assert_eq!(
+                eval(doc, p, Expect::Int(42)),
+                Err("json: value differs".into()),
+                "{p}"
+            );
+        }
+        assert_eq!(eval(doc, "z", Expect::Int(0)), Ok(()));
+        assert_eq!(
+            eval(doc, "tiny", Expect::Int(0)),
+            Err("json: value differs".into())
+        );
+        assert_eq!(eval(doc, "min", Expect::Int(i64::MIN)), Ok(()));
         assert_eq!(
             eval(doc, "i", Expect::Int(43)),
             Err("json: value differs".into())

@@ -6,7 +6,9 @@ processor, checks that the download really comes from the kinomi project,
 writes a starter configuration, and starts kinomi as a service that also
 runs after a reboot. Then it updates kinomi once a week.
 
-It needs no root and changes nothing outside your home directory.
+It needs no root and changes nothing outside your home directory, except
+that it enables *lingering* for your user (``loginctl enable-linger``), so
+kinomi keeps running when you log out.
 
 Before you start
 ----------------

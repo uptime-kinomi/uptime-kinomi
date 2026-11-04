@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   and breakage on the latest stable Rust are noticed.
 - Upgrade test: also reads the data written by 1.0.0.
 
+### Fixed
+
+- `check-config` now also checks the contents of the htpasswd file (bcrypt
+  hashes only, no empty or duplicate users, at least one user). Before, it
+  only checked that the file exists, and `run` failed on such a file.
+- TCP monitors with `banner`: a server that closes the connection without
+  sending the banner (or only its start) is reported as `connection closed
+  before banner`, not as `unexpected banner`.
+- HTTP monitors with `keyword`: the body buffer is reserved once, so a
+  check never needs more than `max_body_bytes` of memory for it.
+- Documentation: `check-config` warnings show absolute paths, the install
+  script enables lingering (a system setting), and smaller corrections.
+
 ## [1.0.0] - 2026-11-02
 
 The first stable release. From now on, updates within 1.x never break a

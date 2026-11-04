@@ -92,6 +92,10 @@ impl Check for TcpCheck {
         };
         match read_banner(&mut stream, expected.len(), remaining()) {
             Ok(received) if received.starts_with(expected) => CheckResult::up(latency, "banner ok"),
+            // Closed with nothing, or only the start of the banner, sent.
+            Ok(received) if expected.starts_with(&received) => {
+                CheckResult::fail(Some(latency), "connection closed before banner")
+            }
             Ok(_) => CheckResult::fail(Some(latency), "unexpected banner"),
             Err(e) if is_timeout(&e) => {
                 CheckResult::fail(Some(latency), "timeout waiting for banner")
@@ -212,6 +216,14 @@ mod tests {
         let silent = check(silent_port, Some("SSH-"), 100);
         assert_eq!(silent.status, Status::Fail);
         assert!(silent.msg.contains("banner"), "{silent:?}");
+        // Closes (after 300 ms) without greeting, or after part of it.
+        for greeting in [&b""[..], b"SS"] {
+            let port = server(greeting, 1);
+            assert_eq!(
+                check(port, Some("SSH-"), 2000).msg,
+                "connection closed before banner"
+            );
+        }
     }
 
     #[test]

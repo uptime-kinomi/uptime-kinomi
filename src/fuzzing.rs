@@ -371,8 +371,9 @@ pub fn json(data: &[u8]) {
         if let Err(msg) = json::evaluate(body, &path, expect, 1_793_000_000) {
             let computed = msg
                 .strip_prefix("json: too old (")
-                .and_then(|m| m.strip_suffix("d)"))
-                .is_some_and(|d| d.bytes().all(|b| b.is_ascii_digit()));
+                .and_then(|m| m.strip_suffix(')'))
+                .and_then(|m| m.strip_suffix(['d', 'h', 'm']))
+                .is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()));
             assert!(
                 fixed.contains(&msg.as_str()) || computed,
                 "message: {msg:?}"

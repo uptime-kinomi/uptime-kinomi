@@ -532,7 +532,8 @@ impl HttpCheck {
             }
 
             if let Some(check) = &self.json {
-                let mut body = Vec::new();
+                // Reserved up front: growing by doubling could need twice the limit.
+                let mut body = Vec::with_capacity(usize::try_from(self.max_body + 1).unwrap_or(0));
                 // One byte more than allowed tells a body that is too long.
                 let read = response
                     .body_mut()
@@ -561,7 +562,7 @@ impl HttpCheck {
             }
 
             if let Some(keyword) = &self.keyword {
-                let mut body = Vec::new();
+                let mut body = Vec::with_capacity(usize::try_from(self.max_body).unwrap_or(0));
                 let read = response
                     .body_mut()
                     .as_reader()

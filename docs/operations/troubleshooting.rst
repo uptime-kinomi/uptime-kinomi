@@ -100,7 +100,8 @@ kinomi does not start
 
 * **A configuration error:** ``uptime-kinomi check-config`` shows it, with
   file and line.
-* **"cannot listen on 127.0.0.1:8080: Address already in use":** another program uses port 8080, or a
+* **"cannot listen on 127.0.0.1:8080: Address already in use (os error
+  98)":** another program uses port 8080, or a
   second kinomi runs (perhaps one you started by hand with ``uptime-kinomi
   run``). ``ss -ltnp | grep 8080`` shows which. Change ``listen`` to
   another port, or stop the other program.

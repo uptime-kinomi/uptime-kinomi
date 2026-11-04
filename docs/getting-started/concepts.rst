@@ -69,7 +69,7 @@ other users of the computer:
 
 .. code-block:: text
 
-   warning: ./notifications/gotify.toml: gotify.token_file ./secrets/gotify.token is readable by all users (chmod o-r)
+   warning: /home/pi/.config/uptime-kinomi/notifications/gotify.toml: gotify.token_file /home/pi/.config/uptime-kinomi/secrets/gotify.token is readable by all users (chmod o-r)
 
 Fix it with ``chmod 600 secrets/*`` (or ``chmod o-r`` on the file named).
 

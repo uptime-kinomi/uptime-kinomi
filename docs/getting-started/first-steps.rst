@@ -285,7 +285,7 @@ And create the page, ``pages/all.toml``. ``"*"`` means all monitors:
 
 .. code-block:: text
 
-   warning: ./kinomi.toml: private pages on a non-loopback address: without a TLS proxy, passwords travel unencrypted
+   warning: /home/pi/.config/uptime-kinomi/kinomi.toml: private pages on a non-loopback address: without a TLS proxy, passwords travel unencrypted
 
 That is true: in your home network, the password travels without
 encryption. That is acceptable at home. Before you make kinomi reachable

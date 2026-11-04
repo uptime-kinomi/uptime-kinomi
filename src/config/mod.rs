@@ -580,7 +580,10 @@ mod tests {
             "config_version = 1\n[server]\nhtpasswd_file = \"htpasswd\"\n\
              [heartbeat]\nurl = \"https://other.example.org/push/abc\"\n",
         );
-        let htpasswd = dir.write("htpasswd", "# none\n");
+        let htpasswd = dir.write(
+            "htpasswd",
+            "pi:$2y$10$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuvwxyz01234\n",
+        );
         dir.write(
             "notifications/hook.toml",
             "config_version = 1\ntype = \"webhook\"\n[webhook]\nurl = \"https://chat.example.org/hooks/secret\"\n",
@@ -629,6 +632,29 @@ mod tests {
                 .any(|w| w.to_string().contains("readable by all"))
         );
         assert_eq!(config.map(|c| c.notifiers.len()), Some(2), "{problems:?}");
+    }
+
+    #[test]
+    fn htpasswd_contents_are_checked() {
+        for (name, text, ok) in [
+            ("none", "# none\n", false),
+            ("md5", "pi:$apr1$abc$def\n", false),
+            (
+                "bcrypt",
+                "pi:$2y$10$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuvwxyz01234\n",
+                true,
+            ),
+        ] {
+            let dir = TestDir::new(&format!("config-htpasswd-{name}"));
+            dir.write(
+                "kinomi.toml",
+                "config_version = 1\n[server]\nhtpasswd_file = \"htpasswd\"\n",
+            );
+            dir.write("htpasswd", text);
+            dir.write("monitors/m.toml", TCP);
+            let (_, problems) = load(dir.path(), &env, None);
+            assert_eq!(problems.has_errors(), !ok, "{name}");
+        }
     }
 
     #[test]
