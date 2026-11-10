@@ -14,10 +14,6 @@ It takes about 30 minutes. You need a kinomi installed with
 can open the status page from your laptop. Everything happens in a terminal
 on the Pi, as the user that runs kinomi.
 
-.. contents:: Steps
-   :local:
-   :depth: 1
-
 The one thing to know first
 ---------------------------
 
