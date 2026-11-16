@@ -20,7 +20,7 @@ Which type do I need?
      - ``http``
      - :doc:`http`
    * - a device or service accepts connections: SSH, a database, a mail
-       server, a router, a printer
+       server, a router, a printer; also with TLS and its certificate
      - ``tcp``
      - :doc:`tcp`
    * - a device in the network is on (it answers pings), or the internet

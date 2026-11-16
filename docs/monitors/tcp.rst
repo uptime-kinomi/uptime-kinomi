@@ -49,6 +49,27 @@ server that is overloaded or misconfigured often greets with ``421`` or
 The same works for other text protocols: FTP (``220``), POP3 (``+OK``),
 IMAP (``* OK``).
 
+A port with TLS
+---------------
+
+Many services speak TLS from the first byte: IMAPS (993), SMTPS (465),
+LDAPS (636), MQTT over TLS (8883), databases with TLS. With ``tls = true``,
+kinomi does the TLS handshake after connecting, checks the certificate
+like an :doc:`http` monitor does, and warns before it expires (since
+kinomi 1.2):
+
+.. literalinclude:: /examples/catalog/monitors/imaps.toml
+   :language: toml
+   :caption: monitors/imaps.toml
+
+The banner is then read through TLS. For a device in your network with a
+self-signed certificate, set ``tls_verify = false`` (``check-config`` warns
+about it, on purpose); the expiry warning still works.
+
+Ports where the server first talks without TLS and switches later
+(STARTTLS: SMTP on 25 or 587, IMAP on 143) are not supported; check those
+without ``tls``.
+
 A service on the same Pi
 ------------------------
 
@@ -77,6 +98,18 @@ Keys
    * - ``expected_banner``
      - none
      - Text the server's first bytes must start with (1-256 bytes).
+   * - ``tls``
+     - ``false``
+     - ``true``: TLS handshake after connecting (implicit TLS).
+   * - ``tls_verify``
+     - ``true``
+     - ``false`` accepts any certificate (warns). Needs ``tls = true``.
+   * - ``tls_expiry_warn``
+     - ``"14d"``
+     - WARN when the certificate expires within this time.
+   * - ``tls_expiry_fail``
+     - ``"0s"`` (off)
+     - Fail when the certificate expires within this time.
 
 Messages you may see
 --------------------
@@ -86,6 +119,13 @@ Messages you may see
 
    * - ``connected``
      - The connection was accepted (no banner check).
+   * - ``TLS ok``
+     - The connection was accepted and the TLS handshake succeeded.
+   * - ``TLS ok, certificate expires in 10 days``
+     - Within ``tls_expiry_warn`` (WARN) or ``tls_expiry_fail`` (failure).
+   * - ``TLS certificate expired``, ``... from unknown issuer``, ``... not
+       valid for this host name``, ``TLS handshake failed``
+     - Certificate problems, or the port does not speak TLS.
    * - ``banner ok``
      - The connection was accepted and the banner matched.
    * - ``unexpected banner``

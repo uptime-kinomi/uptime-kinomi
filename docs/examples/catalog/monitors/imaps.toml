@@ -1,0 +1,14 @@
+# A mail server's IMAPS port (TLS from the first byte): the certificate is
+# verified, kinomi warns 14 days before it expires, and the IMAP greeting
+# is read through TLS.
+config_version = 1
+type = "tcp"
+name = "Mail (IMAPS)"
+interval = "5m"
+
+[tcp]
+host = "mail.example.org"
+port = 993
+tls = true
+expected_banner = "* OK"
+tls_expiry_warn = "21d"

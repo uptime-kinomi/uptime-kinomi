@@ -17,6 +17,7 @@ use rustls::{
     ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, SignatureScheme,
 };
 
+use super::{CheckResult, Status};
 use crate::clock;
 
 /// Fetch the leaf certificate of `host:port` and return its `notAfter` as
@@ -29,10 +30,6 @@ pub fn not_after(
 ) -> Result<i64, &'static str> {
     let start = Instant::now();
     let remaining = || timeout.saturating_sub(start.elapsed());
-    let server_name = ServerName::try_from(host.to_string()).map_err(|_| "invalid host name")?;
-    let config = Arc::new(client_config(verify).map_err(|_| "TLS setup failed")?);
-    let mut conn = ClientConnection::new(config, server_name).map_err(|_| "TLS setup failed")?;
-
     let addrs = super::resolve(host, port, remaining())?;
     let mut sock = None;
     for addr in addrs {
@@ -44,35 +41,126 @@ pub fn not_after(
             break;
         }
     }
-    let mut sock = sock.ok_or("connection failed")?;
+    let sock = sock.ok_or("connection failed")?;
+    let conn = handshake(&sock, host, verify, remaining())?;
+    leaf_not_after(&conn)
+}
 
+/// A TLS handshake as client on a connected socket, within `timeout`.
+/// The certificate is verified against the bundled roots unless `verify`
+/// is false. Errors are coarse classes (see [`message`]).
+pub fn handshake(
+    sock: &TcpStream,
+    host: &str,
+    verify: bool,
+    timeout: Duration,
+) -> Result<ClientConnection, &'static str> {
+    let start = Instant::now();
+    let server_name = ServerName::try_from(host.to_string()).map_err(|_| "invalid host name")?;
+    let config = Arc::new(client_config(verify).map_err(|_| "TLS setup failed")?);
+    let mut conn = ClientConnection::new(config, server_name).map_err(|_| "TLS setup failed")?;
+    let mut io = sock;
     while conn.is_handshaking() {
-        let left = remaining();
+        let left = timeout.saturating_sub(start.elapsed());
         if left.is_zero() {
             return Err("timeout");
         }
-        let io = sock
-            .set_read_timeout(Some(left))
-            .and_then(|()| sock.set_write_timeout(Some(left)));
-        io.map_err(|_| "connection failed")?;
-        match conn.complete_io(&mut sock) {
-            Ok(_) => {}
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
-                ) =>
-            {
-                return Err("timeout");
-            }
-            Err(_) => return Err("TLS handshake failed"),
+        sock.set_read_timeout(Some(left))
+            .and_then(|()| sock.set_write_timeout(Some(left)))
+            .map_err(|_| "connection failed")?;
+        if let Err(e) = conn.complete_io(&mut io) {
+            return Err(io_message(&e));
         }
     }
+    Ok(conn)
+}
+
+/// `notAfter` of the server's leaf certificate after a handshake.
+pub fn leaf_not_after(conn: &ClientConnection) -> Result<i64, &'static str> {
     let leaf = conn
         .peer_certificates()
         .and_then(|certs| certs.first())
         .ok_or("no certificate")?;
     cert_not_after(leaf.as_ref()).ok_or("unreadable certificate")
+}
+
+/// An I/O error during a handshake: rustls errors arrive wrapped in it.
+fn io_message(e: &io::Error) -> &'static str {
+    if matches!(
+        e.kind(),
+        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+    ) {
+        return "timeout";
+    }
+    match e
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<rustls::Error>())
+    {
+        Some(tls) => message(tls),
+        None => "TLS handshake failed",
+    }
+}
+
+/// Coarse classes of TLS errors. Some error types (e.g. certificate name
+/// mismatch) carry data from the remote side, which must not be reflected.
+pub fn message(e: &rustls::Error) -> &'static str {
+    use rustls::{CertificateError, Error as TlsError};
+    match e {
+        TlsError::InvalidCertificate(cert) => match cert {
+            CertificateError::Expired | CertificateError::ExpiredContext { .. } => {
+                "TLS certificate expired"
+            }
+            CertificateError::NotValidYet | CertificateError::NotValidYetContext { .. } => {
+                "TLS certificate not yet valid"
+            }
+            CertificateError::UnknownIssuer => "TLS certificate from unknown issuer",
+            CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. } => {
+                "TLS certificate not valid for this host name"
+            }
+            CertificateError::Revoked => "TLS certificate revoked",
+            _ => "TLS certificate invalid",
+        },
+        TlsError::AlertReceived(_) => "TLS alert from server",
+        _ => "TLS handshake failed",
+    }
+}
+
+/// Turn a successful result into WARN or FAIL if the certificate expires
+/// within `warn` or `fail` ("0s": off), and record the expiry date.
+pub fn rate_expiry(
+    mut result: CheckResult,
+    not_after: Result<i64, &'static str>,
+    now: i64,
+    warn: Duration,
+    fail: Duration,
+) -> CheckResult {
+    let Ok(not_after) = not_after else {
+        if result.status == Status::Up {
+            result.status = Status::Warn;
+        }
+        result.msg.push_str(", certificate check failed");
+        return result;
+    };
+    result.cert_expires = Some(not_after);
+    let left = not_after - now;
+    let text = if left <= 0 {
+        "certificate expired".to_string()
+    } else {
+        format!("certificate expires in {} days", left / 86400)
+    };
+    let within = |limit: Duration| {
+        !limit.is_zero() && left <= i64::try_from(limit.as_secs()).unwrap_or(i64::MAX)
+    };
+    if within(fail) {
+        result.status = Status::Fail;
+        result.msg = format!("{}, {text}", result.msg);
+    } else if within(warn) {
+        if result.status == Status::Up {
+            result.status = Status::Warn;
+        }
+        result.msg = format!("{}, {text}", result.msg);
+    }
+    result
 }
 
 fn client_config(verify: bool) -> Result<ClientConfig, rustls::Error> {
@@ -224,14 +312,10 @@ fn parse_time(tag: u8, value: &[u8]) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustls::pki_types::PrivatePkcs8KeyDer;
-    use rustls::{ServerConfig, ServerConnection};
     use std::net::TcpListener;
-    use std::thread;
 
     const UTC_CERT: &[u8] = include_bytes!("../../testdata/tls/utctime.der");
-    const GENERALIZED_CERT: &[u8] = include_bytes!("../../testdata/tls/generalized.der");
-    const KEY: &[u8] = include_bytes!("../../testdata/tls/key.pkcs8.der");
+    use testing::GENERALIZED_CERT;
 
     #[test]
     fn not_after_from_der() {
@@ -278,39 +362,9 @@ mod tests {
         }
     }
 
-    /// A TLS server with the self-signed test certificate.
-    fn tls_server(cert: &'static [u8]) -> u16 {
-        let provider = Arc::new(rustls::crypto::ring::default_provider());
-        let config = Arc::new(
-            ServerConfig::builder_with_provider(provider)
-                .with_safe_default_protocol_versions()
-                .unwrap()
-                .with_no_client_auth()
-                .with_single_cert(
-                    vec![CertificateDer::from(cert.to_vec())],
-                    PrivatePkcs8KeyDer::from(KEY.to_vec()).into(),
-                )
-                .unwrap(),
-        );
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        thread::spawn(move || {
-            for stream in listener.incoming().take(2) {
-                let mut stream = stream.unwrap();
-                let mut conn = ServerConnection::new(config.clone()).unwrap();
-                while conn.is_handshaking() {
-                    if conn.complete_io(&mut stream).is_err() {
-                        break;
-                    }
-                }
-            }
-        });
-        port
-    }
-
     #[test]
     fn handshake_reads_expiry() {
-        let port = tls_server(GENERALIZED_CERT);
+        let port = testing::server(GENERALIZED_CERT, b"", 2);
         let timeout = Duration::from_secs(5);
         // Self-signed: accepted without verification ...
         assert_eq!(
@@ -320,7 +374,7 @@ mod tests {
         // ... and rejected with it.
         assert_eq!(
             not_after("localhost", port, true, timeout),
-            Err("TLS handshake failed")
+            Err("TLS certificate from unknown issuer")
         );
     }
 
@@ -339,5 +393,59 @@ mod tests {
             not_after("does-not-exist.invalid", 443, true, Duration::from_secs(2)),
             Err("host not found")
         );
+    }
+}
+
+/// A local TLS server for tests of the monitors that use TLS.
+#[cfg(test)]
+pub mod testing {
+    use std::io::Write;
+    use std::net::TcpListener;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
+
+    use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+    use rustls::{ServerConfig, ServerConnection};
+
+    /// Self-signed for `localhost`, valid until 2051-06-01 (notAfter
+    /// 2_569_233_600).
+    pub const GENERALIZED_CERT: &[u8] = include_bytes!("../../testdata/tls/generalized.der");
+    const KEY: &[u8] = include_bytes!("../../testdata/tls/key.pkcs8.der");
+
+    /// Serves `connections` clients: handshake with `cert`, then sends
+    /// `greeting` and keeps the connection open for 300 ms.
+    pub fn server(cert: &'static [u8], greeting: &'static [u8], connections: usize) -> u16 {
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let config = Arc::new(
+            ServerConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_no_client_auth()
+                .with_single_cert(
+                    vec![CertificateDer::from(cert.to_vec())],
+                    PrivatePkcs8KeyDer::from(KEY.to_vec()).into(),
+                )
+                .unwrap(),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            for stream in listener.incoming().take(connections) {
+                let mut stream = stream.unwrap();
+                let mut conn = ServerConnection::new(config.clone()).unwrap();
+                while conn.is_handshaking() {
+                    if conn.complete_io(&mut stream).is_err() {
+                        break;
+                    }
+                }
+                if !conn.is_handshaking() && !greeting.is_empty() {
+                    let _ = conn.writer().write_all(greeting);
+                    let _ = conn.complete_io(&mut stream);
+                }
+                thread::sleep(Duration::from_millis(300));
+            }
+        });
+        port
     }
 }

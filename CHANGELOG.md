@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   capabilities are needed; `check-config` warns if the kernel setting
   `net.ipv4.ping_group_range` does not allow them. Replies are fuzzed
   (`icmp` target). New dependency: `rustix` (safe system calls).
+- `tcp` monitors: `tls = true` does a TLS handshake after connecting
+  (IMAPS, SMTPS, LDAPS, ...), with `tls_verify`, `tls_expiry_warn` and
+  `tls_expiry_fail` as for `http`; `expected_banner` is read through TLS.
 
 ### Changed
 

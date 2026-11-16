@@ -420,46 +420,10 @@ impl CertCheck {
     fn apply(&self, result: CheckResult, budget: Duration) -> CheckResult {
         let now = clock::unix_seconds(SystemTime::now());
         match self.not_after(budget) {
-            Some(not_after) => rate_expiry(result, not_after, now, self.warn, self.fail),
+            Some(not_after) => tls::rate_expiry(result, not_after, now, self.warn, self.fail),
             None => result,
         }
     }
-}
-
-fn rate_expiry(
-    mut result: CheckResult,
-    not_after: Result<i64, &'static str>,
-    now: i64,
-    warn: Duration,
-    fail: Duration,
-) -> CheckResult {
-    let Ok(not_after) = not_after else {
-        if result.status == Status::Up {
-            result.status = Status::Warn;
-        }
-        result.msg.push_str(", certificate check failed");
-        return result;
-    };
-    result.cert_expires = Some(not_after);
-    let left = not_after - now;
-    let text = if left <= 0 {
-        "certificate expired".to_string()
-    } else {
-        format!("certificate expires in {} days", left / 86400)
-    };
-    let within = |limit: Duration| {
-        !limit.is_zero() && left <= i64::try_from(limit.as_secs()).unwrap_or(i64::MAX)
-    };
-    if within(fail) {
-        result.status = Status::Fail;
-        result.msg = format!("{}, {text}", result.msg);
-    } else if within(warn) {
-        if result.status == Status::Up {
-            result.status = Status::Warn;
-        }
-        result.msg = format!("{}, {text}", result.msg);
-    }
-    result
 }
 
 /// Host and port of an `https://` URL (default port 443).
@@ -701,38 +665,16 @@ pub fn error_message(e: &ureq::Error) -> String {
             .get_ref()
             .and_then(|inner| inner.downcast_ref::<rustls::Error>())
         {
-            Some(tls) => tls_message(tls).into(),
+            Some(tls) => tls::message(tls).into(),
             None => super::tcp::connect_error(io).into(),
         },
         ureq::Error::ConnectionFailed => "connection failed".into(),
-        ureq::Error::Rustls(tls) => tls_message(tls).into(),
+        ureq::Error::Rustls(tls) => tls::message(tls).into(),
         ureq::Error::Tls(_) => "TLS handshake failed".into(),
         ureq::Error::Protocol(_) | ureq::Error::BadUri(_) | ureq::Error::Http(_) => {
             "invalid HTTP response".into()
         }
         _ => "request failed".into(),
-    }
-}
-
-fn tls_message(e: &rustls::Error) -> &'static str {
-    use rustls::{CertificateError, Error as TlsError};
-    match e {
-        TlsError::InvalidCertificate(cert) => match cert {
-            CertificateError::Expired | CertificateError::ExpiredContext { .. } => {
-                "TLS certificate expired"
-            }
-            CertificateError::NotValidYet | CertificateError::NotValidYetContext { .. } => {
-                "TLS certificate not yet valid"
-            }
-            CertificateError::UnknownIssuer => "TLS certificate from unknown issuer",
-            CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. } => {
-                "TLS certificate not valid for this host name"
-            }
-            CertificateError::Revoked => "TLS certificate revoked",
-            _ => "TLS certificate invalid",
-        },
-        TlsError::AlertReceived(_) => "TLS alert from server",
-        _ => "TLS handshake failed",
     }
 }
 
@@ -1208,7 +1150,7 @@ mod tests {
         let up = || CheckResult::up(Duration::from_millis(5), "HTTP 200");
         let warn = Duration::from_secs(14 * day as u64);
         let rate = |not_after, fail: u64| {
-            rate_expiry(
+            tls::rate_expiry(
                 up(),
                 not_after,
                 now,

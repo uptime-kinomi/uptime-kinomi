@@ -1,14 +1,16 @@
-//! `tcp` monitor: TCP port open, optionally with an expected banner
-//! (SPEC.md §4.4).
+//! `tcp` monitor: TCP port open, optionally with TLS and an expected
+//! banner (SPEC.md §4.4).
 
 use std::io::{self, Read};
 use std::net::TcpStream;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::Deserialize;
 
-use super::{Check, CheckResult, is_valid_host};
+use super::{Check, CheckResult, is_valid_host, tls};
+use crate::clock;
 use crate::config::FileProblems;
+use crate::config::duration::Dur;
 
 /// Most bytes read from the server when checking a banner.
 const MAX_BANNER_BYTES: usize = 256;
@@ -19,13 +21,25 @@ pub struct TcpFile {
     host: String,
     port: u16,
     expected_banner: Option<String>,
+    tls: Option<bool>,
+    tls_verify: Option<bool>,
+    tls_expiry_warn: Option<Dur>,
+    tls_expiry_fail: Option<Dur>,
 }
 
 pub struct TcpCheck {
     host: String,
     port: u16,
     banner: Option<Vec<u8>>,
+    tls: Option<Tls>,
     timeout: Duration,
+}
+
+/// `tls = true`: handshake after connecting, certificate checks.
+struct Tls {
+    verify: bool,
+    warn: Duration,
+    fail: Duration,
 }
 
 pub fn build(file: TcpFile, timeout: Duration, p: &mut FileProblems) -> Option<TcpCheck> {
@@ -45,10 +59,30 @@ pub fn build(file: TcpFile, timeout: Duration, p: &mut FileProblems) -> Option<T
             ));
         }
     }
+    let tls = if file.tls.unwrap_or(false) {
+        let verify = file.tls_verify.unwrap_or(true);
+        if !verify {
+            p.warning("tcp.tls_verify = false: certificate errors are ignored");
+        }
+        Some(Tls {
+            verify,
+            warn: file.tls_expiry_warn.unwrap_or(Dur::secs(14 * 86400)).0,
+            fail: file.tls_expiry_fail.unwrap_or(Dur::secs(0)).0,
+        })
+    } else {
+        if file.tls_verify.is_some()
+            || file.tls_expiry_warn.is_some()
+            || file.tls_expiry_fail.is_some()
+        {
+            p.error("tcp.tls_* options need tls = true");
+        }
+        None
+    };
     Some(TcpCheck {
         host: file.host,
         port: file.port,
         banner: file.expected_banner.map(String::into_bytes),
+        tls,
         timeout,
     })
 }
@@ -77,7 +111,7 @@ impl Check for TcpCheck {
                 Err(e) => last_error = Some(e),
             }
         }
-        let Some(mut stream) = stream else {
+        let Some(stream) = stream else {
             let msg = match last_error {
                 Some(e) => connect_error(&e),
                 None if remaining().is_zero() => "timeout",
@@ -85,12 +119,53 @@ impl Check for TcpCheck {
             };
             return CheckResult::fail(Some(start.elapsed()), msg);
         };
-        let latency = start.elapsed();
-
-        let Some(expected) = &self.banner else {
-            return CheckResult::up(latency, "connected");
+        let Some(tls) = &self.tls else {
+            let latency = start.elapsed();
+            let mut reader = &stream;
+            return self.banner_result(&stream, &mut reader, latency, remaining(), "connected");
         };
-        match read_banner(&mut stream, expected.len(), remaining()) {
+        let conn = match tls::handshake(&stream, &self.host, tls.verify, remaining()) {
+            Ok(conn) => conn,
+            Err(msg) => return CheckResult::fail(Some(start.elapsed()), msg),
+        };
+        // The latency includes the handshake: that is what a client waits for.
+        let latency = start.elapsed();
+        let not_after = tls::leaf_not_after(&conn);
+        let mut conn = conn;
+        let mut sock = &stream;
+        let mut reader = rustls::Stream::new(&mut conn, &mut sock);
+        let result = self.banner_result(&stream, &mut reader, latency, remaining(), "TLS ok");
+        if result.status == super::Status::Fail {
+            return result;
+        }
+        let now = clock::unix_seconds(SystemTime::now());
+        tls::rate_expiry(result, not_after, now, tls.warn, tls.fail)
+    }
+
+    fn target(&self) -> String {
+        if self.host.contains(':') {
+            format!("[{}]:{}", self.host, self.port)
+        } else {
+            format!("{}:{}", self.host, self.port)
+        }
+    }
+}
+
+impl TcpCheck {
+    /// The result after connecting (and the TLS handshake): `ok` without
+    /// `expected_banner`, else the banner check through `reader`.
+    fn banner_result(
+        &self,
+        stream: &TcpStream,
+        reader: &mut dyn Read,
+        latency: Duration,
+        timeout: Duration,
+        ok: &str,
+    ) -> CheckResult {
+        let Some(expected) = &self.banner else {
+            return CheckResult::up(latency, ok);
+        };
+        match read_banner(stream, reader, expected.len(), timeout) {
             Ok(received) if received.starts_with(expected) => CheckResult::up(latency, "banner ok"),
             // Closed with nothing, or only the start of the banner, sent.
             Ok(received) if expected.starts_with(&received) => {
@@ -103,20 +178,17 @@ impl Check for TcpCheck {
             Err(_) => CheckResult::fail(Some(latency), "connection closed before banner"),
         }
     }
-
-    fn target(&self) -> String {
-        if self.host.contains(':') {
-            format!("[{}]:{}", self.host, self.port)
-        } else {
-            format!("{}:{}", self.host, self.port)
-        }
-    }
 }
 
 /// Read until `wanted` bytes arrived, the peer closes, or the limit is hit.
 /// `timeout` is for all reads together, so a server sending one byte at a
 /// time cannot stretch the check.
-fn read_banner(stream: &mut TcpStream, wanted: usize, timeout: Duration) -> io::Result<Vec<u8>> {
+fn read_banner(
+    stream: &TcpStream,
+    reader: &mut dyn Read,
+    wanted: usize,
+    timeout: Duration,
+) -> io::Result<Vec<u8>> {
     let deadline = Instant::now() + timeout;
     let mut received = Vec::with_capacity(wanted);
     let mut buf = [0u8; MAX_BANNER_BYTES];
@@ -126,7 +198,7 @@ fn read_banner(stream: &mut TcpStream, wanted: usize, timeout: Duration) -> io::
             return Err(io::ErrorKind::TimedOut.into());
         }
         stream.set_read_timeout(Some(left))?;
-        let n = stream.read(&mut buf[..MAX_BANNER_BYTES - received.len()])?;
+        let n = reader.read(&mut buf[..MAX_BANNER_BYTES - received.len()])?;
         if n == 0 {
             break;
         }
@@ -165,6 +237,7 @@ mod tests {
             host: "127.0.0.1".into(),
             port,
             banner: banner.map(|b| b.as_bytes().to_vec()),
+            tls: None,
             timeout: Duration::from_millis(timeout_ms),
         }
         .check()
@@ -257,11 +330,79 @@ mod tests {
             host: "does-not-exist.invalid".into(),
             port: 80,
             banner: None,
+            tls: None,
             timeout: Duration::from_secs(5),
         }
         .check();
         assert_eq!(result.status, Status::Fail);
         assert_eq!(result.msg, "host not found");
+    }
+
+    fn tls_check(port: u16, banner: Option<&str>, verify: bool, warn_days: u64) -> CheckResult {
+        TcpCheck {
+            host: "localhost".into(),
+            port,
+            banner: banner.map(|b| b.as_bytes().to_vec()),
+            tls: Some(Tls {
+                verify,
+                warn: Duration::from_secs(warn_days * 86400),
+                fail: Duration::ZERO,
+            }),
+            timeout: Duration::from_secs(3),
+        }
+        .check()
+    }
+
+    #[test]
+    fn tls() {
+        use crate::monitors::tls::testing::{GENERALIZED_CERT, server as tls_server};
+        let port = tls_server(GENERALIZED_CERT, b"* OK IMAP ready\r\n", 5);
+        let ok = tls_check(port, None, false, 14);
+        assert_eq!((ok.status, ok.msg.as_str()), (Status::Up, "TLS ok"));
+        assert_eq!(ok.cert_expires, Some(2_569_233_600));
+        // The banner is read through TLS.
+        let banner = tls_check(port, Some("* OK"), false, 14);
+        assert_eq!(
+            (banner.status, banner.msg.as_str()),
+            (Status::Up, "banner ok")
+        );
+        let wrong = tls_check(port, Some("220 "), false, 14);
+        assert_eq!(wrong.msg, "unexpected banner");
+        // Expires within 100 years: WARN.
+        let soon = tls_check(port, None, false, 36500);
+        assert_eq!(soon.status, Status::Warn);
+        assert!(
+            soon.msg.starts_with("TLS ok, certificate expires in "),
+            "{soon:?}"
+        );
+        // Self-signed with verification.
+        let verified = tls_check(port, None, true, 14);
+        assert_eq!(
+            (verified.status, verified.msg.as_str()),
+            (Status::Fail, "TLS certificate from unknown issuer")
+        );
+        // A plain-text server is not TLS.
+        let plain = tls_check(server(b"SSH-2.0-x\r\n", 1), None, false, 14);
+        assert_eq!(plain.status, Status::Fail);
+        assert!(
+            plain.msg.starts_with("TLS") || plain.msg == "timeout",
+            "{plain:?}"
+        );
+    }
+
+    #[test]
+    fn tls_config_errors() {
+        let build_text = |table: &str| {
+            let mut problems = crate::config::Problems::default();
+            let mut p = problems.for_file(std::path::Path::new("m.toml"));
+            let file: TcpFile =
+                toml::from_str(&format!("host = \"h\"\nport = 1\n{table}")).unwrap();
+            build(file, Duration::from_secs(5), &mut p);
+            p.has_errors()
+        };
+        assert!(!build_text("tls = true\ntls_expiry_warn = \"30d\""));
+        assert!(build_text("tls_verify = false"));
+        assert!(build_text("tls = false\ntls_expiry_fail = \"1d\""));
     }
 
     #[test]
@@ -271,6 +412,7 @@ mod tests {
                 host: host.into(),
                 port: 22,
                 banner: None,
+                tls: None,
                 timeout: Duration::ZERO,
             }
             .target()
