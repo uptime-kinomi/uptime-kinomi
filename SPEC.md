@@ -182,6 +182,10 @@ max_queue = 32                       # due checks waiting for a worker, 1-10000 
 url = "https://other-pi.example.org/push/abcdef..."
 interval = "60s"                     # default 60s, min 10s
 
+[commands]                           # since 1.2: programs that `command` monitors may run (§4.8)
+allow = ["/usr/lib/nagios/plugins/"] # programs, or directories ending in "/"; default: none
+output_max_bytes = 65536             # limit of a kept output file (§4.8), 1 KiB-1 MiB
+
 [defaults]                           # defaults for all monitors, overridable per monitor
 interval = "60s"                     # built-in default 60s
 timeout = "10s"                      # built-in default 10s
@@ -197,7 +201,7 @@ notifications = ["phone"]            # built-in default [] (none)
 
 ```toml
 config_version = 1
-type = "http"                 # http | tcp | dns | push
+type = "http"                 # http | tcp | dns | push | ping | command
 name = "My blog"              # display name, 1-100 characters (HTML-escaped on output)
 description = "..."           # optional, max 1000 characters, shown on private pages only
 interval = "60s"              # min "10s"
@@ -369,7 +373,7 @@ or someone may be in the middle when `tls_verify = false`).
   GitHub API allows 60 unauthenticated requests per hour and IP address.
 
 **Compatibility.** New optional keys in `[http]`, so a 1.x minor release
-(§16). The planned `json` monitor type (§4.7) is replaced by these keys.
+(§16). The planned `json` monitor type (§4.9) is replaced by these keys.
 
 ### 4.4 `tcp` — TCP port open
 
@@ -380,6 +384,41 @@ host = "192.168.1.10"     # IP or host name
 port = 22
 expected_banner = "SSH-"    # optional: bytes the server sends first must start with this (max 256 bytes read)
 ```
+
+#### TLS (since 1.2)
+
+With `tls = true`, kinomi does a TLS handshake right after connecting
+(implicit TLS, as for IMAPS, SMTPS, LDAPS, MQTTS or a database port with
+TLS) and checks the certificate like `http` does:
+
+```toml
+type = "tcp"
+[tcp]
+host = "mail.example.org"
+port = 993
+tls = true                  # default false
+expected_banner = "* OK"    # optional; read through TLS
+tls_verify = true           # default; false warns
+tls_expiry_warn = "14d"     # default; WARN when the certificate expires within this time; "0s" off
+tls_expiry_fail = "0s"      # fail when the certificate expires within this time; "0s" off
+```
+
+- `tls_*` keys need `tls = true` (`check-config` error otherwise).
+- The same rustls setup as `http` (bundled Mozilla roots, TLS 1.2 and
+  1.3). The server name is `host`; for an IP address, no SNI is sent and
+  the certificate must contain that IP address.
+- The expiry date comes from the handshake of the check itself, so unlike
+  `http` there is no second handshake and no cache: one handshake per
+  check. It is logged as `cert_expires=YYYY-MM-DD`. Only the validity
+  dates of the leaf certificate are read, with the existing (fuzzed) reader.
+- Only implicit TLS. STARTTLS (a plain-text greeting first, as on SMTP port
+  25/587 or IMAP port 143) is not supported.
+- Messages: `TLS ok`, `banner ok` (with `expected_banner`), WARN
+  `TLS ok, certificate expires in 10 days`, and the TLS error classes of
+  `http` (`TLS certificate expired`, `TLS certificate from unknown issuer`,
+  `TLS certificate not valid for this host name`, `TLS handshake failed`,
+  `timeout`).
+- Compatibility: new optional keys, a 1.x minor release (§16).
 
 ### 4.5 `dns` — DNS record
 
@@ -460,9 +499,189 @@ grace = "1m"               # extra time before the monitor fails (default 1m, ma
   the push monitor's file warns; `[defaults] timeout` does not apply) and do
   not use the queue. They need the built-in server (`check-config` warns otherwise).
 
-### 4.7 Planned for later versions
-`ping` (ICMP; needs `CAP_NET_RAW` or `net.ipv4.ping_group_range`), `smtp`,
-`command` (local script, exit code), `mqtt`, `tls` (certificate check without HTTP), `udp`.
+### 4.7 `ping` — ICMP echo (since 1.2)
+
+```toml
+type = "ping"
+[ping]
+host = "192.168.1.1"      # IP or host name
+count = 3                 # echo requests per check, 1-10 (default 3), 500 ms apart
+loss_warn = false         # true: WARN when some (not all) requests got no reply
+slow_warn = "0s"          # WARN if the average round trip is slower than this (< timeout); "0s" off
+```
+
+- **No root, no capabilities.** kinomi uses Linux's unprivileged ICMP
+  datagram sockets (`socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)`, and
+  `IPPROTO_ICMPV6` for IPv6), never raw sockets and never the `ping`
+  program. The kernel allows them for the groups in
+  `net.ipv4.ping_group_range` (also for IPv6). systemd sets it to all
+  groups (`/usr/lib/sysctl.d/50-default.conf`), and Raspberry Pi OS does
+  too, so it works out of the box on current distributions. If the kernel
+  refuses, `check-config` warns (it opens a socket, sends nothing) and the
+  check fails with `ping not permitted (net.ipv4.ping_group_range)`;
+  the documentation shows the one-line fix for an administrator.
+- **Address:** `host` is resolved within `timeout` as for `tcp`; the first
+  address is used (the system's preference, usually IPv6 first when it is
+  reachable).
+- **Packets:** each check opens one socket, sends `count` echo requests
+  500 ms apart, and waits for replies until `timeout`. Each request carries
+  16 random bytes (new for every check) and a sequence number. `(count - 1)
+  × 500 ms` must be shorter than `timeout` (`check-config` error).
+- **Replies:** the kernel sets the ICMP identifier and only delivers echo
+  replies for this socket. kinomi accepts a reply only if it is at most 64
+  bytes, its type is echo reply (0, or 129 for IPv6) with code 0, its
+  sequence number is one it sent, and the payload equals the 16 bytes sent.
+  Duplicates count once; everything else is ignored. The reply parser is a
+  fuzz target (`icmp`). Round trips are measured by kinomi on the monotonic
+  clock, never taken from the packet.
+- **Result:** UP with at least one reply; the latency is the average round
+  trip of the replies. Lost packets are shown but do not fail the check;
+  with `loss_warn = true` they make it WARN (and so a `warn` notification,
+  at most once a day, §5.1). No reply at all always fails.
+
+| Result | `msg` |
+|---|---|
+| UP | `3/3 replies` (`2/3 replies` with loss) |
+| WARN | `2/3 replies, packet loss` (with `loss_warn`), `3/3 replies, slow response` (with `slow_warn`) |
+| FAIL | `no reply` |
+| FAIL | `host not found`, `network unreachable`, `host unreachable` |
+| FAIL | `ping not permitted (net.ipv4.ping_group_range)` |
+| FAIL | `IPv6 not available` (the kernel has no IPv6) |
+
+- Cost: one socket and at most `count` small packets per check; a worker
+  is busy for at most `timeout`. No extra threads.
+- Dependency: std cannot open ICMP sockets, and `forbid(unsafe_code)` rules
+  out calling the system directly. `rustix` (features `net`, `process` and
+  `pipe`: safe wrappers of the Linux system calls, no libc on Linux)
+  provides the socket here, and the process-group kill and the output pipe
+  for `command` (§4.8; `std::io::pipe` needs Rust 1.87, above the MSRV). It
+  is the one new dependency of 1.2 (with `linux-raw-sys` and `bitflags`),
+  justified in AGENTS.md.
+- Compatibility: a new monitor type, a 1.x minor release (§16).
+
+### 4.8 `command` — run a local program (since 1.2)
+
+The most general check: kinomi runs a program and maps its exit code to the
+result, following the Nagios plugin convention. With the
+`monitoring-plugins` package (Debian, Raspberry Pi OS; installed by an
+administrator) this covers disk space, NTP, SMTP, IMAP, databases, SNMP,
+SSH and more without new monitor types in kinomi.
+
+```toml
+# kinomi.toml
+[commands]
+allow = ["/usr/lib/nagios/plugins/", "checks/backup-age.sh"]   # default: none
+output_max_bytes = 65536     # limit of a kept output file, 1 KiB-1 MiB (default 64 KiB)
+```
+
+```toml
+# monitors/disk.toml
+type = "command"
+interval = "5m"
+timeout = "30s"
+[command]
+program = "/usr/lib/nagios/plugins/check_disk"   # absolute or relative to the config dir
+args = ["-w", "20%", "-c", "10%", "-p", "/"]     # optional
+keep_output = false          # true: keep the output of the last run for download
+```
+
+**Who may run what.** Today, writing a monitor file cannot run code. A
+`command` monitor can, so `kinomi.toml` decides which programs may be run:
+
+- `[commands] allow` lists programs, or directories (ending in `/`) whose
+  programs may be run (only files directly in them, not in subdirectories).
+  Relative entries are resolved against the config dir. Without `allow`,
+  every `command` monitor is a `check-config` error.
+- The general system directories (`/bin/`, `/sbin/`, `/usr/bin/`,
+  `/usr/sbin/`, `/usr/local/bin/`, `/usr/local/sbin/`) are not accepted as
+  directory entries (`check-config` error): that would allow a shell. A
+  single program from them may be listed.
+- `program` and the `allow` entries are resolved to real paths (symlinks
+  and `..` resolved) at `check-config` and at startup; the program must be a
+  regular, executable file inside an allowed entry. kinomi runs exactly the
+  resolved path.
+- The program and every directory above it must be owned by root or by
+  the user running kinomi and must not be writable by group or others
+  (like OpenSSH's `StrictModes`), so no other local user can change what
+  runs (`check-config` error).
+- `command` monitors are refused when kinomi runs as root (`check-config`
+  error).
+
+**How it runs.**
+
+- No shell and no `PATH` lookup: `program` with `args` (at most 32, each at
+  most 1024 bytes, no NUL bytes), working directory `/`.
+- The environment is cleared, then only `PATH=/usr/local/bin:/usr/bin:/bin`,
+  `HOME` and `LC_ALL=C` are set.
+- stdin is `/dev/null`. By default stdout and stderr are `/dev/null` too:
+  the output is never read, stored or shown (§11), so a program cannot put
+  text on a page or into a notification. To see why a check fails, run the
+  command by hand, or keep the output (below).
+- The program runs in its own process group. At `timeout`, the whole group
+  gets `SIGKILL` and is reaped, so a hanging program or its children never
+  pile up. At most `workers` programs run at once (§6).
+- Arguments are visible to all local users (`ps`). Passwords do not belong
+  in `args`; use a program that reads them from a file (the documentation
+  shows how for the common plugins).
+
+**Result.**
+
+| Exit | Result | `msg` |
+|---|---|---|
+| 0 | UP | `exit 0` |
+| 1 | WARN | `exit 1 (warning)` |
+| 2 | FAIL | `exit 2 (critical)` |
+| 3 | FAIL | `exit 3 (unknown)` |
+| other | FAIL | `exit 4` |
+| signal | FAIL | `killed by signal 11` |
+| – | FAIL | `timeout` (killed at `timeout`), `cannot start program` |
+
+The latency is the run time of the program.
+
+**Keeping the output (`keep_output = true`).** For debugging, the output of
+the last run can be kept in a file and downloaded, never shown:
+
+- stdout and stderr go into one pipe. kinomi copies the bytes unchanged
+  (never parsed, decoded or interpreted) into a temporary file, up to
+  `output_max_bytes`, and reads and discards the rest so the program does
+  not block. After the run, kinomi adds one line of its own at the end
+  (`# uptime-kinomi: exit 2 after 1.3 s, 2026-11-16T12:00:00Z`, plus
+  `# truncated after 65536 bytes` when cut) and renames the file to
+  `{output_dir}/private/_output/{monitor}.txt` (mode `0640`, like all
+  generated files, §8.3). Only the last run is kept.
+- `_output` is not a valid page ID (IDs start with a letter or digit, §3.2),
+  so the path never collides with a page.
+- **Download only:** the private page links to the file ("output of the
+  last run") for monitors with `keep_output`. The content never appears in
+  any page, in `status.json`, the feed, `/metrics`, notifications or the
+  check log.
+- The built-in server serves `/private/_output/{monitor}.txt` with Basic
+  Auth (§9.2) as `Content-Type: application/octet-stream`,
+  `Content-Disposition: attachment; filename="{monitor}.txt"`,
+  `Cache-Control: no-store` and the usual `nosniff` and CSP headers (§9.4),
+  so a browser saves the file instead of rendering it. In mode B (§9.1) the
+  proxy configurations in `contrib/` set the same headers for that path.
+- Without a private page or `htpasswd_file`, the file is still written
+  (readable on the Pi, e.g. over SSH) but not served (`check-config` warns).
+- Size: at most `output_max_bytes` per monitor with `keep_output`, in
+  `output_dir`, which is a tmpfs (RAM) by default (§10.2): 50 such monitors
+  with the 64 KiB default need at most 3.2 MB. Written once per check, so
+  without a tmpfs a long `interval` keeps SD card writes low.
+- At startup, kinomi removes files in `private/_output/` of monitors that
+  no longer keep their output.
+- The output may contain whatever the program prints, including secrets
+  of the monitored system; it has the visibility of a private page.
+
+- Cost: one `fork`/`exec` per check (std uses `posix_spawn` where it can),
+  plus whatever the program needs; the Nagios plugins need 1-3 MB for a
+  moment. With `interval = "5m"` this is negligible even on a Pi 1.
+- Compatibility: a new monitor type and a new optional table in
+  `kinomi.toml`, a 1.x minor release (§16).
+
+### 4.9 Planned for later versions
+`smtp` and `imap` with STARTTLS, `mqtt`, `udp`, `ntp`, domain expiry (RDAP),
+a local `system` monitor (free disk space, temperature) without an
+external program.
 
 ---
 
@@ -766,7 +985,8 @@ duration, last log flush).
 ├── public/{page}/badge/uptime/{monitor}.svg  /{page}/badge/uptime/{monitor}.svg
 ├── private/assets/kinomi.css          /private/assets/kinomi.css   (if there are private pages)
 ├── private/assets/favicon.svg         /private/assets/favicon.svg
-└── private/{page}/...                 /private/{page}/...        (public = false)
+├── private/{page}/...                 /private/{page}/...        (public = false)
+└── private/_output/{monitor}.txt      /private/_output/{monitor}.txt (§4.8, keep_output)
 ```
 - The file tree mirrors the URL space, so in mode B (§9.1) a proxy serves
   `public/` at `/` and `private/` at `/private/` with no rewriting. All links
@@ -902,6 +1122,7 @@ Example configs for nginx and Apache for both modes are shipped in `contrib/`.
 | `GET/HEAD /` | – | redirect to `default_page` (default: the public page with the alphabetically first ID; none: `404`) |
 | `GET/HEAD /{page}/...` | public pages | files from `public/` |
 | `GET/HEAD /private/{page}/...` | Basic Auth | files from `private/` |
+| `GET/HEAD /private/_output/{monitor}.txt` | Basic Auth | output of the last run of a `command` monitor, as a download (§4.8) |
 | `GET/HEAD /assets/...` | – (below `/private/`: Basic Auth) | style sheet and favicon (also below `/private/`) |
 | `GET/POST /push/{token}` | token | §4.6 |
 | `GET/HEAD /healthz` | – | `200 ok` while the dispatcher and the event loop run (each seen within 10 s), else `503` |
@@ -1103,8 +1324,9 @@ Exit codes: 0 ok, 1 runtime error, 2 configuration or usage error,
 
 ### 10.6 Running without root
 kinomi is designed to run as an ordinary user. Nothing needs privileges:
-it listens on an unprivileged port (default 8080), uses no raw sockets, and
-writes only to its own directories.
+it listens on an unprivileged port (default 8080), uses no raw sockets
+(`ping` uses unprivileged ICMP datagram sockets, §4.7), and writes only to
+its own directories.
 
 **Default directories** (when not set in `kinomi.toml`). They depend only
 on the user (`$HOME`, `$XDG_STATE_HOME`, UID), never on how kinomi was
@@ -1149,9 +1371,10 @@ message of `run` print all directories.
 **Root is discouraged:** `run` with UID 0 (read from `/proc/self/status`,
 no `unsafe` needed) prints a warning recommending a dedicated user.
 
-**Features that will need privileges later** (not implemented yet) are optional and
-documented with the least privilege needed, e.g. ICMP `ping` via the kernel
-setting `net.ipv4.ping_group_range` instead of root.
+**Features that need a system setting** are optional and documented with
+the least privilege needed: ICMP `ping` needs the kernel setting
+`net.ipv4.ping_group_range` (the default with systemd and on Raspberry Pi
+OS), never root or `CAP_NET_RAW`.
 
 ---
 
@@ -1160,10 +1383,12 @@ setting `net.ipv4.ping_group_range` instead of root.
 2. Every byte from the network is size-limited before parsing; every parser
    of network data is fuzzed in CI (`fuzz/`): HTTP requests and routing,
    Basic Auth, push, redirect targets, DNS responses, certificates, release
-   metadata, JSON responses (compared with `serde_json`). So are the parsers of configuration, log and state files. HTTP
+   metadata, JSON responses (compared with `serde_json`), ICMP echo replies. So are the parsers of configuration, log and state files. HTTP
    responses are parsed by ureq.
 3. Nothing fetched from monitored targets is stored, displayed or forwarded,
-   only kinomi's own summary.
+   only kinomi's own summary. The output of `command` programs is not read
+   by default; with `keep_output` it is copied unparsed into a file that is
+   only offered as a download behind Basic Auth, never shown (§4.8).
 4. Push endpoint: constant-time token check, rate limit, body never read,
    extra data ignored.
 5. No JavaScript, strict CSP, no external resources on pages.
@@ -1171,6 +1396,9 @@ setting `net.ipv4.ping_group_range` instead of root.
 7. Secrets via files with permission warnings; bcrypt-hashed passwords.
 8. Minimal, audited dependencies (`cargo-deny` for licenses/advisories in CI).
 9. Runs as an unprivileged user, no capabilities required (§10.6).
+   `command` monitors only run programs that `kinomi.toml` allows, from
+   paths no other user can change, without a shell, with a cleared
+   environment and a hard timeout for the whole process group (§4.8).
 10. Releases: checksums signed with offline minisign keys, verified by
     `self-update` before anything is replaced (§12.1, §12.2).
 11. Vulnerabilities are reported privately (GitHub security advisories);
@@ -1342,7 +1570,8 @@ enable the timer by default (`--no-auto-update`, `kinomi_auto_update: false`).
 | ✅ Fuzzing | cargo-fuzz targets for every parser of network data and of config, log and state files (`fuzz/`), in CI |
 | ✅ **v1.0** | Hardening, documentation, compatibility policy (§16), first stable release |
 | ✅ **v1.1** | JSON checks for `http` monitors (§4.3) |
-| later | `ping`, `smtp` notifier, `.deb` packages, uptime-kuma config importer |
+| **v1.2** | `ping` (§4.7), `command` (§4.8), TLS for `tcp` (§4.4) |
+| later | §4.9, `smtp` notifier, `.deb` packages, uptime-kuma config importer |
 
 ---
 
