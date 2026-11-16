@@ -8,12 +8,13 @@ use std::process::Command;
 /// Warnings the examples trigger on purpose or that depend on the system.
 /// Git does not keep the "others" permission bits, so in a checkout every
 /// secret is readable by all users; the cross build containers have no
-/// time zone database.
+/// time zone database; CI runners do not allow ping sockets.
 const EXPECTED_WARNINGS: &[&str] = &[
     "readable by all users",
     "http.tls_verify = false",
     "private pages on a non-loopback address",
     "not found in the system time zone database",
+    "ping is not permitted for this user",
 ];
 
 #[test]
