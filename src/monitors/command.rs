@@ -532,16 +532,37 @@ mod tests {
 
     #[test]
     fn no_descriptors_are_inherited() {
+        use std::os::fd::AsRawFd;
         let dir = TestDir::new("command-fds");
         let out = dir.path().join("fds.txt");
         // A ping socket and another check's pipe open meanwhile must not
-        // reach the program either.
-        let _socket = crate::monitors::ping::tests_open_socket();
-        let (_r, _w) = rustix::pipe::pipe_with(PipeFlags::CLOEXEC).unwrap();
+        // reach the program, nor this check's own pipe (ours: every fd
+        // above 2 that the program sees and the test process did not get
+        // from its own parent, e.g. a CI runner).
+        let socket = crate::monitors::ping::tests_open_socket();
+        let (r, w) = rustix::pipe::pipe_with(PipeFlags::CLOEXEC).unwrap();
+        let inherited = |pid: &str| -> Vec<String> {
+            fs::read_dir(format!("/proc/{pid}/fd"))
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        };
+        let before = inherited("self");
         run("ls /proc/$$/fd", 5000, Some(&out));
         let text = fs::read_to_string(&out).unwrap();
-        let fds: Vec<&str> = text.lines().filter(|l| !l.starts_with('#')).collect();
-        assert_eq!(fds, ["0", "1", "2"], "{text}");
+        let mut ours: Vec<i32> = vec![r.as_raw_fd(), w.as_raw_fd()];
+        ours.extend(socket.as_ref().map(|s| s.as_raw_fd()));
+        let leaked: Vec<&str> = text
+            .lines()
+            .filter(|l| !l.starts_with('#') && !["0", "1", "2"].contains(l))
+            .filter(|l| {
+                // The test process's own non-kinomi fds may be inherited;
+                // kinomi's (opened after `before`, or listed in `ours`) not.
+                !before.iter().any(|b| b == l) || ours.iter().any(|o| o.to_string() == *l)
+            })
+            .collect();
+        assert!(leaked.is_empty(), "{text}");
     }
 
     #[test]

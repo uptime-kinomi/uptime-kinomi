@@ -69,6 +69,12 @@ single programs where you can:
    whole plugin directory (``/usr/lib/nagios/plugins/``), which contains
    ``negate`` and ``urlize``.
 
+   If only you write the configuration (as kinomi's user, or as the
+   administrator of a system-wide installation), this mostly protects
+   against mistakes: whoever can write monitor files can usually run
+   programs as that user anyway. It matters when monitor files come from
+   others, e.g. a shared Git repository deployed with Ansible.
+
 ``check-config`` refuses:
 
 * the system program directories ``/bin/``, ``/sbin/``, ``/usr/bin/``,
