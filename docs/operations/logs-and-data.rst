@@ -26,7 +26,8 @@ Where is what?
    * - ``state/`` in the data directory
      - The current state of each monitor, derived from the log.
    * - output directory
-     - The generated pages. Regenerated at every start; nothing to back up.
+     - The generated pages, regenerated at every start, and the kept output
+       of command monitors (``private/_output/``). Nothing to back up.
 
 To change them, set ``data_dir`` and ``log_dir`` in ``[storage]`` and
 ``output_dir`` in ``[pages]`` of ``kinomi.toml``.

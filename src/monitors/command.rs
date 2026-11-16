@@ -10,16 +10,19 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
+use rustix::pipe::PipeFlags;
 use rustix::process::{Pid, Signal, WaitId, WaitIdOptions};
 use serde::Deserialize;
 
 use super::{Check, CheckResult, Context};
 use crate::clock;
 use crate::config::FileProblems;
-use crate::config::global::Allowed;
+use crate::config::global::{Allowed, lexical_path};
 use crate::paths;
 use crate::storage::statefile::{Durability, write_atomic};
 
@@ -43,7 +46,10 @@ pub struct CommandFile {
 }
 
 pub struct CommandCheck {
+    /// The resolved file that runs ...
     program: PathBuf,
+    /// ... and the name it is called by (argv[0]), as written.
+    name: PathBuf,
     args: Vec<String>,
     home: Option<String>,
     timeout: Duration,
@@ -72,22 +78,36 @@ pub fn build(
     if paths::running_as_root() {
         p.error("command monitors are not run as root; run kinomi as an ordinary user");
     }
-    let path = crate::config::resolve_path(ctx.config_dir, &file.program);
-    let program = match fs::canonicalize(&path) {
+    let Some(written) = lexical_path(ctx.config_dir, &file.program) else {
+        p.error("command.program must not contain ..");
+        return None;
+    };
+    let program = match fs::canonicalize(&written) {
         Ok(real) => real,
         Err(_) => {
-            p.error(format!("command.program {} does not exist", path.display()));
+            p.error(format!(
+                "command.program {} does not exist",
+                written.display()
+            ));
             return None;
         }
     };
-    let allowed = commands.allow.iter().any(|a| match a {
-        Allowed::Program(allowed) => *allowed == program,
-        Allowed::Dir(dir) => program.parent() == Some(dir.as_path()),
-    });
-    if !allowed {
+    // Both the path as written and the file it resolves to must be
+    // allowed: a symlink in an allowed directory cannot lead to a shell,
+    // and a symlink to a multi-call program (busybox) keeps its name.
+    let matches = |path: &Path, of: fn(&Allowed) -> &Path| {
+        commands.allow.iter().any(|a| {
+            if a.dir {
+                path.parent() == Some(of(a))
+            } else {
+                path == of(a)
+            }
+        })
+    };
+    if !matches(&written, |a| &a.written) || !matches(&program, |a| &a.real) {
         p.error(format!(
             "command.program {} is not allowed by [commands] allow in kinomi.toml",
-            program.display()
+            written.display()
         ));
     }
     match fs::metadata(&program) {
@@ -97,7 +117,10 @@ pub fn build(
             program.display()
         )),
     }
-    if let Some(unsafe_path) = writable_by_others(&program) {
+    // The symlinks on the way count too: whoever can change them decides
+    // what runs.
+    if let Some(unsafe_path) = writable_by_others(&written).or_else(|| writable_by_others(&program))
+    {
         p.error(format!(
             "command.program: {} can be changed by other users (owner must be root or you, \
              not writable by group or others)",
@@ -126,6 +149,7 @@ pub fn build(
     });
     Some(CommandCheck {
         program,
+        name: written,
         args: file.args,
         home: std::env::var("HOME").ok(),
         timeout,
@@ -152,6 +176,7 @@ impl Check for CommandCheck {
         let start = Instant::now();
         let mut command = Command::new(&self.program);
         command
+            .arg0(&self.name)
             .args(&self.args)
             .env_clear()
             .env("PATH", PATH)
@@ -176,11 +201,11 @@ impl Check for CommandCheck {
         // Command holds the write end of the pipe: closing it lets the
         // reader see the end of the output once the program is done.
         drop(command);
-        let mut child = match spawned {
+        let child = match spawned {
             Ok(child) => child,
             Err(_) => return CheckResult::fail(Some(start.elapsed()), "cannot start program"),
         };
-        let finished = wait(&mut child, self.timeout);
+        let finished = wait(child, self.timeout);
         let elapsed = start.elapsed();
         let result = match finished {
             None => CheckResult::fail(Some(elapsed), "timeout"),
@@ -196,25 +221,24 @@ impl Check for CommandCheck {
                 (None, None) => CheckResult::fail(Some(elapsed), "cannot start program"),
             },
         };
-        if let (Some(output), Some(reader)) = (&self.output, reader) {
+        if let (Some(output), Some((reader, stop))) = (&self.output, reader) {
             // The process group is gone, so the pipe is closed and the
             // reader ends. A process that left the group (setsid) could
-            // keep it open: then the output is not saved, and the check
-            // does not wait for it.
+            // keep it open: after a short grace the reader stops anyway,
+            // and what arrived so far is saved.
             let grace = Instant::now();
             while !reader.is_finished() && grace.elapsed() < OUTPUT_GRACE {
                 thread::sleep(POLL);
             }
-            if reader.is_finished() {
-                let (bytes, truncated) = reader.join().unwrap_or_default();
-                save_output(output, bytes, truncated, &result, elapsed);
-            }
+            stop.store(true, Ordering::Relaxed);
+            let (bytes, truncated) = reader.join().unwrap_or_default();
+            save_output(output, bytes, truncated, &result, elapsed);
         }
         result
     }
 
     fn target(&self) -> String {
-        self.program.display().to_string()
+        self.name.display().to_string()
     }
 
     fn output_file(&self) -> Option<&Path> {
@@ -224,44 +248,92 @@ impl Check for CommandCheck {
 
 /// stdout and stderr of `command` into one pipe, read by a thread that
 /// keeps at most `max` bytes and discards the rest (so the program never
-/// blocks on a full pipe). Returns the output and whether it was cut.
-fn pipe_into(command: &mut Command, max: u64) -> Option<thread::JoinHandle<(Vec<u8>, bool)>> {
-    let (read, write) = rustix::pipe::pipe().ok()?;
+/// blocks on a full pipe). The thread ends at the end of the output or
+/// when the returned flag is set. It returns the output and whether it
+/// was cut.
+fn pipe_into(command: &mut Command, max: u64) -> Option<(Reader, Arc<AtomicBool>)> {
+    // CLOEXEC: programs of other monitors, started meanwhile, must not
+    // inherit either end. std's dup2 onto stdout/stderr clears it there.
+    let (read, write) = rustix::pipe::pipe_with(PipeFlags::CLOEXEC).ok()?;
     let write2 = write.try_clone().ok()?;
+    // Non-blocking, so the reader can notice the stop flag.
+    rustix::io::ioctl_fionbio(&read, true).ok()?;
     command
         .stdout(Stdio::from(write))
         .stderr(Stdio::from(write2));
     let mut read = File::from(read);
-    thread::Builder::new()
+    let stop = Arc::new(AtomicBool::new(false));
+    let stopped = stop.clone();
+    let reader = thread::Builder::new()
         .name("command-output".into())
         .spawn(move || {
             let mut kept = Vec::new();
-            let _ = (&mut read).take(max).read_to_end(&mut kept);
-            let rest = std::io::copy(&mut read, &mut std::io::sink()).unwrap_or(0);
-            (kept, rest > 0)
+            let mut truncated = false;
+            let mut buf = [0u8; 8192];
+            loop {
+                match read.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let room = usize::try_from(max)
+                            .unwrap_or(usize::MAX)
+                            .saturating_sub(kept.len());
+                        kept.extend_from_slice(&buf[..n.min(room)]);
+                        truncated |= n > room;
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        if stopped.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        thread::sleep(POLL);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(_) => break,
+                }
+            }
+            (kept, truncated)
         })
-        .ok()
+        .ok()?;
+    Some((reader, stop))
+}
+
+type Reader = thread::JoinHandle<(Vec<u8>, bool)>;
+
+/// Process groups of the programs running now, killed when kinomi stops.
+static RUNNING: Mutex<Vec<i32>> = Mutex::new(Vec::new());
+
+/// Kill every program that is still running (at shutdown): they are in
+/// their own process groups, so they would not get kinomi's signal.
+pub fn kill_running() {
+    let running = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
+    for pid in running.iter().filter_map(|p| Pid::from_raw(*p)) {
+        let _ = rustix::process::kill_process_group(pid, Signal::KILL);
+    }
 }
 
 /// Wait for the program until `timeout`. Whatever is left of its process
-/// group is killed afterwards, and at the timeout the whole group is. The
-/// group is killed before the program is reaped, so its ID cannot have
-/// been reused by then. `None`: timed out.
-fn wait(child: &mut Child, timeout: Duration) -> Option<std::process::ExitStatus> {
+/// group is killed afterwards, and at the timeout the program and its whole
+/// group are. Both are killed before the program is reaped, so its ID
+/// cannot have been reused by then. `None`: timed out (or the program
+/// could not be stopped; it is then reaped in the background).
+fn wait(mut child: Child, timeout: Duration) -> Option<std::process::ExitStatus> {
     let start = Instant::now();
     let pid = i32::try_from(child.id()).ok().and_then(Pid::from_raw);
-    let exited = loop {
+    let raw = pid.map(Pid::as_raw_pid);
+    if let Some(raw) = raw {
+        RUNNING.lock().unwrap_or_else(|e| e.into_inner()).push(raw);
+    }
+    let exited = |pid: Option<Pid>| match pid {
         // Exited (a zombie, still holding its ID), without reaping it.
-        let done = match pid {
-            Some(pid) => rustix::process::waitid(
-                WaitId::Pid(pid),
-                WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
-            )
-            .map(|s| s.is_some())
-            .unwrap_or(true),
-            None => true,
-        };
-        if done {
+        Some(pid) => rustix::process::waitid(
+            WaitId::Pid(pid),
+            WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
+        )
+        .map(|s| s.is_some())
+        .unwrap_or(true),
+        None => true,
+    };
+    let in_time = loop {
+        if exited(pid) {
             break true;
         }
         let left = timeout.saturating_sub(start.elapsed());
@@ -273,8 +345,36 @@ fn wait(child: &mut Child, timeout: Duration) -> Option<std::process::ExitStatus
     if let Some(pid) = pid {
         let _ = rustix::process::kill_process_group(pid, Signal::KILL);
     }
+    let mut reapable = in_time;
+    if !in_time {
+        // Also by PID: it may have moved to another process group.
+        let _ = child.kill();
+        let grace = Instant::now();
+        while !reapable && grace.elapsed() < OUTPUT_GRACE {
+            reapable = exited(pid);
+            if !reapable {
+                thread::sleep(POLL);
+            }
+        }
+    }
+    if let Some(raw) = raw {
+        RUNNING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|p| *p != raw);
+    }
+    if !reapable {
+        // Could not be killed (e.g. it changed its user): never block the
+        // worker; reap it whenever it ends.
+        let _ = thread::Builder::new()
+            .name("command-reaper".into())
+            .spawn(move || {
+                let _ = child.wait();
+            });
+        return None;
+    }
     let status = child.wait().ok();
-    if exited { status } else { None }
+    if in_time { status } else { None }
 }
 
 fn save_output(
@@ -332,6 +432,7 @@ mod tests {
     fn run(script: &str, timeout_ms: u64, output: Option<&Path>) -> CheckResult {
         CommandCheck {
             program: "/bin/sh".into(),
+            name: "/bin/sh".into(),
             args: vec!["-c".into(), script.into()],
             home: None,
             timeout: Duration::from_millis(timeout_ms),
@@ -360,6 +461,29 @@ mod tests {
                 "{script}"
             );
         }
+    }
+
+    #[test]
+    fn program_keeps_the_name_it_was_called_by() {
+        let dir = TestDir::new("command-arg0");
+        let out = dir.path().join("arg0.txt");
+        let check = CommandCheck {
+            program: "/bin/sh".into(),
+            name: "/opt/checks/check_x".into(),
+            args: vec![
+                "-c".into(),
+                "tr '\\0' '\\n' < /proc/$$/cmdline | head -n 1".into(),
+            ],
+            home: None,
+            timeout: Duration::from_secs(5),
+            output: Some(Output {
+                file: out.clone(),
+                max_bytes: 1024,
+            }),
+        };
+        assert_eq!(check.check().msg, "exit 0");
+        let text = fs::read_to_string(&out).unwrap();
+        assert!(text.starts_with("/opt/checks/check_x\n"), "{text}");
     }
 
     #[test]
@@ -404,6 +528,39 @@ mod tests {
         assert!(start.elapsed() < Duration::from_millis(900));
         thread::sleep(Duration::from_millis(1200));
         assert!(!marker.exists());
+    }
+
+    #[test]
+    fn no_descriptors_are_inherited() {
+        let dir = TestDir::new("command-fds");
+        let out = dir.path().join("fds.txt");
+        // A ping socket and another check's pipe open meanwhile must not
+        // reach the program either.
+        let _socket = crate::monitors::ping::tests_open_socket();
+        let (_r, _w) = rustix::pipe::pipe_with(PipeFlags::CLOEXEC).unwrap();
+        run("ls /proc/$$/fd", 5000, Some(&out));
+        let text = fs::read_to_string(&out).unwrap();
+        let fds: Vec<&str> = text.lines().filter(|l| !l.starts_with('#')).collect();
+        assert_eq!(fds, ["0", "1", "2"], "{text}");
+    }
+
+    #[test]
+    fn output_held_open_by_an_escaped_process_does_not_block() {
+        let dir = TestDir::new("command-setsid");
+        let out = dir.path().join("out.txt");
+        let start = Instant::now();
+        let result = run("echo before; setsid sleep 3 & exit 0", 5000, Some(&out));
+        assert_eq!(result.msg, "exit 0");
+        assert!(
+            start.elapsed() < Duration::from_millis(2000),
+            "{:?}",
+            start.elapsed()
+        );
+        let text = fs::read_to_string(&out).unwrap();
+        assert!(
+            text.starts_with("before\n# uptime-kinomi: exit 0"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -510,6 +667,24 @@ mod tests {
             assert!(
                 errors.iter().any(|e| e.contains(error)),
                 "{table}: {errors:?}"
+            );
+        }
+        // A symlink in an allowed directory to a program outside it.
+        let dir = TestDir::new("command-symlink");
+        std::os::unix::fs::symlink("/bin/sh", dir.path().join("check_x")).unwrap();
+        let errors = config_problems(
+            &format!("[commands]\nallow = [\"{}/\"]\n", dir.path().display()),
+            &format!("program = \"{}/check_x\"", dir.path().display()),
+        );
+        assert!(
+            errors.iter().any(|e| e.contains("is not allowed")),
+            "{errors:?}"
+        );
+        for program in ["/bin/../bin/true", "/usr/bin/../../bin/true"] {
+            let errors = config_problems(allow_true, &format!("program = \"{program}\""));
+            assert!(
+                errors.iter().any(|e| e.contains("must not contain ..")),
+                "{errors:?}"
             );
         }
         // A script in a directory others can write to (the test dir is

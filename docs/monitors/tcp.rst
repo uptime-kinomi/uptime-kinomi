@@ -53,7 +53,8 @@ A port with TLS
 ---------------
 
 Many services speak TLS from the first byte: IMAPS (993), SMTPS (465),
-LDAPS (636), MQTT over TLS (8883), databases with TLS. With ``tls = true``,
+LDAPS (636), MQTT over TLS (8883). (Not PostgreSQL or MySQL: they start
+TLS inside their own protocol; check those without ``tls``.) With ``tls = true``,
 kinomi does the TLS handshake after connecting, checks the certificate
 like an :doc:`http` monitor does, and warns before it expires (since
 kinomi 1.2):
@@ -103,13 +104,15 @@ Keys
      - ``true``: TLS handshake after connecting (implicit TLS).
    * - ``tls_verify``
      - ``true``
-     - ``false`` accepts any certificate (warns). Needs ``tls = true``.
+     - ``false`` accepts any certificate (warns).
    * - ``tls_expiry_warn``
      - ``"14d"``
      - WARN when the certificate expires within this time.
    * - ``tls_expiry_fail``
      - ``"0s"`` (off)
      - Fail when the certificate expires within this time.
+
+All ``tls_*`` keys need ``tls = true``.
 
 Messages you may see
 --------------------
@@ -123,6 +126,11 @@ Messages you may see
      - The connection was accepted and the TLS handshake succeeded.
    * - ``TLS ok, certificate expires in 10 days``
      - Within ``tls_expiry_warn`` (WARN) or ``tls_expiry_fail`` (failure).
+       With ``expected_banner``: ``banner ok, certificate expires in 10
+       days``.
+   * - ``TLS ok, certificate check failed``
+     - The handshake worked, but the certificate's expiry could not be
+       read (WARN).
    * - ``TLS certificate expired``, ``... from unknown issuer``, ``... not
        valid for this host name``, ``TLS handshake failed``
      - Certificate problems, or the port does not speak TLS.

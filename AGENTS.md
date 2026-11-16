@@ -106,6 +106,8 @@ testdata/                  generated test vectors and old releases' data (with t
          fn check(&self) -> CheckResult;
          /// Target for private pages, e.g. the URL.
          fn target(&self) -> String;
+         /// Only `command` with `keep_output`: the kept output file.
+         fn output_file(&self) -> Option<&Path> { None }
      }
      ```
    - unit tests in the same file, against local `TcpListener` servers.
@@ -134,7 +136,7 @@ Dependencies in use:
 |---|---|
 | `serde`, `toml` ✅ | configuration (parsing only) and state files (written by hand) |
 | `ureq` with `rustls` (ring provider) and `webpki-roots` ✅ | outbound HTTP(S): http monitor, notifications, heartbeat, self-update; bundled Mozilla CA roots |
-| `rustls` ✅ | direct use for the certificate expiry handshake and TLS error classification |
+| `rustls` ✅ | direct use, driven by hand with a deadline per read/write (`monitors/tls.rs`): the certificate expiry handshake, TLS of `tcp` monitors, TLS error classification |
 | `ring` ✅ | SHA-256 and random numbers (already pulled in by rustls) |
 | `httparse` ✅ | inbound HTTP request parsing |
 | `jiff` ✅ | time zones from the system tz database |

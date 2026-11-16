@@ -31,11 +31,29 @@ pub struct Commands {
     pub output_max_bytes: u64,
 }
 
+/// An entry of `[commands] allow`: the path as written (absolute, no
+/// `..`) and resolved (symlinks followed). A program must match both.
 #[derive(Debug, PartialEq)]
-pub enum Allowed {
-    Program(PathBuf),
-    /// Programs directly in this directory.
-    Dir(PathBuf),
+pub struct Allowed {
+    pub written: PathBuf,
+    pub real: PathBuf,
+    /// A directory entry: programs directly in it.
+    pub dir: bool,
+}
+
+/// `path` resolved against `config_dir`, without `.` components; `None`
+/// if it contains `..`.
+pub fn lexical_path(config_dir: &Path, path: &Path) -> Option<PathBuf> {
+    let path = resolve_path(config_dir, path);
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            std::path::Component::ParentDir => return None,
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    Some(out)
 }
 
 /// Never accepted as a directory entry: they contain shells.
@@ -204,7 +222,10 @@ fn commands(raw: CommandsFile, config_dir: &Path, p: &mut super::FileProblems) -
     let mut allow = Vec::new();
     for entry in &raw.allow {
         let is_dir = entry.ends_with('/');
-        let path = resolve_path(config_dir, Path::new(entry));
+        let Some(path) = lexical_path(config_dir, Path::new(entry)) else {
+            p.error(format!("commands.allow: {entry} must not contain .."));
+            continue;
+        };
         let Ok(real) = std::fs::canonicalize(&path) else {
             p.error(format!("commands.allow: {} does not exist", path.display()));
             continue;
@@ -220,10 +241,18 @@ fn commands(raw: CommandsFile, config_dir: &Path, p: &mut super::FileProblems) -
                     "commands.allow: {entry} contains shells and cannot be allowed as a whole; list single programs from it"
                 ));
             } else {
-                allow.push(Allowed::Dir(real));
+                allow.push(Allowed {
+                    written: path,
+                    real,
+                    dir: true,
+                });
             }
         } else if real.is_file() {
-            allow.push(Allowed::Program(real));
+            allow.push(Allowed {
+                written: path,
+                real,
+                dir: false,
+            });
         } else {
             p.error(format!(
                 "commands.allow: {entry} is not a file (a directory needs a trailing /)"

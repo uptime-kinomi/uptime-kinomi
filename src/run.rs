@@ -267,6 +267,9 @@ pub fn run(mut config: Config) -> Result<(), String> {
     }
 
     scheduler.stop();
+    // Programs of command monitors run in their own process groups and
+    // would outlive kinomi without a service manager.
+    crate::monitors::command::kill_running();
     while let Ok(event) = rx.try_recv() {
         service.handle(event);
     }

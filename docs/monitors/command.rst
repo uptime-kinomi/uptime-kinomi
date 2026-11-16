@@ -32,6 +32,7 @@ kinomi 1.2.
    * - (too slow)
      - ✗ failure
      - ``timeout``: the program and everything it started are stopped
+       (except a process that detached itself with ``setsid``)
 
 As always, a failure becomes DOWN after ``retries``, and WARN counts as up
 but sends a ``warn`` notification (at most once a day).
@@ -47,17 +48,38 @@ allowed, and without that list every command monitor is an error:
    :caption: kinomi.toml
 
    [commands]
-   allow = ["/usr/lib/nagios/plugins/", "checks/backup-age.sh"]
+   allow = [
+     "/usr/lib/nagios/plugins/check_disk",
+     "/usr/lib/nagios/plugins/check_ntp_time",
+     "checks/backup-age.sh",
+   ]
 
-An entry ending in ``/`` allows every program directly in that directory;
-anything else is one program. Relative paths are relative to the
-configuration directory. ``check-config`` refuses:
+Relative paths are relative to the configuration directory. An entry
+ending in ``/`` allows every program directly in that directory, but list
+single programs where you can:
 
-* directories with shells in them (``/bin/``, ``/usr/bin/`` and the like):
-  list single programs from there instead;
-* a program, or any directory above it, that another user could change:
-  it must belong to root or to you, and must not be writable by group or
-  others (fix with ``chmod g-w,o-w``);
+.. warning::
+
+   **Allowing a program allows it with any arguments.** Some programs run
+   other programs that are given as arguments: shells and interpreters
+   (``sh``, ``python3``), ``env``, ``timeout``, ``find``, ``ssh``, and among
+   the monitoring plugins ``negate``, ``urlize`` and ``check_by_ssh``. If
+   one of them is allowed, whoever can write a monitor file can run
+   anything as kinomi's user. So never allow those, and do not allow the
+   whole plugin directory (``/usr/lib/nagios/plugins/``), which contains
+   ``negate`` and ``urlize``.
+
+``check-config`` refuses:
+
+* the system program directories ``/bin/``, ``/sbin/``, ``/usr/bin/``,
+  ``/usr/sbin/``, ``/usr/local/bin/`` and ``/usr/local/sbin/`` as a whole
+  (they contain shells): list single programs from there instead;
+* a program that is not allowed, also through a symlink: a link in an
+  allowed directory that points to a program outside it is refused;
+* paths with ``..``;
+* a program, or any directory above it (also of a symlink on the way),
+  that another user could change: it must belong to root or to you, and
+  must not be writable by group or others (fix with ``chmod g-w,o-w``);
 * command monitors when kinomi runs as root.
 
 Disk space, NTP, mail: the monitoring plugins
@@ -70,7 +92,7 @@ administrator installs it once:
 
    sudo apt install monitoring-plugins-basic
 
-Then, with ``allow = ["/usr/lib/nagios/plugins/"]``:
+Then, with ``"/usr/lib/nagios/plugins/check_disk"`` in ``allow``:
 
 .. code-block:: toml
    :caption: monitors/disk.toml
@@ -85,7 +107,8 @@ Then, with ``allow = ["/usr/lib/nagios/plugins/"]``:
    program = "/usr/lib/nagios/plugins/check_disk"
    args = ["-w", "20%", "-c", "10%", "-p", "/"]
 
-WARN below 20 % free space, failure below 10 %. Some more:
+WARN below 20 % free space, failure below 10 %. Some more (each one
+listed in ``allow``):
 
 .. list-table::
    :header-rows: 1
@@ -133,7 +156,9 @@ next to the configuration, make it executable, and allow it:
 kinomi runs the program directly, without a shell, so ``args`` are passed
 exactly as written: no ``*``, ``$VAR`` or ``|``. Write a script for that.
 The program starts in ``/`` with an almost empty environment:
-``PATH=/usr/local/bin:/usr/bin:/bin``, ``HOME`` and ``LC_ALL=C``.
+``PATH=/usr/local/bin:/usr/bin:/bin``, ``HOME`` and ``LC_ALL=C``. It
+inherits no open files of kinomi, and it is called by the name written in
+``program`` (``argv[0]``), also when that is a symlink.
 
 Passwords
 ---------
@@ -157,11 +182,15 @@ check fails, run the command yourself:
 Or keep the output of the last run with ``keep_output = true``. kinomi
 then saves what the program printed (stdout and stderr, at most
 ``output_max_bytes`` from ``[commands]``, 64 KiB by default) to
-``private/_output/<monitor>.txt`` in the page directory. The private
+``private/_output/<monitor>.txt`` in the output directory (``output_dir``),
+followed by a line of its own with the result and the time. The private
 pages link to it ("output of the last run") as a **download**: the content
 is never shown on a page, in notifications or in the log, and the browser
 saves the file instead of displaying it. It needs a login like every
-private page.
+private page, so the built-in server only offers it with
+``htpasswd_file`` (``check-config`` warns otherwise). Behind a proxy in
+mode B, the proxy needs the ``/private/_output/`` block of
+:doc:`/operations/reverse-proxy`.
 
 Keys
 ----

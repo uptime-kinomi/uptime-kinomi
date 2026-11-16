@@ -388,8 +388,9 @@ expected_banner = "SSH-"    # optional: bytes the server sends first must start 
 #### TLS (since 1.2)
 
 With `tls = true`, kinomi does a TLS handshake right after connecting
-(implicit TLS, as for IMAPS, SMTPS, LDAPS, MQTTS or a database port with
-TLS) and checks the certificate like `http` does:
+(implicit TLS, as for IMAPS, SMTPS, LDAPS or MQTTS; not PostgreSQL or
+MySQL, which start TLS inside their own protocol) and checks the
+certificate like `http` does:
 
 ```toml
 type = "tcp"
@@ -407,6 +408,10 @@ tls_expiry_fail = "0s"      # fail when the certificate expires within this time
 - The same rustls setup as `http` (bundled Mozilla roots, TLS 1.2 and
   1.3). The server name is `host`; for an IP address, no SNI is sent and
   the certificate must contain that IP address.
+- TLS I/O is driven by kinomi, not by rustls' blocking helpers: the
+  deadline of the check is checked before every read and write, so a peer
+  that sends one byte at a time cannot stretch it (also for the separate
+  certificate handshake of `http`, §4.3).
 - The expiry date comes from the handshake of the check itself, so unlike
   `http` there is no second handshake and no cache: one handshake per
   check. It is logged as `cert_expires=YYYY-MM-DD`. Only the validity
@@ -414,10 +419,12 @@ tls_expiry_fail = "0s"      # fail when the certificate expires within this time
 - Only implicit TLS. STARTTLS (a plain-text greeting first, as on SMTP port
   25/587 or IMAP port 143) is not supported.
 - Messages: `TLS ok`, `banner ok` (with `expected_banner`), WARN
-  `TLS ok, certificate expires in 10 days`, and the TLS error classes of
-  `http` (`TLS certificate expired`, `TLS certificate from unknown issuer`,
-  `TLS certificate not valid for this host name`, `TLS handshake failed`,
-  `timeout`).
+  `TLS ok, certificate expires in 10 days` (or `banner ok, ...`), WARN
+  `TLS ok, certificate check failed` (no readable leaf certificate), and
+  the TLS error classes of `http`, e.g. `TLS certificate expired`,
+  `TLS certificate from unknown issuer`, `TLS certificate not valid for
+  this host name`, `TLS certificate not yet valid`, `TLS alert from
+  server`, `TLS handshake failed`, `timeout`.
 - Compatibility: new optional keys, a 1.x minor release (§16).
 
 ### 4.5 `dns` — DNS record
@@ -544,12 +551,15 @@ slow_warn = "0s"          # WARN if the average round trip is slower than this (
 | UP | `3/3 replies` (`2/3 replies` with loss) |
 | WARN | `2/3 replies, packet loss` (with `loss_warn`), `3/3 replies, slow response` (with `slow_warn`) |
 | FAIL | `no reply` |
-| FAIL | `host not found`, `network unreachable`, `host unreachable` |
+| FAIL | `host not found`, `timeout` (name lookup), `network unreachable`, `host unreachable` |
 | FAIL | `ping not permitted (net.ipv4.ping_group_range)` |
 | FAIL | `IPv6 not available` (the kernel has no IPv6) |
 
 - Cost: one socket and at most `count` small packets per check; a worker
-  is busy for at most `timeout`. No extra threads.
+  is busy for at most `timeout`. No extra threads (except the name lookup
+  thread for a host name, as for `tcp`). With both `loss_warn` and
+  `slow_warn` applying, the message says `packet loss`. `check-config`
+  probes with an IPv4 socket only.
 - Dependency: std cannot open ICMP sockets, and `forbid(unsafe_code)` rules
   out calling the system directly. `rustix` (features `net`, `process` and
   `pipe`: safe wrappers of the Linux system calls, no libc on Linux)
@@ -570,7 +580,7 @@ SSH and more without new monitor types in kinomi.
 ```toml
 # kinomi.toml
 [commands]
-allow = ["/usr/lib/nagios/plugins/", "checks/backup-age.sh"]   # default: none
+allow = ["/usr/lib/nagios/plugins/check_disk", "checks/backup-age.sh"]   # default: none
 output_max_bytes = 65536     # limit of a kept output file, 1 KiB-1 MiB (default 64 KiB)
 ```
 
@@ -596,14 +606,25 @@ keep_output = false          # true: keep the output of the last run for downloa
   `/usr/sbin/`, `/usr/local/bin/`, `/usr/local/sbin/`) are not accepted as
   directory entries (`check-config` error): that would allow a shell. A
   single program from them may be listed.
-- `program` and the `allow` entries are resolved to real paths (symlinks
-  and `..` resolved) at `check-config` and at startup; the program must be a
-  regular, executable file inside an allowed entry. kinomi runs exactly the
-  resolved path.
-- The program and every directory above it must be owned by root or by
-  the user running kinomi and must not be writable by group or others
-  (like OpenSSH's `StrictModes`), so no other local user can change what
-  runs (`check-config` error).
+- `program` and the `allow` entries must not contain `..`. Both are taken
+  as written (absolute, relative to the config dir) and resolved (symlinks
+  followed) at `check-config` and at startup. The program must match an
+  allowed entry **both** ways: a symlink in an allowed directory cannot
+  lead to a program outside it. It must be a regular executable file.
+  kinomi runs the resolved file with the name as written as `argv[0]`, so
+  a symlink to a multi-call program (busybox, coreutils) keeps its meaning
+  (`true` stays `true`), and plugins that dispatch on their name work.
+- The program and every directory above it, both as written and resolved,
+  must be owned by root or by the user running kinomi and must not be
+  writable by group or others (like OpenSSH's `StrictModes`), so no other
+  local user can change what runs, also not through a symlink
+  (`check-config` error).
+- **Allowing a program allows every argument.** Some programs run other
+  programs given as arguments: interpreters (`python3`, `sh`), `env`,
+  `timeout`, `find`, `ssh`, and among the Nagios plugins `negate`,
+  `urlize` and `check_by_ssh`. Whoever may write monitor files can then
+  run anything. The documentation therefore lists single plugins, not the
+  plugin directory, and names these programs.
 - `command` monitors are refused when kinomi runs as root (`check-config`
   error).
 
@@ -612,17 +633,25 @@ keep_output = false          # true: keep the output of the last run for downloa
 - No shell and no `PATH` lookup: `program` with `args` (at most 32, each at
   most 1024 bytes, no NUL bytes), working directory `/`.
 - The environment is cleared, then only `PATH=/usr/local/bin:/usr/bin:/bin`,
-  `HOME` and `LC_ALL=C` are set.
+  `LC_ALL=C` and `HOME` (if kinomi has it) are set.
+- No file descriptor of kinomi reaches the program other than its stdin,
+  stdout and stderr: everything kinomi opens, including the output pipes
+  of other `command` checks and `ping` sockets, is close-on-exec.
 - stdin is `/dev/null`. By default stdout and stderr are `/dev/null` too:
   the output is never read, stored or shown (§11), so a program cannot put
   text on a page or into a notification. To see why a check fails, run the
   command by hand, or keep the output (below).
-- The program runs in its own process group. At `timeout`, the whole group
-  gets `SIGKILL`; when the program ends by itself, whatever is left of its
-  group gets `SIGKILL` too. The group is killed before the program is
-  reaped (`waitid` with `WNOWAIT`), so its ID cannot have been reused. A
-  hanging program or its children never pile up. At most `workers`
-  programs run at once (§6).
+- The program runs in its own process group. At `timeout`, the group and
+  the program itself (by PID, in case it changed its group) get `SIGKILL`;
+  when the program ends by itself, whatever is left of its group gets
+  `SIGKILL` too. Both are killed before the program is reaped (`waitid`
+  with `WNOWAIT`), so its ID cannot have been reused. If the program still
+  cannot be reaped 1 s after the kill (e.g. it changed its user), the
+  check fails with `timeout` and a thread reaps it whenever it ends. A
+  process that leaves the group (`setsid`) is not killed. At most
+  `workers` programs run at once (§6).
+- When kinomi stops, the process groups of programs still running get
+  `SIGKILL` (they would not get kinomi's signal without a service manager).
 - Arguments are visible to all local users (`ps`). Passwords do not belong
   in `args`; use a program that reads them from a file (the documentation
   shows how for the common plugins).
@@ -648,12 +677,14 @@ the last run can be kept in a file and downloaded, never shown:
   (never parsed, decoded or interpreted), up to `output_max_bytes`, and
   reads and discards the rest so the program does not block. A process
   that left the group (`setsid`) could keep the pipe open: kinomi waits at
-  most 1 s after the program ended, then does not save that run's output.
-  After the run, kinomi adds one line of its own at the end
-  (`# uptime-kinomi: exit 2 after 1.3 s, 2026-11-16T12:00:00Z`, plus
-  `# truncated after 65536 bytes` when cut) and writes the file atomically to
-  `{output_dir}/private/_output/{monitor}.txt` (mode `0640`, like all
-  generated files, §8.3). Only the last run is kept.
+  most 1 s after the program ended for the end of the output, then stops
+  reading (the read end is non-blocking) and keeps what arrived.
+- After the run, kinomi ends the output with a newline if it has none,
+  then adds `# truncated after 65536 bytes` when it was cut, and one line
+  of its own (`# uptime-kinomi: exit 2 (critical) after 1.3 s,
+  2026-11-16T12:00:00Z`, with the result message). The file is written
+  atomically to `{output_dir}/private/_output/{monitor}.txt` (mode `0640`,
+  like all generated files, §8.3). Only the last run is kept.
 - `_output` is not a valid page ID (IDs start with a letter or digit, §3.2),
   so the path never collides with a page.
 - **Download only:** the private page links to the file ("output of the
@@ -663,17 +694,22 @@ the last run can be kept in a file and downloaded, never shown:
 - The built-in server serves `/private/_output/{monitor}.txt` with Basic
   Auth (§9.2) as `Content-Type: application/octet-stream`,
   `Content-Disposition: attachment; filename="{monitor}.txt"`,
-  `Cache-Control: no-store` and the usual `nosniff` and CSP headers (§9.4),
-  so a browser saves the file instead of rendering it. In mode B (§9.1) the
-  proxy configurations in `contrib/` set the same headers for that path.
-- Without a private page or `htpasswd_file`, the file is still written
-  (readable on the Pi, e.g. over SSH) but not served (`check-config` warns).
+  `Cache-Control: private, no-store` and the usual `nosniff` and CSP
+  headers (§9.4), so a browser saves the file instead of rendering it. It
+  is read from disk at the request, through a fixed map of the monitors
+  with `keep_output` built at startup (no path from the request reaches
+  the file system); a file over 1 MiB + 4 KiB gets `404`. In mode B
+  (§9.1) the proxy configurations in `contrib/` serve that path as
+  `application/octet-stream` with `Content-Disposition: attachment`.
+- Without `htpasswd_file`, the built-in server does not serve the file;
+  it is still written (readable on the Pi, e.g. over SSH), and
+  `check-config` warns (unless `server.enabled = false`: mode B).
 - Size: at most `output_max_bytes` per monitor with `keep_output`, in
   `output_dir`, which is a tmpfs (RAM) by default (§10.2): 50 such monitors
-  with the 64 KiB default need at most 3.2 MB. Written once per check, so
+  with the 64 KiB default need at most about 3.3 MB. Written once per check, so
   without a tmpfs a long `interval` keeps SD card writes low.
-- At startup, kinomi removes files in `private/_output/` of monitors that
-  no longer keep their output.
+- At startup, kinomi removes the `*.txt` files in `private/_output/` of
+  monitors that no longer keep their output (§8.3).
 - The output may contain whatever the program prints, including secrets
   of the monitored system; it has the visibility of a private page.
 
@@ -803,7 +839,9 @@ Planned later: `smtp` (email), `matrix`, `pushover`, `signal` (via signal-cli RE
 - A dispatcher thread moves due checks into a bounded queue (`max_queue`).
   `workers` threads take checks from the queue. Checks use blocking I/O with
   timeouts on name lookup, connect, TLS handshake, read and total duration:
-  a check never takes longer than its `timeout`. For `http`, the separate
+  a check never takes longer than its `timeout` (`command` with
+  `keep_output`, or a program that cannot be killed: at most 2 s more,
+  §4.8). For `http`, the separate
   certificate handshake (§4.3) only gets the time left after the request;
   with less than 1 s left it waits for the next check.
 - **Overload and fairness:** a due check that does not fit into the queue
@@ -955,7 +993,8 @@ Per monitor:
 - uptime percentage over **24 h** and **30 d**;
 - average response time over 24 h (successful checks only: the time a
   timeout or a refused connection takes says nothing about the service);
-- certificate expiry date (HTTPS monitors with TLS checks).
+- certificate expiry date (`http` monitors with certificate checks, `tcp`
+  monitors with `tls = true`).
 
 States are shown with a symbol: ✓ UP, ⚠ WARN, … PENDING, ✗ DOWN,
 ⚙ MAINTENANCE, ‖ PAUSED, ? NO DATA (`UNKNOWN` in `status.json` and badges).
@@ -1002,8 +1041,9 @@ duration, last log flush).
   removes what it no longer generates: directories of removed pages (only
   if they contain nothing but kinomi's own files), badges of monitors no
   longer on a page (also the `badge/{monitor}-uptime.svg` files of 0.5.0),
-  and `private/assets/` without private pages. Other files are never
-  touched.
+  and `private/assets/` without private pages. Before that, the kept
+  outputs of monitors without `keep_output` (`private/_output/*.txt`,
+  §4.8) are removed. Other files are never touched.
 - Page IDs `assets`, `private`, `push`, `healthz` and `metrics` are reserved.
 - All files are written atomically (temp file + rename) and **only rewritten
   when their content changed**.
@@ -1674,7 +1714,7 @@ before 1.0 could change anything between minor versions (see the changelog).
 - **Command line** (§10.4): commands, options and exit codes.
 - **URLs** of the built-in server and of the generated files (§8.3, §9.2):
   pages, `status.json`, `feed.atom`, badges, `/push/{token}`, `/healthz`,
-  `/metrics`.
+  `/metrics`, `/private/_output/{monitor}.txt` (§4.8).
 - **Push requests** (§4.6): methods, `status=up|down`, response codes.
 - **`status.json`** `schema = 1` (§8.6): fields are only added.
 - **`/metrics`** (§9.5): metric names and labels are only added.

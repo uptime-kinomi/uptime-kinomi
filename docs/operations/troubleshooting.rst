@@ -126,7 +126,7 @@ A monitor is DOWN but the service works
 
 Look at the message on the private page or in the log; the monitor guides
 explain each one (:doc:`/monitors/http`, :doc:`/monitors/tcp`,
-:doc:`/monitors/dns`).
+:doc:`/monitors/ping`, :doc:`/monitors/dns`, :doc:`/monitors/command`).
 
 **It works from my laptop, not from the Pi.** kinomi checks from the Pi.
 The Pi may resolve the name differently (``getent hosts example.org``), be
@@ -135,7 +135,8 @@ blocked by a firewall, or have no IPv6 route. Try the same from the Pi:
 
 **"TLS certificate from unknown issuer"** for a device in your network: it
 uses a self-signed certificate. See the router example in
-:doc:`/monitors/http`.
+:doc:`/monitors/http`; for a ``tcp`` monitor with ``tls = true``, set
+``tls_verify = false`` the same way.
 
 **"keyword missing" although the word is on the page.** The keyword is
 compared with the HTML source, case-sensitively, within the first 64 KiB.

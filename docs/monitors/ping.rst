@@ -82,7 +82,8 @@ Keys
      - ``true``: WARN when some requests got no reply.
    * - ``slow_warn``
      - ``"0s"`` (off)
-     - WARN when the average round trip takes longer than this.
+     - WARN when the average round trip takes longer than this. Less
+       than ``timeout``.
 
 Messages you may see
 --------------------
@@ -101,6 +102,8 @@ Messages you may see
        pings.
    * - ``host not found`` / ``host unreachable`` / ``network unreachable``
      - Name or network problems.
+   * - ``timeout``
+     - Looking up the host name took longer than ``timeout``.
    * - ``ping not permitted (net.ipv4.ping_group_range)``
      - The kernel does not allow ping for kinomi's user, see above.
    * - ``IPv6 not available``

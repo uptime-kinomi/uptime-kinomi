@@ -87,7 +87,8 @@ groups. For every monitor:
   bar to see the time and result;
 * the uptime over the last 24 hours and the last 30 days;
 * the average response time over 24 hours;
-* the expiry date of its certificate, for HTTPS monitors.
+* the expiry date of its certificate, for HTTPS monitors and TCP monitors
+  with ``tls = true``.
 
 The pages reload themselves every 60 seconds (``auto_refresh``).
 

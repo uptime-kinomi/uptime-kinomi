@@ -21,7 +21,7 @@ see [compatibility and updates](https://kinomi.readthedocs.io/en/stable/referenc
 - 🌐 **Watches websites and servers:** HTTP(S) status codes, keywords,
   values in JSON answers, response time, TCP ports, ping, DNS records, and
   anything a script or Nagios plugin can test.
-- 🔒 **Warns before your certificate expires** (web servers and any other TLS port).
+- 🔒 **Warns before your certificate expires** (web servers and ports with TLS such as IMAPS).
 - 💾 **Checks that your nightly backup actually ran:** the backup script
   calls a push URL, and kinomi alerts you if it doesn't.
 - 📡 **Tells you whether "the internet is down" or just the Wi-Fi**, on a

@@ -158,7 +158,8 @@ checks are spread over the first 10 seconds after startup, so that not all
 checks run at once. Four checks can run at the same time (``workers`` in
 ``kinomi.toml``). If a slow Pi cannot keep up, kinomi skips checks fairly,
 so that every monitor is checked equally often, and logs it as
-``result=SKIPPED``. A check never takes longer than its ``timeout``.
+``result=SKIPPED``. A check never takes longer than its ``timeout`` (a
+command monitor with ``keep_output`` at most a second or two more).
 
 Where kinomi keeps its data
 ---------------------------
@@ -198,7 +199,9 @@ What kinomi never does
 * It never shows or forwards what it receives from the things it checks.
   Pages, logs and notifications only contain kinomi's own summary, such as
   ``HTTP 503`` or ``keyword missing``. A hacked website cannot inject
-  anything into your status page.
+  anything into your status page. (The one exception you can switch on:
+  the output of a command monitor with ``keep_output``, offered only as a
+  download behind the password, never shown.)
 * It never runs JavaScript on its pages. They are plain HTML and CSS and
   work in any browser, even in text browsers.
 * It never needs root.

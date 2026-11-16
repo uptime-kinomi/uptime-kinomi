@@ -143,6 +143,11 @@ nginx then verifies kinomi's bcrypt passwords itself (Debian 11+, Ubuntu
 
 The Apache variant is in ``contrib/apache/mode-b.conf`` in the repository.
 
+Since kinomi 1.2, both files have a block for ``/private/_output/``: the
+kept output of command monitors (``keep_output``), served only as a
+download. If you set up mode B with an older version and use
+``keep_output``, add that block, or the browser shows the output as text.
+
 Without push monitors and ``/metrics``, switch kinomi's server off:
 
 .. code-block:: toml

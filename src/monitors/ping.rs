@@ -6,7 +6,7 @@ use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
 use rustix::io::Errno;
-use rustix::net::{AddressFamily, SocketType, ipproto};
+use rustix::net::{AddressFamily, SocketFlags, SocketType, ipproto};
 use serde::Deserialize;
 
 use super::{Check, CheckResult, is_valid_host};
@@ -83,7 +83,21 @@ fn open(v6: bool) -> Result<UdpSocket, Errno> {
     } else {
         (AddressFamily::INET, ipproto::ICMP)
     };
-    rustix::net::socket(family, SocketType::DGRAM, Some(protocol)).map(UdpSocket::from)
+    // CLOEXEC: not inherited by programs of command monitors.
+    rustix::net::socket_with(
+        family,
+        SocketType::DGRAM,
+        SocketFlags::CLOEXEC,
+        Some(protocol),
+    )
+    .map(UdpSocket::from)
+}
+
+/// An ICMP socket as the checks open it, for tests elsewhere (`None` if
+/// the kernel does not allow ping sockets).
+#[cfg(test)]
+pub fn tests_open_socket() -> Option<UdpSocket> {
+    open(false).ok()
 }
 
 /// Echo request with sequence number `seq`. Identifier and checksum are

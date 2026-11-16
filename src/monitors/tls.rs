@@ -5,7 +5,7 @@
 //! minimal, bounds-checked DER reader. Only the validity dates are read;
 //! nothing else from the certificate is used or reported.
 
-use std::io;
+use std::io::{self, Read};
 use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -55,24 +55,101 @@ pub fn handshake(
     verify: bool,
     timeout: Duration,
 ) -> Result<ClientConnection, &'static str> {
-    let start = Instant::now();
+    let deadline = Instant::now() + timeout;
     let server_name = ServerName::try_from(host.to_string()).map_err(|_| "invalid host name")?;
     let config = Arc::new(client_config(verify).map_err(|_| "TLS setup failed")?);
     let mut conn = ClientConnection::new(config, server_name).map_err(|_| "TLS setup failed")?;
-    let mut io = sock;
     while conn.is_handshaking() {
-        let left = timeout.saturating_sub(start.elapsed());
+        match exchange(&mut conn, sock, deadline)? {
+            Exchange::Progress => {}
+            Exchange::Closed => return Err("TLS handshake failed"),
+        }
+    }
+    // TLS 1.3: the client's Finished may still be waiting.
+    flush(&mut conn, sock, deadline)?;
+    Ok(conn)
+}
+
+enum Exchange {
+    Progress,
+    Closed,
+}
+
+/// One step of TLS I/O by hand: write what is pending, read once,
+/// process. The deadline is checked before every system call, so a peer
+/// that sends one byte at a time cannot stretch a check (rustls'
+/// `complete_io` and `Stream` loop until a record is complete, with only
+/// the per-call socket timeout).
+fn exchange(
+    conn: &mut ClientConnection,
+    sock: &TcpStream,
+    deadline: Instant,
+) -> Result<Exchange, &'static str> {
+    flush(conn, sock, deadline)?;
+    if !conn.wants_read() {
+        return Ok(Exchange::Progress);
+    }
+    let left = deadline.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        return Err("timeout");
+    }
+    sock.set_read_timeout(Some(left))
+        .map_err(|_| "connection failed")?;
+    let mut io = sock;
+    match conn.read_tls(&mut io) {
+        Ok(0) => return Ok(Exchange::Closed),
+        Ok(_) => {}
+        Err(e) => return Err(io_message(&e)),
+    }
+    if let Err(e) = conn.process_new_packets() {
+        // Send the alert, but the error is what counts.
+        let _ = flush(conn, sock, deadline);
+        return Err(message(&e));
+    }
+    Ok(Exchange::Progress)
+}
+
+fn flush(
+    conn: &mut ClientConnection,
+    sock: &TcpStream,
+    deadline: Instant,
+) -> Result<(), &'static str> {
+    let mut io = sock;
+    while conn.wants_write() {
+        let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
             return Err("timeout");
         }
-        sock.set_read_timeout(Some(left))
-            .and_then(|()| sock.set_write_timeout(Some(left)))
+        sock.set_write_timeout(Some(left))
             .map_err(|_| "connection failed")?;
-        if let Err(e) = conn.complete_io(&mut io) {
-            return Err(io_message(&e));
+        conn.write_tls(&mut io).map_err(|e| io_message(&e))?;
+    }
+    Ok(())
+}
+
+/// Plaintext from an established connection, at most `buf.len()` bytes,
+/// until `deadline` (see [`exchange`]). `Ok(0)`: the peer closed.
+pub fn read(
+    conn: &mut ClientConnection,
+    sock: &TcpStream,
+    deadline: Instant,
+    buf: &mut [u8],
+) -> io::Result<usize> {
+    loop {
+        match conn.reader().read(buf) {
+            Ok(n) => return Ok(n),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+            // Closed without close_notify: for a banner, the same as closed.
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(0),
+            Err(e) => return Err(e),
+        }
+        match exchange(conn, sock, deadline) {
+            Ok(Exchange::Progress) => {}
+            Ok(Exchange::Closed) => return Ok(0),
+            Err("timeout") => return Err(io::ErrorKind::TimedOut.into()),
+            Err(msg) => return Err(io::Error::other(msg)),
         }
     }
-    Ok(conn)
 }
 
 /// `notAfter` of the server's leaf certificate after a handshake.
@@ -375,6 +452,35 @@ mod tests {
         assert_eq!(
             not_after("localhost", port, true, timeout),
             Err("TLS certificate from unknown issuer")
+        );
+    }
+
+    /// A peer that announces a large TLS record and then sends one byte
+    /// every 50 ms must not stretch the check past its timeout.
+    #[test]
+    fn trickling_peer_is_bounded_by_the_timeout() {
+        use std::io::Write;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            if let Some(Ok(mut stream)) = listener.incoming().next() {
+                // Handshake record header, 16 KiB announced.
+                let _ = stream.write_all(&[0x16, 0x03, 0x03, 0x40, 0x00]);
+                for _ in 0..200 {
+                    if stream.write_all(&[0]).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
+        });
+        let start = Instant::now();
+        let result = not_after("127.0.0.1", port, false, Duration::from_millis(800));
+        assert_eq!(result, Err("timeout"));
+        assert!(
+            start.elapsed() < Duration::from_millis(1500),
+            "{:?}",
+            start.elapsed()
         );
     }
 

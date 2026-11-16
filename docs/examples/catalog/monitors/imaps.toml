@@ -1,5 +1,5 @@
 # A mail server's IMAPS port (TLS from the first byte): the certificate is
-# verified, kinomi warns 14 days before it expires, and the IMAP greeting
+# verified, kinomi warns 21 days before it expires, and the IMAP greeting
 # is read through TLS.
 config_version = 1
 type = "tcp"

@@ -237,7 +237,10 @@ On a server you may prefer a classic system service: the program in
 dedicated user ``kinomi`` that owns nothing else. kinomi still runs
 without root; root is only needed to set it up. The shipped system unit
 is hardened (no capabilities, read-only system, no access to home
-directories).
+directories). That also applies to the programs of command monitors: they
+cannot read below ``/home``, setuid plugins (``check_icmp``,
+``check_dhcp``) get no extra rights, and a program that tries a
+privileged system call is killed (``killed by signal 31``).
 
 .. code-block:: sh
 

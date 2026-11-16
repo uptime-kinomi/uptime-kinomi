@@ -131,9 +131,11 @@ impl Check for TcpCheck {
         // The latency includes the handshake: that is what a client waits for.
         let latency = start.elapsed();
         let not_after = tls::leaf_not_after(&conn);
-        let mut conn = conn;
-        let mut sock = &stream;
-        let mut reader = rustls::Stream::new(&mut conn, &mut sock);
+        let mut reader = TlsReader {
+            conn,
+            sock: &stream,
+            deadline: start + self.timeout,
+        };
         let result = self.banner_result(&stream, &mut reader, latency, remaining(), "TLS ok");
         if result.status == super::Status::Fail {
             return result;
@@ -177,6 +179,20 @@ impl TcpCheck {
             }
             Err(_) => CheckResult::fail(Some(latency), "connection closed before banner"),
         }
+    }
+}
+
+/// Plaintext of a TLS connection, each read bounded by the check's
+/// deadline (not only per system call).
+struct TlsReader<'a> {
+    conn: rustls::ClientConnection,
+    sock: &'a TcpStream,
+    deadline: Instant,
+}
+
+impl Read for TlsReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        tls::read(&mut self.conn, self.sock, self.deadline, buf)
     }
 }
 

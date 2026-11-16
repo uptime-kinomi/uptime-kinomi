@@ -18,7 +18,8 @@ What stays the same within 1.x
 * **The command line**: commands, options and exit codes, so scripts keep
   working.
 * **Addresses**: the page URLs, ``status.json``, ``feed.atom``, badges,
-  ``/push/<token>``, ``/healthz`` and ``/metrics``. Push URLs in your
+  ``/push/<token>``, ``/healthz``, ``/metrics`` and the kept command output
+  ``/private/_output/<monitor>.txt``. Push URLs in your
   scripts and badges in your README keep working.
 * **Push requests**: ``GET``/``POST``, ``status=up|down`` and the response
   codes.
