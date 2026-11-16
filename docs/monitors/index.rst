@@ -1,8 +1,8 @@
 Monitors
 ========
 
-A monitor is one thing kinomi checks: a website, a port, a DNS record, or a
-job that reports in. Each monitor is one file in ``monitors/``; the file name
+A monitor is one thing kinomi checks: a website, a port, a device that
+answers pings, a DNS record, or a job that reports in. Each monitor is one file in ``monitors/``; the file name
 is its ID.
 
 Which type do I need?
@@ -23,6 +23,10 @@ Which type do I need?
        server, a router, a printer
      - ``tcp``
      - :doc:`tcp`
+   * - a device in the network is on (it answers pings), or the internet
+       connection works
+     - ``ping``
+     - :doc:`ping`
    * - name resolution works, or a DNS record has the right value
      - ``dns``
      - :doc:`dns`
@@ -31,7 +35,7 @@ Which type do I need?
      - ``push``
      - :doc:`push`
 
-``http``, ``tcp`` and ``dns`` are *active*: kinomi performs the check.
+``http``, ``tcp``, ``ping`` and ``dns`` are *active*: kinomi performs the check.
 ``push`` is *passive*: something else calls kinomi, and kinomi notices when
 the call does not come.
 
@@ -40,6 +44,7 @@ the call does not come.
 
    http
    tcp
+   ping
    dns
    push
 
@@ -54,7 +59,7 @@ These keys work in every monitor file, before the type's own section
 .. code-block:: toml
 
    config_version = 1
-   type = "http"                  # http | tcp | dns | push
+   type = "http"                  # http | tcp | ping | dns | push
    name = "My blog"               # shown on pages and in notifications, 1-100 characters
    description = "..."            # optional, shown on private pages only
    interval = "60s"               # how often to check; at least 10s

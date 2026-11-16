@@ -53,7 +53,7 @@ src/
 │   ├── duration.rs        "30s" / "5m" parsing
 │   └── secret.rs          inline vs *_file secrets, permission checks
 ├── paths.rs               config-dir resolution, default directories (XDG, /run/user/<uid>)
-├── monitors/              one file per type: http.rs, tcp.rs, dns.rs, push.rs (+ tls.rs for certificates, json.rs for http's JSON checks)
+├── monitors/              one file per type: http.rs, tcp.rs, ping.rs, dns.rs, push.rs (+ tls.rs for certificates, json.rs for http's JSON checks)
 ├── notifiers/             one file per type: webhook.rs, ntfy.rs, gotify.rs, telegram.rs (+ sender thread in mod.rs)
 ├── scheduler.rs           time grid, bounded queue, workers, round-robin under overload, pause detection
 ├── state.rs               state machine (UP/WARN/PENDING/DOWN/MAINTENANCE)
@@ -139,6 +139,7 @@ Dependencies in use:
 | `bcrypt` ✅ | bcrypt core for htpasswd (without `alloc`; the htpasswd format is ours) |
 | `minisign-verify` ✅ | release signature check in `self-update` (no dependencies) |
 | `signal-hook` ✅ | SIGTERM/SIGINT for clean shutdown |
+| `rustix` ✅ | safe system calls std lacks: ICMP datagram sockets (`ping`), process-group kill and pipes (`command`); raw Linux syscalls, no libc (adds `linux-raw-sys`, `bitflags`) |
 
 Done in-house instead of with a crate (small, tested, no extra
 dependencies): base64 variants, JSON writing for notifications, the DNS

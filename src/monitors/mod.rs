@@ -8,6 +8,7 @@
 pub mod dns;
 pub mod http;
 pub mod json;
+pub mod ping;
 pub mod push;
 pub mod tcp;
 pub mod tls;
@@ -130,6 +131,7 @@ pub enum Kind {
     Tcp,
     Dns,
     Push,
+    Ping,
 }
 
 impl Kind {
@@ -139,6 +141,7 @@ impl Kind {
             Kind::Tcp => "tcp",
             Kind::Dns => "dns",
             Kind::Push => "push",
+            Kind::Ping => "ping",
         }
     }
 }
@@ -163,6 +166,7 @@ struct MonitorFile {
     tcp: Option<tcp::TcpFile>,
     dns: Option<dns::DnsFile>,
     push: Option<push::PushFile>,
+    ping: Option<ping::PingFile>,
 }
 
 /// Context for building a monitor from its file.
@@ -239,6 +243,7 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
         (Kind::Tcp, raw.tcp.is_some()),
         (Kind::Dns, raw.dns.is_some()),
         (Kind::Push, raw.push.is_some()),
+        (Kind::Ping, raw.ping.is_some()),
     ];
     for (kind, present) in tables {
         if present && kind != raw.kind {
@@ -256,7 +261,18 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
             return None;
         }
         (kind, _) => (
-            build_check(kind, raw.http, raw.tcp, raw.dns, timeout, ctx, p)?,
+            build_check(
+                kind,
+                Tables {
+                    http: raw.http,
+                    tcp: raw.tcp,
+                    dns: raw.dns,
+                    ping: raw.ping,
+                },
+                timeout,
+                ctx,
+                p,
+            )?,
             None,
         ),
     };
@@ -281,11 +297,17 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
     })
 }
 
-fn build_check(
-    kind: Kind,
+/// The type tables of a polled monitor's file (one of them is used).
+struct Tables {
     http: Option<http::HttpFile>,
     tcp: Option<tcp::TcpFile>,
     dns: Option<dns::DnsFile>,
+    ping: Option<ping::PingFile>,
+}
+
+fn build_check(
+    kind: Kind,
+    tables: Tables,
     timeout: Dur,
     ctx: &Context,
     p: &mut FileProblems,
@@ -295,18 +317,22 @@ fn build_check(
         None
     };
     match kind {
-        Kind::Http => match http {
+        Kind::Http => match tables.http {
             Some(file) => {
                 http::build(file, timeout.0, ctx, p).map(|c| Box::new(c) as Box<dyn Check>)
             }
             None => missing(p),
         },
-        Kind::Tcp => match tcp {
+        Kind::Tcp => match tables.tcp {
             Some(file) => tcp::build(file, timeout.0, p).map(|c| Box::new(c) as Box<dyn Check>),
             None => missing(p),
         },
-        Kind::Dns => match dns {
+        Kind::Dns => match tables.dns {
             Some(file) => dns::build(file, timeout.0, p).map(|c| Box::new(c) as Box<dyn Check>),
+            None => missing(p),
+        },
+        Kind::Ping => match tables.ping {
+            Some(file) => ping::build(file, timeout.0, p).map(|c| Box::new(c) as Box<dyn Check>),
             None => missing(p),
         },
         // Handled by the caller.

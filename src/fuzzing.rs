@@ -196,6 +196,25 @@ pub fn x509(data: &[u8]) {
     let _ = monitors::tls::cert_not_after(data);
 }
 
+/// A packet from an ICMP datagram socket (ping monitor). First byte: bit 0
+/// selects IPv6, then the packet. It is matched against a fixed payload and
+/// against its own tail, so the accepting path is reached too.
+pub fn icmp(data: &[u8]) {
+    use monitors::ping::{MAX_REPLY, PAYLOAD, reply_seq};
+    let Some((flags, packet)) = data.split_first() else {
+        return;
+    };
+    let v6 = flags & 1 == 1;
+    let fixed = [0x5a; PAYLOAD];
+    for payload in [&fixed[..], packet.get(8..).unwrap_or_default()] {
+        if let Some(seq) = reply_seq(packet, v6, payload) {
+            assert!(packet.len() <= MAX_REPLY && packet.len() == 8 + payload.len());
+            assert_eq!(packet.first(), Some(if v6 { &129 } else { &0 }));
+            assert_eq!(seq.to_be_bytes(), packet[6..8]);
+        }
+    }
+}
+
 /// Release metadata from the network (self-update): the signed checksum
 /// file, its signature and the version in it. Layout: two bytes length of
 /// SHA256SUMS, then SHA256SUMS, then the signature.
@@ -398,6 +417,7 @@ pub const TARGETS: &[(&str, Target)] = &[
     ("http_redirect", http_redirect),
     ("dns_response", dns_response),
     ("x509", x509),
+    ("icmp", icmp),
     ("release", release),
     ("auth", auth),
     ("config", config),

@@ -12,6 +12,7 @@ trips, redirect scheme rules) and fail when one breaks.
 | `http_redirect` | `Location` header of a monitored server | network |
 | `dns_response` | DNS response (last byte picks the record type) | network |
 | `x509` | certificate from a TLS handshake (notAfter reader) | network |
+| `icmp` | echo reply from an ICMP datagram socket (ping monitor; first byte: IPv6 flag) | network |
 | `release` | `SHA256SUMS` + minisign signature for `self-update` | network |
 | `auth` | `Authorization` header, htpasswd file | network, disk |
 | `config` | all configuration file types (first byte picks the type) | disk |

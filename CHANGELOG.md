@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `ping` monitors: ICMP echo requests (`count`, `loss_warn`, `slow_warn`).
+  kinomi uses the kernel's unprivileged ICMP sockets, so no root and no
+  capabilities are needed; `check-config` warns if the kernel setting
+  `net.ipv4.ping_group_range` does not allow them. Replies are fuzzed
+  (`icmp` target). New dependency: `rustix` (safe system calls).
+
 ### Changed
 
 - Upgrade test: also reads the data written by 1.1.0.

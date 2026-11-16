@@ -1,0 +1,14 @@
+# The way out of the house: a well-known address on the internet. With
+# loss_warn, lost packets (a flaky Wi-Fi or DSL line) show up as WARN even
+# while the connection still works.
+config_version = 1
+type = "ping"
+name = "Internet connection"
+interval = "60s"
+timeout = "5s"
+
+[ping]
+host = "1.1.1.1"
+count = 5
+loss_warn = true
+slow_warn = "200ms"

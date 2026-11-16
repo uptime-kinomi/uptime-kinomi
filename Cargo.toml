@@ -34,6 +34,9 @@ httparse = { version = "1", default-features = false, features = ["std"] }
 # Configuration files (parsing only, no TOML writer).
 serde = { version = "1", features = ["derive"] }
 toml = { version = "1", default-features = false, features = ["std", "serde", "parse"] }
+# Safe system calls std lacks: ICMP datagram sockets (ping), process-group
+# kill and pipes (command). Linux backend without libc.
+rustix = { version = "1", default-features = false, features = ["std", "net", "process", "pipe"] }
 
 [lints.rust]
 unsafe_code = "forbid"

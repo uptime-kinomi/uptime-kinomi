@@ -1,0 +1,11 @@
+# The router itself: does it answer at all? Works for any device in the
+# LAN, also one without an open port (a switch, an access point, a phone).
+config_version = 1
+type = "ping"
+name = "Router"
+interval = "30s"
+timeout = "3s"
+tags = ["home"]
+
+[ping]
+host = "192.168.1.1"
