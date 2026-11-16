@@ -59,6 +59,8 @@ fn monitor(id: &str, text: &str) -> Option<Monitor> {
         defaults: &defaults,
         notifiers: &notifiers,
         file_meta: file_meta()?,
+        commands: None,
+        output_dir: None,
     };
     let mut problems = Problems::default();
     monitors::parse(
@@ -115,6 +117,7 @@ fn server() -> &'static (Options, Site) {
             auth: Auth::parse(&line).ok().map(std::sync::Arc::new),
             push: Some(PushRegistry::new(known_monitors(), tx)),
             health: None,
+            outputs: std::collections::HashMap::new(),
         };
         let mut site = Site::default();
         for (path, private) in [

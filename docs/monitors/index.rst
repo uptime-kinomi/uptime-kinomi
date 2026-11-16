@@ -2,7 +2,8 @@ Monitors
 ========
 
 A monitor is one thing kinomi checks: a website, a port, a device that
-answers pings, a DNS record, or a job that reports in. Each monitor is one file in ``monitors/``; the file name
+answers pings, a DNS record, a job that reports in, or anything a program
+on the Pi can test. Each monitor is one file in ``monitors/``; the file name
 is its ID.
 
 Which type do I need?
@@ -34,10 +35,15 @@ Which type do I need?
        kinomi is alive
      - ``push``
      - :doc:`push`
+   * - anything a program can test: free disk space, the clock, a mail
+       server with STARTTLS, your own script (Nagios plugins work)
+     - ``command``
+     - :doc:`command`
 
-``http``, ``tcp``, ``ping`` and ``dns`` are *active*: kinomi performs the check.
-``push`` is *passive*: something else calls kinomi, and kinomi notices when
-the call does not come.
+``http``, ``tcp``, ``ping`` and ``dns`` are *active*: kinomi performs the
+check. ``command`` runs a program on the Pi. ``push`` is *passive*:
+something else calls kinomi, and kinomi notices when the call does not
+come.
 
 .. toctree::
    :maxdepth: 1
@@ -47,6 +53,7 @@ the call does not come.
    ping
    dns
    push
+   command
 
 .. _common-keys:
 
@@ -59,7 +66,7 @@ These keys work in every monitor file, before the type's own section
 .. code-block:: toml
 
    config_version = 1
-   type = "http"                  # http | tcp | ping | dns | push
+   type = "http"                  # http | tcp | ping | dns | push | command
    name = "My blog"               # shown on pages and in notifications, 1-100 characters
    description = "..."            # optional, shown on private pages only
    interval = "60s"               # how often to check; at least 10s

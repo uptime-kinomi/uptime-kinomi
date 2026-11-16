@@ -18,6 +18,8 @@ disagree, the spec wins until it is explicitly changed in the same PR.
 5. **Never reflect fetched content.** Data received from a monitored target or
    a push request is never written to logs, pages or notifications. Only
    kinomi's own summary is (`"HTTP 503"`, `"timeout"`, `"keyword missing"`).
+   The one exception is opt-in and download-only: `keep_output` of `command`
+   monitors (SPEC.md §4.8), served as an attachment behind Basic Auth.
 6. **Strict configuration.** `#[serde(deny_unknown_fields)]` on every config
    struct. New options need a default, documentation in SPEC.md, and a
    `check-config` validation.
@@ -53,7 +55,7 @@ src/
 │   ├── duration.rs        "30s" / "5m" parsing
 │   └── secret.rs          inline vs *_file secrets, permission checks
 ├── paths.rs               config-dir resolution, default directories (XDG, /run/user/<uid>)
-├── monitors/              one file per type: http.rs, tcp.rs, ping.rs, dns.rs, push.rs (+ tls.rs for certificates, json.rs for http's JSON checks)
+├── monitors/              one file per type: http.rs, tcp.rs, ping.rs, dns.rs, push.rs, command.rs (+ tls.rs for certificates, json.rs for http's JSON checks)
 ├── notifiers/             one file per type: webhook.rs, ntfy.rs, gotify.rs, telegram.rs (+ sender thread in mod.rs)
 ├── scheduler.rs           time grid, bounded queue, workers, round-robin under overload, pause detection
 ├── state.rs               state machine (UP/WARN/PENDING/DOWN/MAINTENANCE)

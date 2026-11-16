@@ -399,6 +399,14 @@ fn monitor(out: &mut String, ctx: &Context, m: &Monitor, v: &MonitorView, public
         if v.skipped_24h > 0 {
             let _ = write!(out, " · {} skipped (24 h)", v.skipped_24h);
         }
+        if m.check.output_file().is_some() {
+            // A download only: the content never appears on a page.
+            let _ = write!(
+                out,
+                " · <a href=\"../_output/{}.txt\" download>output of the last run</a>",
+                esc(&m.id)
+            );
+        }
         if let Some(d) = &m.description {
             let _ = write!(out, "<br>{}", esc(d));
         }

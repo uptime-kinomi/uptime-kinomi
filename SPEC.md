@@ -618,8 +618,11 @@ keep_output = false          # true: keep the output of the last run for downloa
   text on a page or into a notification. To see why a check fails, run the
   command by hand, or keep the output (below).
 - The program runs in its own process group. At `timeout`, the whole group
-  gets `SIGKILL` and is reaped, so a hanging program or its children never
-  pile up. At most `workers` programs run at once (§6).
+  gets `SIGKILL`; when the program ends by itself, whatever is left of its
+  group gets `SIGKILL` too. The group is killed before the program is
+  reaped (`waitid` with `WNOWAIT`), so its ID cannot have been reused. A
+  hanging program or its children never pile up. At most `workers`
+  programs run at once (§6).
 - Arguments are visible to all local users (`ps`). Passwords do not belong
   in `args`; use a program that reads them from a file (the documentation
   shows how for the common plugins).
@@ -641,12 +644,14 @@ The latency is the run time of the program.
 **Keeping the output (`keep_output = true`).** For debugging, the output of
 the last run can be kept in a file and downloaded, never shown:
 
-- stdout and stderr go into one pipe. kinomi copies the bytes unchanged
-  (never parsed, decoded or interpreted) into a temporary file, up to
-  `output_max_bytes`, and reads and discards the rest so the program does
-  not block. After the run, kinomi adds one line of its own at the end
+- stdout and stderr go into one pipe. A thread keeps the bytes unchanged
+  (never parsed, decoded or interpreted), up to `output_max_bytes`, and
+  reads and discards the rest so the program does not block. A process
+  that left the group (`setsid`) could keep the pipe open: kinomi waits at
+  most 1 s after the program ended, then does not save that run's output.
+  After the run, kinomi adds one line of its own at the end
   (`# uptime-kinomi: exit 2 after 1.3 s, 2026-11-16T12:00:00Z`, plus
-  `# truncated after 65536 bytes` when cut) and renames the file to
+  `# truncated after 65536 bytes` when cut) and writes the file atomically to
   `{output_dir}/private/_output/{monitor}.txt` (mode `0640`, like all
   generated files, §8.3). Only the last run is kept.
 - `_output` is not a valid page ID (IDs start with a letter or digit, §3.2),

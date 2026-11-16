@@ -112,6 +112,19 @@ fn absolute(path: PathBuf) -> Option<PathBuf> {
     path.is_absolute().then_some(path)
 }
 
+/// Effective UID 0, read from /proc (no libc call needed).
+pub fn running_as_root() -> bool {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status
+                .lines()
+                .find_map(|line| line.strip_prefix("Uid:"))
+                .and_then(|ids| ids.split_whitespace().nth(1).map(|euid| euid == "0"))
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

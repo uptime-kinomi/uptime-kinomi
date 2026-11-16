@@ -721,6 +721,8 @@ mod tests {
             defaults: &defaults,
             notifiers: &[],
             file_meta: &meta,
+            commands: None,
+            output_dir: None,
         };
         let parsed: HttpFile = toml::from_str(table).map_err(|e| e.to_string())?;
         let mut problems = Problems::default();

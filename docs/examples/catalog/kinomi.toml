@@ -40,3 +40,7 @@ interval = "60s"
 timeout = "10s"
 retries = 1
 notifications = ["phone"]                  # example; default [] (none)
+
+[commands]                                 # what command monitors may run; default: nothing
+# allow = ["/usr/lib/nagios/plugins/", "checks/backup-age.sh"]   # example
+output_max_bytes = 65536                   # limit of a kept output file (keep_output)

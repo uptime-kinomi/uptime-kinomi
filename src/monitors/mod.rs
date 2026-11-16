@@ -5,6 +5,7 @@
 //! `<type>.rs` with a `<Type>File` config struct and an implementation of
 //! [`Check`], then add it to [`Kind`], [`MonitorFile`] and [`build_check`].
 
+pub mod command;
 pub mod dns;
 pub mod http;
 pub mod json;
@@ -23,7 +24,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use crate::config::duration::Dur;
-use crate::config::global::{Defaults, MAX_RETRIES, MIN_INTERVAL};
+use crate::config::global::{Commands, Defaults, MAX_RETRIES, MIN_INTERVAL};
 use crate::config::secret::Secret;
 use crate::config::{FileProblems, is_valid_id};
 
@@ -83,6 +84,12 @@ pub trait Check: Send + Sync {
 
     /// Short description of the target for private pages, e.g. the URL.
     fn target(&self) -> String;
+
+    /// `command` monitors with `keep_output`: the file with the output of
+    /// the last run (SPEC.md §4.8).
+    fn output_file(&self) -> Option<&Path> {
+        None
+    }
 }
 
 // Parsed and validated now; used by the server, pages and notifications
@@ -132,6 +139,7 @@ pub enum Kind {
     Dns,
     Push,
     Ping,
+    Command,
 }
 
 impl Kind {
@@ -142,6 +150,7 @@ impl Kind {
             Kind::Dns => "dns",
             Kind::Push => "push",
             Kind::Ping => "ping",
+            Kind::Command => "command",
         }
     }
 }
@@ -167,6 +176,7 @@ struct MonitorFile {
     dns: Option<dns::DnsFile>,
     push: Option<push::PushFile>,
     ping: Option<ping::PingFile>,
+    command: Option<command::CommandFile>,
 }
 
 /// Context for building a monitor from its file.
@@ -176,6 +186,10 @@ pub struct Context<'a> {
     /// IDs of the files in `notifications/`.
     pub notifiers: &'a [String],
     pub file_meta: &'a Metadata,
+    /// `[commands]` of kinomi.toml (none without a usable kinomi.toml).
+    pub commands: Option<&'a Commands>,
+    /// Where generated files go (kept command output).
+    pub output_dir: Option<&'a Path>,
 }
 
 pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Option<Monitor> {
@@ -244,6 +258,7 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
         (Kind::Dns, raw.dns.is_some()),
         (Kind::Push, raw.push.is_some()),
         (Kind::Ping, raw.ping.is_some()),
+        (Kind::Command, raw.command.is_some()),
     ];
     for (kind, present) in tables {
         if present && kind != raw.kind {
@@ -263,11 +278,13 @@ pub fn parse(id: &str, text: &str, ctx: &Context, p: &mut FileProblems) -> Optio
         (kind, _) => (
             build_check(
                 kind,
+                id,
                 Tables {
                     http: raw.http,
                     tcp: raw.tcp,
                     dns: raw.dns,
                     ping: raw.ping,
+                    command: raw.command,
                 },
                 timeout,
                 ctx,
@@ -303,10 +320,12 @@ struct Tables {
     tcp: Option<tcp::TcpFile>,
     dns: Option<dns::DnsFile>,
     ping: Option<ping::PingFile>,
+    command: Option<command::CommandFile>,
 }
 
 fn build_check(
     kind: Kind,
+    id: &str,
     tables: Tables,
     timeout: Dur,
     ctx: &Context,
@@ -333,6 +352,12 @@ fn build_check(
         },
         Kind::Ping => match tables.ping {
             Some(file) => ping::build(file, timeout.0, p).map(|c| Box::new(c) as Box<dyn Check>),
+            None => missing(p),
+        },
+        Kind::Command => match tables.command {
+            Some(file) => {
+                command::build(id, file, timeout.0, ctx, p).map(|c| Box::new(c) as Box<dyn Check>)
+            }
             None => missing(p),
         },
         // Handled by the caller.
@@ -460,6 +485,8 @@ mod tests {
             defaults: &defaults,
             notifiers: &notifiers,
             file_meta: &meta,
+            commands: None,
+            output_dir: None,
         };
         let mut problems = Problems::default();
         let monitor = parse("m", text, &ctx, &mut problems.for_file(&file));

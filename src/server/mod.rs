@@ -9,8 +9,10 @@ pub mod auth;
 pub mod push;
 
 use crate::health::Health;
+use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -40,6 +42,8 @@ pub struct Options {
     pub push: Option<PushRegistry>,
     /// Liveness for `/healthz`; `None` means always OK.
     pub health: Option<Arc<Health>>,
+    /// Kept output of `command` monitors: URL path → file (SPEC.md §4.8).
+    pub outputs: HashMap<String, PathBuf>,
 }
 
 pub struct Response {
@@ -202,6 +206,33 @@ pub(crate) fn parse_request(head: &[u8]) -> Option<Request> {
     })
 }
 
+/// The kept output of a `command` monitor, only ever as a download: a
+/// browser saves it instead of rendering it (SPEC.md §4.8).
+fn output_download(path: &str, file: &Path) -> Response {
+    // output_max_bytes (at most 1 MiB) plus kinomi's own lines.
+    const MAX: u64 = 1024 * 1024 + 4096;
+    let body = match std::fs::metadata(file) {
+        Ok(meta) if meta.len() <= MAX => std::fs::read(file).ok(),
+        _ => None,
+    };
+    let Some(body) = body else {
+        return Response::text(404, "Not Found\n");
+    };
+    let name = path.rsplit('/').next().unwrap_or("output.txt");
+    Response {
+        status: 200,
+        headers: vec![
+            ("Content-Type", "application/octet-stream".into()),
+            (
+                "Content-Disposition",
+                format!("attachment; filename=\"{name}\""),
+            ),
+            ("Cache-Control", "private, no-store".into()),
+        ],
+        body: Arc::new(body),
+    }
+}
+
 /// Paths that need a login (SPEC.md §9.3).
 fn is_private(path: &str) -> bool {
     path == "/private" || path.starts_with("/private/") || path == "/metrics"
@@ -309,6 +340,9 @@ fn route_inner(req: &Request, options: &Options, site: &crate::render::Site) -> 
         }
     }
 
+    if let Some(file) = options.outputs.get(&path) {
+        return output_download(&path, file);
+    }
     if let Some(file) = site.files.get(&path) {
         let cache = if file.private {
             "private, no-store"
@@ -478,6 +512,7 @@ mod tests {
             auth: Some(Arc::new(Auth::parse(&line).unwrap())),
             push: None,
             health: None,
+            outputs: HashMap::new(),
         }
     }
 
@@ -511,6 +546,49 @@ mod tests {
         assert_eq!(get("/nope/", None).status, 404);
         assert_eq!(get("/healthz", None).status, 200);
         assert_eq!(get("/push/abc", None).status, 404);
+    }
+
+    #[test]
+    fn command_output_is_only_a_download() {
+        let dir = crate::testutil::TestDir::new("server-output");
+        let file = dir.write("disk.txt", "<script>alert(1)</script>\n");
+        let mut options = options();
+        options
+            .outputs
+            .insert("/private/_output/disk.txt".into(), file);
+        let get = |path: &str, auth: Option<&str>| {
+            let req = Request {
+                method: "GET".into(),
+                path: path.into(),
+                host: Some("status.example.org".into()),
+                authorization: auth.map(|a| format!("Basic {}", base64(a.as_bytes()))),
+            };
+            route(&req, &options, &site())
+        };
+        assert_eq!(get("/private/_output/disk.txt", None).status, 401);
+        let r = get("/private/_output/disk.txt", Some("admin:pw"));
+        assert_eq!(r.status, 200);
+        assert_eq!(header(&r, "Content-Type"), Some("application/octet-stream"));
+        assert_eq!(
+            header(&r, "Content-Disposition"),
+            Some("attachment; filename=\"disk.txt\"")
+        );
+        assert_eq!(header(&r, "Cache-Control"), Some("private, no-store"));
+        // Only configured monitors; ".." never gets that far.
+        assert_eq!(
+            get("/private/_output/other.txt", Some("admin:pw")).status,
+            404
+        );
+        assert_eq!(
+            get("/private/_output/../x.txt", Some("admin:pw")).status,
+            400
+        );
+        // Deleted after the start: not found, not an error page with details.
+        std::fs::remove_file(dir.path().join("disk.txt")).unwrap();
+        assert_eq!(
+            get("/private/_output/disk.txt", Some("admin:pw")).status,
+            404
+        );
     }
 
     #[test]

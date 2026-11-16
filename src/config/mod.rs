@@ -212,6 +212,8 @@ pub fn load(dir: &Path, env: paths::EnvFn, runtime: Option<&Path>) -> (Option<Co
                 defaults,
                 notifiers: &notifiers,
                 file_meta: &meta,
+                commands: global.as_ref().map(|g| &g.commands),
+                output_dir: global.as_ref().map(|g| g.pages.output_dir.as_path()),
             };
             if let Some(m) = monitors::parse(&id, &text, &ctx, &mut problems.for_file(&path)) {
                 monitor_list.push(m);
@@ -385,6 +387,14 @@ fn check_push(
         problems.warning(
             monitors_dir,
             "push monitors need the built-in server (server.enabled = true), or they will always be DOWN",
+        );
+    }
+    // With server.enabled = false, the proxy serves private/ (mode B).
+    let keeps_output = monitors.iter().any(|m| m.check.output_file().is_some());
+    if keeps_output && g.is_some_and(|g| g.server.enabled && g.server.htpasswd_file.is_none()) {
+        problems.warning(
+            monitors_dir,
+            "keep_output: the output is written, but only offered for download with server.htpasswd_file",
         );
     }
 }

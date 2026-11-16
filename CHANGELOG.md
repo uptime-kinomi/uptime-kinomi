@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   capabilities are needed; `check-config` warns if the kernel setting
   `net.ipv4.ping_group_range` does not allow them. Replies are fuzzed
   (`icmp` target). New dependency: `rustix` (safe system calls).
+- `command` monitors: run a local program and use its exit code (Nagios
+  plugin convention: 0 UP, 1 WARN, 2 and others DOWN), so the existing
+  monitoring plugins (disk space, NTP, SMTP with STARTTLS, ...) work.
+  Only programs listed in the new `[commands] allow` of `kinomi.toml` run,
+  from paths no other user can change, without a shell, with a cleared
+  environment; at `timeout` the whole process group is killed. The output
+  is thrown away, or with `keep_output = true` kept as a download behind
+  the login of private pages (`/private/_output/<monitor>.txt`), never
+  shown. The proxy configurations in `contrib/` serve it the same way.
 - `tcp` monitors: `tls = true` does a TLS handshake after connecting
   (IMAPS, SMTPS, LDAPS, ...), with `tls_verify`, `tls_expiry_warn` and
   `tls_expiry_fail` as for `http`; `expected_banner` is read through TLS.

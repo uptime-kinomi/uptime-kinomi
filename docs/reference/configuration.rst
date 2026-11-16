@@ -79,6 +79,13 @@ rest are the defaults:
      -
      - ``interval``, ``timeout``, ``retries``, ``notifications`` for all
        monitors (:ref:`common-keys`).
+   * - ``[commands] allow``
+     - ``[]`` (nothing)
+     - Programs, or directories ending in ``/``, that command monitors may
+       run (:doc:`/monitors/command`).
+   * - ``[commands] output_max_bytes``
+     - ``65536``
+     - Limit of a kept output file (1 KiB-1 MiB).
 
 Other files
 -----------
@@ -91,7 +98,8 @@ Other files
      - Keys explained in
    * - ``monitors/``
      - :ref:`common-keys`, :doc:`/monitors/http`, :doc:`/monitors/tcp`,
-       :doc:`/monitors/dns`, :doc:`/monitors/push`
+       :doc:`/monitors/ping`, :doc:`/monitors/dns`, :doc:`/monitors/push`,
+       :doc:`/monitors/command`
    * - ``notifications/``
      - :doc:`/notifications/index`, :doc:`/notifications/ntfy`,
        :doc:`/notifications/gotify`, :doc:`/notifications/telegram`,

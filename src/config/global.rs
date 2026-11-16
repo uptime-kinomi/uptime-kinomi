@@ -20,7 +20,35 @@ pub struct Global {
     pub scheduler: Scheduler,
     pub heartbeat: Option<Heartbeat>,
     pub defaults: Defaults,
+    pub commands: Commands,
 }
+
+/// `[commands]`: what `command` monitors may run (SPEC.md §4.8).
+#[derive(Debug, Default)]
+pub struct Commands {
+    /// Programs and directories, resolved to real paths.
+    pub allow: Vec<Allowed>,
+    pub output_max_bytes: u64,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Allowed {
+    Program(PathBuf),
+    /// Programs directly in this directory.
+    Dir(PathBuf),
+}
+
+/// Never accepted as a directory entry: they contain shells.
+const SYSTEM_DIRS: &[&str] = &[
+    "/bin",
+    "/sbin",
+    "/usr/bin",
+    "/usr/sbin",
+    "/usr/local/bin",
+    "/usr/local/sbin",
+];
+
+pub const DEFAULT_OUTPUT_MAX: u64 = 65536;
 
 #[derive(Debug)]
 #[allow(dead_code)] // used by the built-in server (M2)
@@ -93,6 +121,16 @@ struct GlobalFile {
     heartbeat: Option<HeartbeatFile>,
     #[serde(default)]
     defaults: DefaultsFile,
+    #[serde(default)]
+    commands: CommandsFile,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CommandsFile {
+    #[serde(default)]
+    allow: Vec<String>,
+    output_max_bytes: Option<u64>,
 }
 
 #[derive(Default, Deserialize)]
@@ -157,6 +195,46 @@ struct DefaultsFile {
 // ---- validation ----------------------------------------------------------
 
 pub const MIN_INTERVAL: Dur = Dur::secs(10);
+
+fn commands(raw: CommandsFile, config_dir: &Path, p: &mut super::FileProblems) -> Commands {
+    let output_max_bytes = raw.output_max_bytes.unwrap_or(DEFAULT_OUTPUT_MAX);
+    if !(1024..=1024 * 1024).contains(&output_max_bytes) {
+        p.error("commands.output_max_bytes must be between 1024 and 1048576");
+    }
+    let mut allow = Vec::new();
+    for entry in &raw.allow {
+        let is_dir = entry.ends_with('/');
+        let path = resolve_path(config_dir, Path::new(entry));
+        let Ok(real) = std::fs::canonicalize(&path) else {
+            p.error(format!("commands.allow: {} does not exist", path.display()));
+            continue;
+        };
+        if is_dir {
+            if !real.is_dir() {
+                p.error(format!("commands.allow: {entry} is not a directory"));
+            } else if SYSTEM_DIRS
+                .iter()
+                .any(|d| std::fs::canonicalize(d).is_ok_and(|d| d == real) || Path::new(d) == real)
+            {
+                p.error(format!(
+                    "commands.allow: {entry} contains shells and cannot be allowed as a whole; list single programs from it"
+                ));
+            } else {
+                allow.push(Allowed::Dir(real));
+            }
+        } else if real.is_file() {
+            allow.push(Allowed::Program(real));
+        } else {
+            p.error(format!(
+                "commands.allow: {entry} is not a file (a directory needs a trailing /)"
+            ));
+        }
+    }
+    Commands {
+        allow,
+        output_max_bytes,
+    }
+}
 pub const MAX_RETRIES: u32 = 10;
 
 pub fn parse(
@@ -373,6 +451,8 @@ pub fn parse(
         p.error(format!("defaults.retries must be at most {MAX_RETRIES}"));
     }
 
+    let commands = commands(raw.commands, config_dir, &mut p);
+
     Some(Global {
         server,
         pages,
@@ -380,6 +460,7 @@ pub fn parse(
         scheduler,
         heartbeat,
         defaults,
+        commands,
     })
 }
 

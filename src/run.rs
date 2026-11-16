@@ -2,7 +2,7 @@
 
 use crate::health::Health;
 use std::collections::HashMap;
-use std::fs::{self, DirBuilder};
+use std::fs::DirBuilder;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -80,7 +80,7 @@ pub fn run(mut config: Config) -> Result<(), String> {
         signal_hook::flag::register(signal, stop.clone())
             .map_err(|e| format!("cannot handle signals: {e}"))?;
     }
-    if running_as_root() {
+    if crate::paths::running_as_root() {
         eprintln!("warning: running as root is not needed; use a dedicated user (SPEC.md §10.6)");
     }
     wait_for_plausible_clock(&stop);
@@ -104,6 +104,12 @@ pub fn run(mut config: Config) -> Result<(), String> {
         config.global.pages.recent_checks as usize,
     );
     let output_dir = config.global.pages.output_dir.clone();
+    let kept: Vec<&Path> = config
+        .monitors
+        .iter()
+        .filter_map(|m| m.check.output_file())
+        .collect();
+    crate::monitors::command::remove_stale_outputs(&output_dir, &kept);
     let base_url = config.global.server.base_url.clone();
     let metrics = config.global.server.enabled && config.global.server.metrics;
     let heartbeat = config
@@ -330,6 +336,14 @@ fn server_options(
         auth,
         push: None,
         health: None,
+        outputs: config
+            .monitors
+            .iter()
+            .filter_map(|m| {
+                let file = m.check.output_file()?;
+                Some((format!("/private/_output/{}.txt", m.id), file.to_path_buf()))
+            })
+            .collect(),
     }))
 }
 
@@ -819,19 +833,6 @@ fn wait_for_plausible_clock(stop: &AtomicBool) {
         }
         thread::sleep(Duration::from_secs(5));
     }
-}
-
-/// Effective UID 0, read from /proc (no libc call needed).
-fn running_as_root() -> bool {
-    fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|status| {
-            status
-                .lines()
-                .find_map(|line| line.strip_prefix("Uid:"))
-                .and_then(|ids| ids.split_whitespace().nth(1).map(|euid| euid == "0"))
-        })
-        .unwrap_or(false)
 }
 
 /// The result message of a missed push.
