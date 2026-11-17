@@ -123,7 +123,7 @@ pub fn build(
     {
         p.error(format!(
             "command.program: {} can be changed by other users (owner must be root or you, \
-             not writable by group or others)",
+             not writable by others or by a group with other members)",
             unsafe_path.display()
         ));
     }
