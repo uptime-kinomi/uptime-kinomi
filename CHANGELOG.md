@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-17
+
+Three new kinds of checks: `ping`, `command` (run a local program, e.g. a
+monitoring plugin) and TLS for `tcp`. Existing configurations work
+unchanged; `command` monitors only run programs listed in the new
+`[commands] allow` of `kinomi.toml`.
+
 ### Added
 
 - `ping` monitors: ICMP echo requests (`count`, `loss_warn`, `slow_warn`).
@@ -569,7 +576,8 @@ signing and self-update chain.
   (needs only curl and minisign) verifies, signs and publishes it on the
   maintainer's machine.
 
-[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.8.0...v1.0.0
 [0.8.0]: https://github.com/uptime-kinomi/uptime-kinomi/compare/v0.7.0...v0.8.0
