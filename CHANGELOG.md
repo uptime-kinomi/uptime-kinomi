@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade test: also reads the data written by 1.2.0.
+
 ## [1.2.0] - 2026-11-17
 
 Three new kinds of checks: `ping`, `command` (run a local program, e.g. a
