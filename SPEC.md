@@ -618,9 +618,13 @@ keep_output = false          # true: keep the output of the last run for downloa
   (`true` stays `true`), and plugins that dispatch on their name work.
 - The program and every directory above it, both as written and resolved,
   must be owned by root or by the user running kinomi and must not be
-  writable by group or others (like OpenSSH's `StrictModes`), so no other
-  local user can change what runs, also not through a symlink
-  (`check-config` error).
+  writable by others, nor by a group that has other members (like
+  OpenSSH's `StrictModes`), so no other local user can change what runs,
+  also not through a symlink (`check-config` error). Group write
+  permission is fine for the user's private group, as Debian and
+  Raspberry Pi OS create it (umask 002): the user's primary group, with
+  no other members in `/etc/group` and no other user in `/etc/passwd`
+  having it as primary group.
 - **Allowing a program allows every argument.** Some programs run other
   programs given as arguments: interpreters (`python3`, `sh`), `env`,
   `timeout`, `find`, `ssh`, and among the Nagios plugins `negate`,

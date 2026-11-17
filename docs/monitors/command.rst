@@ -85,7 +85,10 @@ single programs where you can:
 * paths with ``..``;
 * a program, or any directory above it (also of a symlink on the way),
   that another user could change: it must belong to root or to you, and
-  must not be writable by group or others (fix with ``chmod g-w,o-w``);
+  must not be writable by others or by a group that others are in (fix
+  with ``chmod g-w,o-w``). Your own private group, which Debian and
+  Raspberry Pi OS create for every user, is fine: that's why their
+  group-writable files and directories (``~/.config``) are accepted;
 * command monitors when kinomi runs as root.
 
 Disk space, NTP, mail: the monitoring plugins

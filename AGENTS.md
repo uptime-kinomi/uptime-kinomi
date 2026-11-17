@@ -143,7 +143,7 @@ Dependencies in use:
 | `bcrypt` ✅ | bcrypt core for htpasswd (without `alloc`; the htpasswd format is ours) |
 | `minisign-verify` ✅ | release signature check in `self-update` (no dependencies) |
 | `signal-hook` ✅ | SIGTERM/SIGINT for clean shutdown |
-| `rustix` ✅ | safe system calls std lacks: ICMP datagram sockets (`ping`), process-group kill and pipes (`command`); raw Linux syscalls, no libc (adds `linux-raw-sys`, `bitflags`) |
+| `rustix` ✅ | safe system calls std lacks: ICMP datagram sockets (`ping`), process-group kill and pipes (`command`), the user's UID; raw Linux syscalls, no libc (adds `linux-raw-sys`, `bitflags`) |
 
 Done in-house instead of with a crate (small, tested, no extra
 dependencies): base64 variants, JSON writing for notifications, the DNS

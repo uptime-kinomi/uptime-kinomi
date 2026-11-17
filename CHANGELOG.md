@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Upgrade test: also reads the data written by 1.2.0.
 
+### Fixed
+
+- `command` monitors on Debian and Raspberry Pi OS: every program below
+  `~/.config` was refused, because there new files and directories are
+  group-writable (umask 002). Group write permission is now accepted for
+  the user's private group (the user's primary group, with no other
+  members), like Debian's OpenSSH does for `~/.ssh`.
+- The check that kinomi does not run as root asks the system instead of
+  reading `/proc`; without `/proc` it could not tell.
+
 ## [1.2.0] - 2026-11-17
 
 Three new kinds of checks: `ping`, `command` (run a local program, e.g. a

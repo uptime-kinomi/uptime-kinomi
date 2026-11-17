@@ -70,26 +70,19 @@ pub fn default_output_dir(data_dir: &Path, runtime: Option<&Path>) -> PathBuf {
 /// `/run/user/<uid>` of the current user, if it exists and belongs to us.
 /// systemd-logind keeps it from boot to shutdown when lingering is enabled
 /// (`loginctl enable-linger`), otherwise while the user is logged in. The
-/// UID comes from /proc, not from `$XDG_RUNTIME_DIR`, so it is the same for
+/// UID comes from the system, not from `$XDG_RUNTIME_DIR`, so it is the same for
 /// the service and a login shell.
 pub fn user_runtime_dir() -> Option<PathBuf> {
     use std::os::unix::fs::MetadataExt;
-    let uid = current_uid()?;
+    let uid = current_uid();
     let dir = PathBuf::from(format!("/run/user/{uid}"));
     let meta = std::fs::metadata(&dir).ok()?;
     (meta.is_dir() && meta.uid() == uid).then_some(dir)
 }
 
-/// Real UID of this process, from /proc/self/status (no libc call).
-pub fn current_uid() -> Option<u32> {
-    let status = std::fs::read_to_string("/proc/self/status").ok()?;
-    status
-        .lines()
-        .find_map(|line| line.strip_prefix("Uid:"))?
-        .split_whitespace()
-        .next()?
-        .parse()
-        .ok()
+/// Real UID of this process.
+pub fn current_uid() -> u32 {
+    rustix::process::getuid().as_raw()
 }
 
 fn app_state_dir(env: EnvFn) -> Option<PathBuf> {
@@ -116,17 +109,9 @@ fn absolute(path: PathBuf) -> Option<PathBuf> {
     path.is_absolute().then_some(path)
 }
 
-/// Effective UID 0, read from /proc (no libc call needed).
+/// Effective UID 0.
 pub fn running_as_root() -> bool {
-    std::fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|status| {
-            status
-                .lines()
-                .find_map(|line| line.strip_prefix("Uid:"))
-                .and_then(|ids| ids.split_whitespace().nth(1).map(|euid| euid == "0"))
-        })
-        .unwrap_or(false)
+    rustix::process::geteuid().is_root()
 }
 
 #[cfg(test)]
@@ -253,7 +238,6 @@ mod tests {
 
     #[test]
     fn uid_and_runtime_dir() {
-        assert!(current_uid().is_some());
         if let Some(dir) = user_runtime_dir() {
             assert!(dir.starts_with("/run/user/"));
         }

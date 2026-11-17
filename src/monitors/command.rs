@@ -158,17 +158,58 @@ pub fn build(
 }
 
 /// The first of `path` and its parent directories that another user could
-/// change: owned by someone other than root or us, or writable by group or
-/// others (like OpenSSH's StrictModes).
+/// change: owned by someone other than root or us, writable by others, or
+/// writable by a group that has other members (like OpenSSH's StrictModes,
+/// with Debian's exception for user private groups).
 fn writable_by_others(path: &Path) -> Option<PathBuf> {
     let uid = paths::current_uid();
+    let own_group = (|| {
+        let passwd = fs::read_to_string("/etc/passwd").ok()?;
+        let group = fs::read_to_string("/etc/group").ok()?;
+        private_group(uid, &passwd, &group)
+    })();
     path.ancestors().find_map(|p| match fs::metadata(p) {
         Ok(meta) => {
-            let owner_ok = meta.uid() == 0 || Some(meta.uid()) == uid;
-            (!owner_ok || meta.mode() & 0o022 != 0).then(|| p.to_path_buf())
+            let owner_ok = meta.uid() == 0 || meta.uid() == uid;
+            let group_ok = meta.mode() & 0o020 == 0 || Some(meta.gid()) == own_group;
+            (!owner_ok || !group_ok || meta.mode() & 0o002 != 0).then(|| p.to_path_buf())
         }
         Err(_) => Some(p.to_path_buf()),
     })
+}
+
+/// The primary group of user `uid` if no one else is in it: no other user
+/// has it as primary group (`passwd`) and it lists no other members
+/// (`group`). Debian and Raspberry Pi OS create such a group for every user
+/// and make new files group-writable (umask 002); write permission for
+/// that group gives no one else access. Only the local files count: a
+/// group from another source (LDAP) is never treated as private.
+fn private_group(uid: u32, passwd: &str, group: &str) -> Option<u32> {
+    let users: Vec<(&str, u32, u32)> = passwd
+        .lines()
+        .filter_map(|line| {
+            let mut f = line.split(':');
+            let name = f.next()?;
+            let uid = f.nth(1)?.parse().ok()?;
+            let gid = f.next()?.parse().ok()?;
+            Some((name, uid, gid))
+        })
+        .collect();
+    let &(name, _, gid) = users.iter().find(|u| u.1 == uid)?;
+    if users.iter().any(|u| u.2 == gid && u.0 != name) {
+        return None;
+    }
+    let mut entries = group.lines().filter_map(|line| {
+        let mut f = line.split(':');
+        let _name = f.next()?;
+        let g: u32 = f.nth(1)?.parse().ok()?;
+        Some((g, f.next()?))
+    });
+    let (_, members) = entries.find(|e| e.0 == gid)?;
+    members
+        .split(',')
+        .all(|m| m.is_empty() || m == name)
+        .then_some(gid)
 }
 
 impl Check for CommandCheck {
@@ -736,13 +777,47 @@ mod tests {
         // Only if the test directory itself is safe (not below /tmp).
         if writable_by_others(dir.path()).is_none() {
             assert_eq!(writable_by_others(&script), None);
-            fs::set_permissions(&script, fs::Permissions::from_mode(0o775)).unwrap();
+            fs::set_permissions(&script, fs::Permissions::from_mode(0o757)).unwrap();
             assert_eq!(writable_by_others(&script), Some(script.clone()));
+            // Group-writable only with the user's private group.
+            fs::set_permissions(&script, fs::Permissions::from_mode(0o775)).unwrap();
+            let own_group = private_group(
+                paths::current_uid(),
+                &fs::read_to_string("/etc/passwd").unwrap(),
+                &fs::read_to_string("/etc/group").unwrap(),
+            );
+            let expected =
+                (Some(fs::metadata(&script).unwrap().gid()) != own_group).then(|| script.clone());
+            assert_eq!(writable_by_others(&script), expected);
         }
         assert_eq!(
             writable_by_others(Path::new("/tmp/x")),
             Some(PathBuf::from("/tmp/x"))
         );
         assert_eq!(writable_by_others(Path::new("/bin/sh")), None);
+    }
+
+    #[test]
+    fn private_groups_may_write() {
+        let passwd = "root:x:0:0::/root:/bin/sh\n\
+                      kinomi:x:1000:1000::/home/kinomi:/bin/bash\n\
+                      anna:x:1001:100::/home/anna:/bin/bash\n\
+                      bob:x:1002:100::/home/bob:/bin/bash\n\
+                      carl:x:1003:1003::/home/carl:/bin/bash\n\
+                      dora:x:1004:1004::/home/dora:/bin/bash\n";
+        let group = "root:x:0:\n\
+                     users:x:100:\n\
+                     kinomi:x:1000:\n\
+                     carl:x:1003:carl\n\
+                     dora:x:1004:dora,kinomi\n";
+        // Debian's user private group, also when it lists the user itself.
+        assert_eq!(private_group(1000, passwd, group), Some(1000));
+        assert_eq!(private_group(1003, passwd, group), Some(1003));
+        // Shared as primary group, or with another member.
+        assert_eq!(private_group(1001, passwd, group), None);
+        assert_eq!(private_group(1004, passwd, group), None);
+        // Unknown user, or a group missing from /etc/group (e.g. LDAP).
+        assert_eq!(private_group(4242, passwd, group), None);
+        assert_eq!(private_group(1000, passwd, "users:x:100:\n"), None);
     }
 }
