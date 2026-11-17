@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Upgrade test: also reads the data written by 1.1.0.
 
+### Fixed
+
+- A relative `--config-dir` (or `$KINOMI_CONFIG_DIR`) is made absolute
+  against the current directory. Before, paths in the configuration
+  stayed relative too.
+
 ## [1.1.0] - 2026-11-04
 
 JSON checks for HTTP monitors, and fixes from a review of spec, code and

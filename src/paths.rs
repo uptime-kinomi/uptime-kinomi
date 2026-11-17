@@ -25,13 +25,17 @@ pub type EnvFn<'a> = &'a dyn Fn(&str) -> Option<OsString>;
 
 /// Find the configuration directory. First match wins:
 /// `--config-dir`, `$KINOMI_CONFIG_DIR`, `$XDG_CONFIG_HOME/uptime-kinomi`
-/// (only if it exists), `/etc/uptime-kinomi`.
+/// (only if it exists), `/etc/uptime-kinomi`. A relative `--config-dir` or
+/// `$KINOMI_CONFIG_DIR` is made absolute against the current directory, so
+/// paths resolved against it are absolute too (a command monitor's
+/// ownership check walks up to `/`).
 pub fn config_dir(cli: Option<&Path>, env: EnvFn, is_dir: &dyn Fn(&Path) -> bool) -> PathBuf {
+    let absolute = |dir: PathBuf| std::path::absolute(&dir).unwrap_or(dir);
     if let Some(dir) = cli {
-        return dir.to_path_buf();
+        return absolute(dir.to_path_buf());
     }
     if let Some(dir) = env(KINOMI_CONFIG_DIR).filter(|v| !v.is_empty()) {
-        return PathBuf::from(dir);
+        return absolute(PathBuf::from(dir));
     }
     if let Some(dir) = xdg_config_home(env).map(|d| d.join(APP_DIR)) {
         if is_dir(&dir) {
@@ -151,6 +155,15 @@ mod tests {
         let env = env_of(&[("KINOMI_CONFIG_DIR", "/env"), ("HOME", "/home/u")]);
         let dir = config_dir(Some(Path::new("/cli")), &env, &always_dir);
         assert_eq!(dir, PathBuf::from("/cli"));
+    }
+
+    #[test]
+    fn config_dir_relative_is_made_absolute() {
+        let cwd = std::env::current_dir().unwrap();
+        let env = env_of(&[("KINOMI_CONFIG_DIR", "env-dir")]);
+        let dir = config_dir(Some(Path::new("cli-dir")), &env, &always_dir);
+        assert_eq!(dir, cwd.join("cli-dir"));
+        assert_eq!(config_dir(None, &env, &always_dir), cwd.join("env-dir"));
     }
 
     #[test]

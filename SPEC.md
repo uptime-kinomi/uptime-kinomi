@@ -94,6 +94,8 @@ The configuration directory is found in this order (first match wins):
 3. `$XDG_CONFIG_HOME/uptime-kinomi` (usually `~/.config/uptime-kinomi`) if it exists,
 4. `/etc/uptime-kinomi`.
 
+A relative `DIR` (1. or 2.) is taken relative to the current directory.
+
 So a normal user gets `~/.config/uptime-kinomi`, and a system-wide
 installation uses `/etc/uptime-kinomi`. The directory structure is the same:
 
